@@ -6,28 +6,53 @@
  * `for update skip locked` is exactly the primitive a queue needs. Swap it
  * when queue depth is a measured problem rather than an anticipated one.
  *
- * WHAT IT DOES TODAY
- * Handles `process_inbound` by sending a fixed acknowledgement. There is
- * deliberately NO language model in this path yet.
+ * WHAT IT DOES
+ * Handles `process_inbound`: allowlist gate, then the assistant, then either
+ * send the reply or open a handoff and mute the assistant.
  *
- * That ordering is the point. Once an LLM is involved, a silent failure
- * could be the model, the prompt, the tools, the send path, the worker, or
- * the socket. Proving the pipe with a deterministic reply first means Phase 4
- * starts from a known-good baseline instead of debugging six things at once.
+ * It was deliberately built with a FIXED reply first and the model added
+ * afterwards. Once an LLM is in the path a silent failure could be the model,
+ * the prompt, the tools, the send path, the worker or the socket; proving the
+ * pipe deterministically meant this step started from a known-good baseline
+ * rather than debugging six things at once.
+ *
+ * A handoff is silent to the customer on purpose. Saying "a human will reply
+ * shortly" while no staff inbox exists would be a promise the product cannot
+ * yet keep, and an unkept promise is worse than no reply.
  */
 
 const { getSql } = require('./db');
 const { sessionManager } = require('./whatsapp/sessionManager');
 const { shouldReply } = require('./whatsapp/replyPolicy');
+const { respond } = require('./ai/assistant');
 const { env } = require('../config/env');
 
-const WORKER_ID = `${process.pid}@${require('node:os').hostname()}`;
+/**
+ * Map an assistant escalation category onto the handoff reasons the schema
+ * allows. Anything unrecognised becomes 'unsupported' rather than being
+ * dropped — a handoff we cannot categorise is still a handoff.
+ */
+const HANDOFF_REASON = {
+  emergency: 'clinical',
+  overdose: 'clinical',
+  adverse_reaction: 'clinical',
+  paediatric: 'clinical',
+  pregnancy: 'clinical',
+  dosage: 'clinical',
+  drug_interaction: 'clinical',
+  symptoms: 'clinical',
+  prescription: 'clinical',
+  human_requested: 'customer_request',
+  prompt_injection: 'unsupported',
+  unreadable: 'unsupported',
+  filter_error: 'error',
+  assistant_unavailable: 'error',
+  assistant_error: 'error',
+  unverified_reply: 'low_confidence',
+  max_iterations: 'low_confidence',
+};
 
-// Deliberately unmistakable. If a real customer ever receives this, it must
-// be obvious that it is not a pharmacist and not a finished product.
-const ACK_TEXT =
-  'This number is being set up and is not answering questions yet. ' +
-  'A member of the pharmacy team will reply to you directly.';
+const WORKER_ID = `${process.pid}@${require('node:os').hostname()}`;
 
 let running = false;
 let timer = null;
@@ -108,9 +133,9 @@ async function processInbound(db, job) {
 
   const [row] = await db`
     select m.id, m.body,
-           conv.id as conversation_id, conv.mode,
+           conv.id as conversation_id, conv.mode, conv.context,
            cust.wa_phone, cust.wa_jid, cust.display_name,
-           ph.reply_mode,
+           ph.name as pharmacy_name, ph.reply_mode,
            wa.id as account_id, wa.status as account_status
     from messages m
     join conversations conv on conv.id = m.conversation_id
@@ -151,18 +176,76 @@ async function processInbound(db, job) {
     throw new Error(`whatsapp account is ${row.account_status}, cannot send`);
   }
 
-  const sent = await sessionManager.sendText(row.account_id, row.wa_jid, ACK_TEXT);
+  // Recent turns, so "I want two" has something to refer back to. Fetched
+  // oldest-first because that is the order a conversation happened in.
+  const history = (await db`
+    select direction, body from messages
+    where conversation_id = ${row.conversation_id} and id < ${messageId} and body is not null
+    order by id desc limit 10
+  `).reverse();
 
-  await db`
-    insert into messages
-      (pharmacy_id, conversation_id, direction, author, body, provider_message_id, delivery_status)
-    values
-      (${job.pharmacy_id}, ${row.conversation_id}, 'outbound', 'system',
-       ${ACK_TEXT}, ${sent.providerMessageId}, 'sent')
-  `;
+  const outcome = await respond({
+    pharmacyId: job.pharmacy_id,
+    pharmacyName: row.pharmacy_name,
+    text: row.body,
+    history,
+    context: row.context || {},
+  });
+
+  // ---- escalate -----------------------------------------------------------
+  if (outcome.action === 'handoff') {
+    await db.begin(async (tx) => {
+      await tx`
+        insert into handoffs (pharmacy_id, conversation_id, reason, detail, triggered_by)
+        values (${job.pharmacy_id}, ${row.conversation_id},
+                ${HANDOFF_REASON[outcome.category] || 'unsupported'},
+                ${`${outcome.category}: ${outcome.reason}`}, 'assistant')
+      `;
+      // Muting the assistant is the handoff. Without this it answers the
+      // customer's NEXT message and talks over the pharmacist who is now
+      // dealing with them.
+      await tx`
+        update conversations set mode = 'human' where id = ${row.conversation_id}
+      `;
+    });
+
+    console.log(JSON.stringify({
+      level: 'info',
+      msg: 'handed off to staff',
+      to: row.wa_phone,
+      category: outcome.category,
+      reason: outcome.reason,
+    }));
+    // Deliberately silent to the customer. Telling them "a human will reply"
+    // when no staff inbox exists yet would be a promise the product cannot
+    // keep. The pharmacist sees it; that is what a handoff is for.
+    return { sent: false, reason: `handoff:${outcome.category}` };
+  }
+
+  // ---- answer -------------------------------------------------------------
+  const sent = await sessionManager.sendText(row.account_id, row.wa_jid, outcome.text);
+
+  await db.begin(async (tx) => {
+    await tx`
+      insert into messages
+        (pharmacy_id, conversation_id, direction, author, body, provider_message_id, delivery_status)
+      values
+        (${job.pharmacy_id}, ${row.conversation_id}, 'outbound', 'assistant',
+         ${outcome.text}, ${sent.providerMessageId}, 'sent')
+    `;
+    if (outcome.contextUpdate) {
+      // Merged, not replaced, so remembering a product does not forget
+      // whatever else the conversation was carrying.
+      await tx`
+        update conversations
+        set context = context || ${tx.json(outcome.contextUpdate)}
+        where id = ${row.conversation_id}
+      `;
+    }
+  });
 
   console.log(JSON.stringify({
-    level: 'info', msg: 'reply sent', to: row.wa_phone, reason: decision.reason,
+    level: 'info', msg: 'assistant replied', to: row.wa_phone, toolCalls: outcome.toolResults.length,
   }));
   return { sent: true, reason: decision.reason };
 }
@@ -223,4 +306,4 @@ function stop() {
   clearTimeout(timer);
 }
 
-module.exports = { start, stop, tick, ACK_TEXT };
+module.exports = { start, stop, tick, HANDOFF_REASON };

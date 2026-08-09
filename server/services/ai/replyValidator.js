@@ -99,11 +99,32 @@ function collectFacts(toolResults) {
 }
 
 /**
+ * Largest quantity whose total we will accept as arithmetic.
+ *
+ * "Two packs at ₦1,970 is ₦3,940" is the assistant doing its job — quoting an
+ * order total is the whole point of turning an enquiry into a sale, and a
+ * validator that rejects all arithmetic makes that impossible.
+ *
+ * Bounded because the allowance is not free: every verified price silently
+ * permits this many more values. Twenty covers any realistic retail order and
+ * keeps the permitted set small enough that an invented figure — ₦1,980
+ * against a real ₦1,970 — still fails.
+ */
+const MAX_QUANTITY = 20;
+
+/**
  * @param {string} text                  the model's draft reply
  * @param {object[]} toolResults         every tool result from this turn
+ * @param {object} [options]
+ * @param {number[]} [options.knownPrices]
+ *   Prices verified EARLIER in this same conversation. A model that recalls
+ *   "Coartem is ₦1,970" from two messages ago without re-running the tool is
+ *   not inventing — that figure was checked when it was first quoted, and
+ *   forcing a lookup on every turn would make the assistant re-query to
+ *   answer "yes please".
  * @returns {{ok: boolean, violations: object[]}}
  */
-function validateReply(text, toolResults = []) {
+function validateReply(text, toolResults = [], options = {}) {
   const violations = [];
 
   if (typeof text !== 'string' || text.trim() === '') {
@@ -111,13 +132,24 @@ function validateReply(text, toolResults = []) {
   }
 
   const { prices, stocks } = collectFacts(toolResults);
+  for (const p of options.knownPrices || []) {
+    if (typeof p === 'number' && Number.isFinite(p)) prices.add(p);
+  }
+
+  // Unit prices, plus their multiples as order totals.
+  const permitted = new Set(prices);
+  for (const price of prices) {
+    for (let q = 2; q <= MAX_QUANTITY; q += 1) {
+      permitted.add(Number((price * q).toFixed(2)));
+    }
+  }
 
   for (const amount of extractMoney(text)) {
-    if (!prices.has(amount)) {
+    if (!permitted.has(amount)) {
       violations.push({
         type: 'unverified_price',
         value: amount,
-        detail: `The reply quotes ₦${amount.toLocaleString('en-NG')}, which no tool returned this turn.`,
+        detail: `The reply quotes ₦${amount.toLocaleString('en-NG')}, which is neither a verified price nor a multiple of one.`,
       });
     }
   }
@@ -135,4 +167,4 @@ function validateReply(text, toolResults = []) {
   return { ok: violations.length === 0, violations };
 }
 
-module.exports = { validateReply, extractMoney, extractStockClaims, collectFacts };
+module.exports = { validateReply, extractMoney, extractStockClaims, collectFacts, MAX_QUANTITY };

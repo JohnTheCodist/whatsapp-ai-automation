@@ -137,8 +137,46 @@ test('facts are found however deeply the tool nested them', () => {
   assert.equal(validateReply('It is ₦4,321 and we have 9 in stock.', nested).ok, true);
 });
 
+// ---- order totals and remembered prices ----
+
+test('an order total is allowed — it is arithmetic on a verified price', () => {
+  // Blocking this would mean the assistant can never quote a total, which is
+  // the whole point of turning an enquiry into a sale.
+  const r = validateReply('Two packs will be ₦3,940.', [], { knownPrices: [1970] });
+  assert.equal(r.ok, true, JSON.stringify(r.violations));
+});
+
+test('a near-miss is still blocked despite the arithmetic allowance', () => {
+  // ₦1,980 against a real ₦1,970 is the dangerous kind of wrong: close
+  // enough that nobody reads it twice.
+  assert.equal(validateReply('That will be ₦1,980.', [], { knownPrices: [1970] }).ok, false);
+  assert.equal(validateReply('That will be ₦3,950.', [], { knownPrices: [1970] }).ok, false);
+});
+
+test('the arithmetic allowance is bounded', () => {
+  const { MAX_QUANTITY } = require('../services/ai/replyValidator');
+  const price = 1000;
+  assert.equal(validateReply(`₦${price * MAX_QUANTITY}`, [], { knownPrices: [price] }).ok, true);
+  assert.equal(
+    validateReply(`₦${price * (MAX_QUANTITY + 1)}`, [], { knownPrices: [price] }).ok, false,
+    'every verified price silently permits this many more values — it has to stop somewhere',
+  );
+});
+
+test('a price verified earlier in the conversation counts as known', () => {
+  // The model recalling "Coartem is ₦1,970" from two messages ago is not
+  // inventing — that figure was checked when first quoted. Requiring a fresh
+  // lookup would mean it could not confirm an order it had just priced.
+  const r = validateReply('Yes, Coartem is ₦1,970. How many would you like?', [], { knownPrices: [1970] });
+  assert.equal(r.ok, true);
+});
+
+test('an unremembered price is still invention', () => {
+  assert.equal(validateReply('Coartem is ₦1,970.', [], { knownPrices: [] }).ok, false);
+});
+
 test('a violation says what was quoted and why it failed', () => {
   const r = validateReply('It is ₦9,999.', TOOL_RESULT);
-  assert.match(r.violations[0].detail, /9,999/);
-  assert.match(r.violations[0].detail, /no tool returned/);
+  assert.match(r.violations[0].detail, /9,999/, 'the offending figure must be in the message');
+  assert.match(r.violations[0].detail, /neither a verified price nor a multiple/);
 });
