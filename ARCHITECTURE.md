@@ -269,76 +269,119 @@ Still worth a one-day spike to confirm the Graph calls in step 1–7 of §6.5 be
 
 Behind an adapter, same reasoning. **Requirements:** reliable tool/function calling, sub-3s typical latency, and a data-processing posture you can put in a contract — pharmacy customer messages are health-adjacent personal data. **RECOMMENDATION:** do not fine-tune anything in MVP. Every quality problem you will hit is a retrieval or prompt problem, and fine-tuning will hide it rather than fix it.
 
-### 6.5 The five-minute connect
+### 6.5 The five-minute connect — **verified against Meta docs, 2026-08-09**
 
-**The target:** a pharmacy owner clicks *Connect WhatsApp* and is receiving messages in Sterling under five minutes, with no Twilio console, no Meta developer settings, and no waiting on a review queue.
+Everything below was read from current official documentation on 2026-08-09, not recalled. Sources are listed at the end of the section. Three of my earlier claims were wrong; one gate I never mentioned turns out to be the real one.
 
-This is achievable. My first draft was wrong about why it might not be.
+#### What the research changed
 
-#### Correction: business verification is not the gate
+| Earlier claim | Verdict | Reality |
+|---|---|---|
+| The *pharmacy's* business verification blocks first message | **Wrong, then corrected — correction confirmed** | Not required. New portfolios start at a 250 messaging limit and can message immediately. |
+| A number can be on the Business app **or** Cloud API, never both | **Wrong** | **Coexistence** supports both simultaneously, with history sync. This invalidates the Door A / Door B framing. |
+| Sterling shares a credit line so the pharmacy enters no card | **Wrong** | Credit-line sharing is a **Solution Partner** capability. Tech Providers cannot. Each pharmacy adds its own payment method. |
+| *(never mentioned)* | **Missed entirely** | **Sterling's own** business verification plus App Review for Advanced Access gates onboarding *any* customer. This is the actual timeline risk. |
+| Service messages are effectively free, so reactive assistants are cheap | **True today, expires 1 Oct 2026** | Service messages become per-message billable in seven weeks. |
 
-**ASSUMPTION (was stated as near-fact, and overstated):** I framed Meta Business Verification as a blocking step with an unpredictable turnaround. It is not blocking. An unverified business can create a WhatsApp Business Account, register a number, and begin messaging at a reduced tier. Verification raises limits and unlocks scale — it is not a prerequisite for the first message.
+#### The gate I missed: Sterling's own App Review
 
-**Why that matters more here than for most products:** this assistant is overwhelmingly *reactive*. Customers open the conversation. The tier limits that bite hardest are on **business-initiated** conversations, which MVP barely uses — there is no proactive campaign feature in scope. A pharmacy can run its entire customer-service workload on an unverified tier for a long time.
+**FACT.** To onboard other businesses as a Tech Provider, Sterling must, in order:
 
-**UNVERIFIED and must be read from current official documentation before Phase 2:** the exact tier ceiling for an unverified business, how customer-initiated (service) conversations count against it, whether the number of phone numbers is capped while unverified, and whether display-name review is currently a blocking async step or resolved inline.
+1. Verify **its own** business with Meta — *"Your business must be verified before you can start the app review process."*
+2. Submit its app for **App Review** to obtain **Advanced Access** to `whatsapp_business_messaging` (send on behalf of clients) and `whatsapp_business_management` (access client WABAs).
+3. Only then onboard clients via Embedded Signup.
 
-#### What actually blocks the clock
+This is one-time, not per-pharmacy — but it is a hard prerequisite before pharmacy number one, and it is entirely outside your control. **UNVERIFIED:** how long each step takes; Meta does not publish a turnaround. Treat as days-to-weeks and start it *now*, in parallel with Phase 2 development, not after.
 
-Ranked by how often it will bite, with a realistic time cost.
+**This is the single most schedule-relevant finding in this section.** My original risk table blamed pharmacy-side onboarding. The real exposure is Sterling-side and sits on the critical path for the entire product.
 
-| # | Blocker | Cost | Can Sterling remove it? |
-|---|---|---|---|
-| 1 | **The number is already on WhatsApp.** A phone number can be active on the consumer app, the Business app, **or** the Cloud API — never two at once. Almost every pharmacy worth selling to is already running the WhatsApp Business app on the number customers know. | Minutes to never, depending entirely on whether the owner is willing | **No.** This is a decision, not a step. Sterling can only make it clear, fast, and reversible-feeling. |
-| 2 | **Phone number OTP.** Meta sends an SMS or voice code to prove control of the number. | 1–2 min | No. Unavoidable and correct. |
-| 3 | **A Facebook Business account.** Created inline during Embedded Signup if absent, but an owner with only a personal profile will hesitate here. | 1–2 min | Partly — pre-fill everything Sterling already knows. |
-| 4 | **Payment method on the WABA.** Someone must fund conversations. | 2–5 min, plus card friction | **Yes.** Sterling shares its own credit line as tech provider. The pharmacy enters no card. |
-| 5 | **Webhook subscription, number registration, profile setup.** | Seconds, if automated | **Yes, entirely.** API calls. The pharmacy must never see these. |
-| 6 | Business verification | Days | **Skip it.** Not required to start. |
+#### Coexistence: the Door A/B choice was built on a false constraint
 
-**FACT (structural, not a policy that changes):** #1 is not a Meta rule you can wait out — it is how WhatsApp identity works. It is the entire onboarding problem.
+**FACT.** A number already on the WhatsApp Business app can connect to Cloud API and **keep working in the app**. Specifics:
 
-#### Designing around blocker #1
+- *"they can still send messages on a one-to-one basis using the WhatsApp Business app, and WhatsApp keeps messaging history between both apps in sync"*
+- Chat history sync is **optional**; if the owner declines, webhook error `2593109` fires. If accepted, Sterling has **24 hours** to sync or the customer must be offboarded and redo the flow.
+- Requires WhatsApp Business app **≥ 2.24.17**.
+- Throughput fixed at **20 messages/sec** while coexisting — irrelevant at pharmacy scale.
+- Disappearing messages off for 1:1 chats; broadcast lists disabled; **group chats not synchronised**.
+- Disconnect is done by the owner in the app: Settings → Account → Business Platform → Disconnect. The Deregister API does **not** work on a coexisting number.
 
-The owner's real objection is not technical, it is *"what happens to my existing chats and my current setup?"* The honest answer: past conversations stay on their phone, but new messages arrive in Sterling instead, and the WhatsApp Business app stops working on that number. That is a genuine loss and pretending otherwise will cost more trust than saying it plainly.
+Owner-side steps: tap **Connect** on a message from the official Facebook Business Account, tap **Connect to the Business Platform**, tap **Confirm** for history, paste the verification code into the flow.
 
-**RECOMMENDATION — offer two doors, and let value land before friction:**
+**RECOMMENDATION — revisit the Door A decision.** It was taken on 2026-08-08 on my analysis that Door B meant losing the Business app and chat history. That analysis was wrong. Door B now costs the owner almost nothing and delivers their existing customer audience on day one, which was the entire reason Door A looked expensive. **This is your call, not mine** — Door A is still defensible if you want the trial to touch nothing the pharmacy depends on. But the reason you chose it no longer holds.
 
-- **Door A — a clean number. ✅ DECIDED, 2026-08-08. This is the MVP path.** The pharmacy connects a number that has no WhatsApp on it (a spare SIM, a new line). Sub-5-minute, no losses, no hesitation. Downside: customers must be told the new number, so the pharmacy's existing WhatsApp audience does not transfer.
-- **Door B — their real number.** Deferred, not cancelled. Full value immediately, but requires removing the number from the WhatsApp Business app first. Guided, with the consequences stated up front.
+#### The payment method is a genuine, unavoidable break in the flow
 
-Steer new pharmacies to **Door A for the trial**, then offer migration to Door B once the assistant has proved itself. Asking someone to give up their working WhatsApp setup *before* they have seen the product work is the wrong order, and it is where onboarding actually dies — not in a review queue.
+**FACT.** *"clients onboarded by Tech Providers must provide their own payment method after onboarding is complete."* The instruction is to *"use the WhatsApp Manager to add a payment method"* — a **different Meta surface, outside your product**, after the popup closes.
 
-**Consequences of committing to Door A, which the product now owns:**
+Options, none free:
 
-- Onboarding must **check the number is clean up front** and fail with a clear message, rather than letting the owner discover it three steps in. This is a Phase 2b task.
-- The pharmacy inherits an audience-migration problem Sterling did not create. Signage, receipts, a WhatsApp status post. Assume this eventually needs product support, not just advice in an email.
-- **Early conversation volume will be low by construction.** Do not read a quiet first fortnight as the assistant failing — it is the number being new. Instrument so the two are distinguishable.
-- Nothing in the schema or provisioning flow may assume one number per pharmacy forever. `whatsapp_accounts` is already a one-to-many table; keep it that way.
+- **Accept it.** Guided hand-off with a direct link, and `whatsapp_accounts.status` stays `pending_payment` until Sterling confirms the WABA can send. Honest, but a Nigerian pharmacy owner entering card details in Meta's UI is a real drop-off point.
+- **Become a Solution Partner.** Removes the step entirely, but the docs call it *"a lengthy process"*. Not an MVP move; worth starting if this proves to be where onboarding dies.
 
-**UNVERIFIED:** the current supported procedure for moving a number off the WhatsApp Business app onto the Cloud API, and whether any first-party migration path preserves anything. Read the current documentation; do not assume.
+**This breaks the unqualified five-minute promise** and no amount of engineering fixes it at Tech Provider tier. Say "about ten minutes, and you'll add a payment method at the end" rather than discovering it live.
 
-#### What Sterling must automate
+#### Pricing: a cliff on 1 October 2026
 
-Every item below is an API call the owner never sees. If any of them is manual, the five minutes are gone.
+**FACT.** Conversation-based pricing was deprecated on 1 July 2025 in favour of **per-message**. Today, service messages and non-template replies inside the 24-hour customer service window are **free**.
 
-1. Receive the Embedded Signup callback; capture the WABA and phone number ids.
-2. Subscribe Sterling's app to that WABA's webhooks.
-3. Register the phone number for Cloud API messaging.
-4. Share Sterling's credit line with the WABA.
-5. Set display name and business profile from the existing pharmacy record.
-6. **Send a self-test message and confirm the round trip** — this is the step that converts "connected" from a claim into a fact.
-7. Flip `whatsapp_accounts.status` to `connected`.
+**FACT.** From **1 October 2026** — seven weeks out — *"Meta will charge on a per-message basis for service messages, consistent with how Meta charges for template messages."* Utility messages sent inside an open window also become billable. Rates to be published by **1 September 2026**.
 
-Step 6 is not optional. Without it, "Connected ✓" means "six API calls returned 200", which is not the same thing and will eventually be wrong in front of a customer.
+Two consequences the build must absorb now:
+
+1. **Unit economics change entirely.** The MVP's traffic is almost all service messages. Free today, billable in seven weeks. Any pricing model for pharmacies built on today's rates is obsolete before it ships.
+2. **Architectural, not just commercial: message count becomes cost.** The assistant must send **one consolidated reply**, never a chatty sequence of three. Build reply-batching into the orchestrator from the start — retrofitting it after a bill arrives means touching every response path.
+
+Also live since 1 Aug 2026: Meta Business Agent billed per-token at ~$2.00/1M tokens. Not applicable — Sterling runs its own LLM.
+
+#### Messaging limits — a non-issue for this product
+
+**FACT.** Tiers are **250 → 2,000 → 10,000 → 100,000 → unlimited**, set at business-portfolio level. Critically: limits count *"unique WhatsApp user phone numbers your business can deliver messages to, **outside of a customer service window**, within a moving 24-hour period."*
+
+A reactive assistant replies *inside* the window almost exclusively, so it barely touches the limit. The 250 starting tier is not a constraint on MVP. It would matter immediately if proactive campaigns were ever added — they are correctly out of scope.
+
+#### Verified provisioning sequence
+
+Owner-facing, inside the Embedded Signup popup: authenticate with Facebook/Meta credentials → accept terms (Cloud API, WhatsApp Business, Meta, Marketing Messages Lite, Business Tool Terms) → grant Sterling's app access → select or create a business portfolio → select or create a WABA → enter and verify the phone number → enter a display name.
+
+Sterling-side, all automated:
+
+1. Capture the exchangeable token code from the JS SDK message event.
+2. Exchange it server-to-server: **`GET /oauth/access_token`**.
+3. Subscribe to webhooks: **`POST /<WABA_ID>/subscribed_apps`**.
+4. Register the phone number (Register API).
+5. Set business profile from the pharmacy record.
+6. **Send a self-test message and confirm the round trip.** Unchanged and still non-negotiable — without it, "Connected ✓" means "some API calls returned 200".
+7. Flip `whatsapp_accounts.status` to `connected` (or `pending_payment`).
+
+**FACT — infrastructure prerequisites:** Sterling must be subscribed to the **`account_update`** webhook (it fires on flow completion and carries the business info you need), and every domain hosting Embedded Signup — *including development domains* — must have **valid SSL and HTTPS enabled**. That last one affects local dev setup from day one of Phase 2.
+
+#### Honest timing
+
+| Segment | Time | Notes |
+|---|---|---|
+| Sterling business verification + App Review | **Days–weeks, one-time** | UNVERIFIED duration. On the critical path. Start immediately. |
+| Embedded Signup popup | ~5 min | Plausible for a prepared owner. |
+| Coexistence phone steps (if Door B) | +2–3 min | Tap Connect, confirm, paste code. |
+| Payment method in WhatsApp Manager | +2–5 min | Separate surface, outside your product. |
+| Catalogue upload + mapping confirmation | +3–5 min | Clean file. |
+
+**"Live in about ten minutes, once we're approved to onboard you"** is a promise you can keep. "Five minutes" is not, and the gap is exactly the small dishonesty that makes an owner distrust everything else you say.
 
 #### Schema implication
 
-`whatsapp_accounts.status_detail` must carry *which* of the seven steps failed, so a failure is actionable rather than a shrug. Consider promoting it to a `provisioning_step` enum in a later migration once the real failure modes are known — do not guess the enum now.
+`whatsapp_accounts.status_detail` must record *which* step failed. Add `pending_payment` as a distinct status — it is the most likely place a pharmacy stalls, and it must be visibly different from a technical failure. Coexisting numbers need a flag too: they cannot be deregistered via API, so any offboarding path that assumes Deregister will break on them.
 
-#### Scoping the promise honestly
+#### Still unverified
 
-Five minutes is the **WhatsApp connect step**, not the whole onboarding. Catalogue upload plus mapping confirmation is a further 3–5 minutes on a clean file. "Live in about ten minutes" is a promise the product can keep. "Live in five" measured door-to-door is not, and the gap is exactly the kind of small dishonesty that makes an owner distrust everything else.
+- Duration of Meta business verification and App Review.
+- Whether display-name review (`name_status: PENDING_REVIEW` / `DECLINED`) blocks messaging — docs expose the field but never state the messaging consequence.
+- Post-1-Oct-2026 service message rates for Nigeria (published by 1 Sept 2026).
+- Whether Nigerian card/payment methods are accepted without friction in WhatsApp Manager.
+
+#### Sources
+
+[Messaging limits](https://developers.facebook.com/documentation/business-messaging/whatsapp/messaging-limits) · [Embedded Signup overview](https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/overview/) · [Onboarding customers as a Tech Provider](https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-customers-as-a-tech-provider) · [Onboard WhatsApp Business app users (Coexistence)](https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-business-app-users/) · [Solution Providers overview](https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/overview) · [Get started for Tech Providers](https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/get-started-for-tech-providers) · [Business phone numbers](https://developers.facebook.com/documentation/business-messaging/whatsapp/business-phone-numbers/phone-numbers) · [Pricing](https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing) · [Pricing updates for service and utility messages](https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing/non-template-messages)
 
 ### 6.6 Nigerian regulatory context — **research items, not architecture**
 
@@ -404,8 +447,10 @@ Last N turns (bounded, ~10) plus `conversations.context` for referents. Not the 
 | 1 | **The assistant states a wrong price or availability** | Direct commercial and trust damage; recoverable only once | Four-layer grounding (§7). Null price ≠ zero. Validation before send. |
 | 2 | **A clinical question gets an automated answer** | Patient harm. Existential for the company. | Deterministic pre-model filter, fails closed. Validate against real logs before launch. |
 | 3 | **Cross-tenant leakage** | Existential. Every pharmacy churns. | `pharmacy_id` on every row; `assertPharmacyId` guard; RLS as second layer; tenant id never client-supplied. |
-| 4 | **The pharmacy will not give up the WhatsApp Business app on its main number** | Onboarding stops dead. Not a technical failure — a decision the owner declines to make. | Two doors (§6.5): connect a clean number for the trial, migrate the real number once the assistant has proved itself. State the consequences plainly rather than discovering them mid-flow. |
-| 4b | **A provisioning step fails silently and "Connected ✓" is a lie** | A pharmacy believes it is live and is not. Worst possible failure — it is invisible until a customer is ignored. | Mandatory self-test round trip before the status flips (§6.5, step 6). `status_detail` records which step failed. |
+| 4 | **Meta App Review gates pharmacy #1** — Sterling's own business verification plus Advanced Access review must complete before *any* customer can be onboarded (§6.5) | Blocks launch entirely. Duration unpublished and outside your control. Was missed in the first draft of this document. | **Start the submission now, in parallel with Phase 2 development, not after it.** Treat as days-to-weeks. Phase 2 is buildable against Sterling's own test WABA meanwhile. |
+| 4b | **Service messages become billable 1 Oct 2026** (§6.5) | MVP traffic is almost entirely service messages, free today. Any pharmacy pricing built on current rates is obsolete in seven weeks. | Reply-batching in the orchestrator from day one — one consolidated reply, never three. Re-model unit economics when Nigeria rates publish ~1 Sept 2026. |
+| 4c | **Payment method is added outside your product** — Tech Providers cannot share a credit line (§6.5) | Onboarding hands off to WhatsApp Manager mid-flow. Likely the single largest drop-off point. | Distinct `pending_payment` status, guided hand-off, direct link. Measure drop-off here specifically. Solution Partner tier only if this proves fatal. |
+| 4d | **A provisioning step fails silently and "Connected ✓" is a lie** | A pharmacy believes it is live and is not. Worst possible failure — invisible until a customer is ignored. | Mandatory self-test round trip before the status flips (§6.5, step 6). `status_detail` records which step failed. |
 | 5 | **Duplicate webhook → duplicate reply** | Customer receives two AI replies; looks broken | Unique constraint on `provider_message_id`. Already in the schema. |
 | 6 | **Real catalogues are messier than the pipeline expects** | Onboarding stalls at step 2 | Ported, proven mapping stack. Mandatory confirmation step. Per-column memory. **Test against 5 real pharmacy files before writing more pipeline code.** |
 | 7 | **Provider or LLM outage** | Assistant silent | Job retries with backoff. LLM down → all conversations route to human, and staff are *told* that is why. |
@@ -500,18 +545,25 @@ TEST_DATABASE_URL=postgres://... npm test
 
 Split from Phase 2 deliberately: 2 proves the pipe works with a hand-attached number, 2b makes connecting it self-serve. Building them together means debugging provisioning and message handling at the same time, with no known-good baseline.
 
+**Blocked on Meta App Review (§6.5, risk 4).** Sterling's business verification and Advanced Access submission must be in flight before this phase can be completed, though the code is writable against Sterling's own WABA meanwhile.
+
 | Task | Detail |
 |---|---|
-| 2b.1 | Embedded Signup launch + callback handling; capture WABA and phone number ids |
-| 2b.2 | Automate webhook subscription on the pharmacy's WABA |
-| 2b.3 | Automate phone number registration for Cloud API |
-| 2b.4 | Automate credit-line sharing — the pharmacy enters no payment method |
-| 2b.5 | Populate display name and business profile from the pharmacy record |
-| 2b.6 | **Self-test round trip** — send, receive, confirm, and only then flip status to `connected` |
-| 2b.7 | Per-step failure surfacing in `status_detail`, with a retry that resumes rather than restarts |
-| 2b.8 | Door A / Door B choice in the UI, with the WhatsApp Business app consequences stated before the owner commits |
+| 2b.0 | **Non-code, do first:** submit Sterling business verification, then App Review for `whatsapp_business_messaging` + `whatsapp_business_management` Advanced Access |
+| 2b.1 | HTTPS + valid SSL on every Embedded Signup host, **including local dev** — a Meta prerequisite, not a production-only concern |
+| 2b.2 | Subscribe to the `account_update` webhook; it fires on flow completion and carries the business info the callback needs |
+| 2b.3 | Embedded Signup launch + JS SDK message-event capture of the exchangeable token code |
+| 2b.4 | Server-to-server token exchange via `GET /oauth/access_token` |
+| 2b.5 | Automate webhook subscription: `POST /<WABA_ID>/subscribed_apps` |
+| 2b.6 | Automate phone number registration (Register API) |
+| 2b.7 | Populate display name and business profile from the pharmacy record |
+| 2b.8 | **Payment-method hand-off** — `pending_payment` status, guided link to WhatsApp Manager, poll until the WABA can send. Instrument drop-off here; it is the likeliest stall point. |
+| 2b.9 | **Self-test round trip** — send, receive, confirm, and only then flip status to `connected` |
+| 2b.10 | Per-step failure surfacing in `status_detail`, with a retry that resumes rather than restarts |
+| 2b.11 | **Coexistence path** (if Door B): configure Embedded Signup for Business app numbers, handle the verification-code flow, and handle history sync — including error `2593109` when declined, and the **24-hour sync deadline** after which the customer must be offboarded and redo the flow |
+| 2b.12 | Offboarding must not assume the Deregister API — it does not work on coexisting numbers; the owner disconnects in-app |
 
-**Acceptance:** a pharmacy owner who has never seen the product connects a clean number and receives a real test message, unattended, in under five minutes — measured with a stopwatch on a real person, not estimated.
+**Acceptance:** a pharmacy owner who has never seen the product completes Embedded Signup, adds a payment method, and receives a real test message, unattended — measured with a stopwatch on a real person, not estimated. Record the true door-to-door time and publish *that* number, whatever it turns out to be.
 
 ### Phase 3 — Catalogue
 
