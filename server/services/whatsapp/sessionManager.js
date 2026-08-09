@@ -39,6 +39,7 @@ const { env } = require('../../config/env');
 const { createAuthStore } = require('./authStore');
 const { classifyDisconnect, backoffMs, MAX_RECONNECT_ATTEMPTS } = require('./disconnectPolicy');
 const { isDirectUserChat } = require('./jidPolicy');
+const { resolveSender } = require('./senderIdentity');
 
 // Baileys is chatty at info level and every line is protocol noise. Warnings
 // and errors are worth having; the rest is not, and drowning real problems is
@@ -601,12 +602,22 @@ class SessionManager extends EventEmitter {
         msg.message?.extendedTextMessage?.text ||
         null;
 
+      // WhatsApp addresses us by LID and puts the real number in the alt
+      // field. Splitting the JID would give an opaque id that no pharmacist
+      // can act on — see senderIdentity.js.
+      const sender = resolveSender(msg.key, msg.pushName);
+
       this.emit('message', {
         accountId: session.accountId,
         pharmacyId: session.pharmacyId,
         providerMessageId: msg.key.id,
         from: jid,
-        phoneNumber: jid.split('@')[0],
+        replyJid: sender.replyJid,
+        // Human-recognisable. Falls back to the LID only if WhatsApp gave us
+        // no number at all, so this is never null for a routable sender.
+        phoneNumber: sender.phone || sender.lid,
+        lid: sender.lid,
+        displayName: sender.displayName,
         text,
         // Non-text messages still surface, with text:null, so the pipeline
         // can route them to a human rather than dropping them silently.

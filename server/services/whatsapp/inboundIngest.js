@@ -31,7 +31,8 @@ const REPLY_WINDOW_HOURS = 24;
 async function ingest(msg) {
   const {
     pharmacyId, accountId, providerMessageId,
-    phoneNumber, text, hasMedia, timestamp, raw,
+    phoneNumber, lid, replyJid, displayName,
+    text, hasMedia, timestamp, raw,
   } = msg;
 
   assertPharmacyId(pharmacyId);
@@ -64,11 +65,22 @@ async function ingest(msg) {
   try {
     const result = await db.begin(async (tx) => {
       // 2. The customer. last_seen_at moves; first_seen_at does not.
+      //
+      // wa_jid is refreshed every time: it is the routing WhatsApp gave us,
+      // and it can change as accounts migrate to LID addressing. A stale
+      // reply JID would mean answering into the void.
+      //
+      // display_name uses coalesce so a message that happens to arrive
+      // without a pushName does not erase a name we already knew.
       const [customer] = await tx`
-        insert into customers (pharmacy_id, wa_phone, last_seen_at)
-        values (${pharmacyId}, ${phoneNumber}, now())
+        insert into customers (pharmacy_id, wa_phone, wa_lid, wa_jid, display_name, last_seen_at)
+        values (${pharmacyId}, ${phoneNumber}, ${lid || null}, ${replyJid || null},
+                ${displayName || null}, now())
         on conflict (pharmacy_id, wa_phone) do update
-          set last_seen_at = now()
+          set last_seen_at  = now(),
+              wa_lid        = coalesce(excluded.wa_lid, customers.wa_lid),
+              wa_jid        = coalesce(excluded.wa_jid, customers.wa_jid),
+              display_name  = coalesce(excluded.display_name, customers.display_name)
         returning id
       `;
 

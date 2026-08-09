@@ -67,6 +67,12 @@ const env = {
 
   databaseUrl: process.env.DATABASE_URL,
 
+  // Applied when a locally-formatted number (leading 0) is normalised.
+  // Nigeria by default because that is the launch market; it is a config
+  // value rather than a constant so the allowlist does not quietly stop
+  // matching the first time this is sold elsewhere.
+  defaultCountryCode: process.env.DEFAULT_COUNTRY_CODE || '234',
+
   // Local testing only. Never true in production — assertRequiredEnv()
   // refuses to boot rather than allowing it.
   devAuthBypass: process.env.DEV_AUTH_BYPASS === 'true' && process.env.NODE_ENV !== 'production',

@@ -148,6 +148,12 @@ async function start() {
     }));
   });
 
+  if (env.worker.enabled) {
+    require('./services/worker').start();
+  } else {
+    console.log(JSON.stringify({ level: 'info', msg: 'job worker disabled (WORKER_ENABLED=false)' }));
+  }
+
   sessionManager.start().then((n) => {
     if (n > 0) console.log(JSON.stringify({ level: 'info', msg: 'restoring whatsapp sessions', count: n }));
   }).catch((err) => {
