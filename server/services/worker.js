@@ -23,7 +23,8 @@
 
 const { getSql } = require('./db');
 const { sessionManager } = require('./whatsapp/sessionManager');
-const { shouldReply } = require('./whatsapp/replyPolicy');
+const { evaluateOutbound, isOptOutRequest } = require('./whatsapp/conductPolicy');
+const { normalizeMsisdn } = require('./whatsapp/senderIdentity');
 const { respond } = require('./ai/assistant');
 const { env } = require('../config/env');
 
@@ -135,7 +136,9 @@ async function processInbound(db, job) {
     select m.id, m.body,
            conv.id as conversation_id, conv.mode, conv.context,
            cust.wa_phone, cust.wa_jid, cust.display_name,
-           ph.name as pharmacy_name, ph.reply_mode,
+           ph.name as pharmacy_name, ph.reply_mode, ph.sending_paused,
+           ph.daily_reply_cap, ph.hourly_conversation_cap,
+           ph.quiet_hours_enabled, ph.quiet_hours_start, ph.quiet_hours_end,
            wa.id as account_id, wa.status as account_status
     from messages m
     join conversations conv on conv.id = m.conversation_id
@@ -153,18 +156,89 @@ async function processInbound(db, job) {
     return { sent: false, reason: `conversation_mode:${row.mode}` };
   }
 
-  const allowlist = (await db`
-    select wa_phone from outbound_allowlist where pharmacy_id = ${job.pharmacy_id}
-  `).map((r) => r.wa_phone);
+  // ---- "stop messaging me" is honoured before anything else ---------------
+  //
+  // Recorded even when this pharmacy would not have replied anyway, so the
+  // request stands if the reply mode is widened later. Continuing to message
+  // someone who asked you to stop is the clearest signal of a system worth
+  // banning, and is wrong regardless of whether anyone is watching.
+  if (isOptOutRequest(row.body)) {
+    await db`
+      insert into opt_outs (pharmacy_id, wa_phone, source_text)
+      values (${job.pharmacy_id}, ${normalizeMsisdn(row.wa_phone, env.defaultCountryCode) || row.wa_phone},
+              ${String(row.body).slice(0, 300)})
+      on conflict (pharmacy_id, wa_phone) do nothing
+    `;
+    console.log(JSON.stringify({ level: 'info', msg: 'opt-out recorded', to: row.wa_phone }));
+    return { sent: false, reason: 'opt_out_request' };
+  }
 
-  const decision = shouldReply({
+  const normalisedPhone = normalizeMsisdn(row.wa_phone, env.defaultCountryCode) || row.wa_phone;
+
+  const [allowlist, optOut, counts] = await Promise.all([
+    db`select wa_phone from outbound_allowlist where pharmacy_id = ${job.pharmacy_id}`,
+    db`select 1 from opt_outs where pharmacy_id = ${job.pharmacy_id} and wa_phone = ${normalisedPhone} limit 1`,
+    db`
+      select
+        (select count(*)::int from messages
+           where pharmacy_id = ${job.pharmacy_id} and direction = 'outbound'
+             and created_at > now() - interval '24 hours') as replies_today,
+        (select count(*)::int from messages
+           where conversation_id = ${row.conversation_id} and direction = 'outbound'
+             and created_at > now() - interval '1 hour') as replies_this_conversation_hour,
+        (select count(*)::int from (
+           select body from messages
+           where conversation_id = ${row.conversation_id} and direction = 'outbound'
+           order by id desc limit 3
+         ) recent
+         where recent.body = (
+           select body from messages
+           where conversation_id = ${row.conversation_id} and direction = 'outbound'
+           order by id desc limit 1
+         )) as identical_recent_replies
+    `,
+  ]);
+
+  const decision = evaluateOutbound({
     replyMode: row.reply_mode,
     phone: row.wa_phone,
-    allowlist,
+    allowlist: allowlist.map((r) => r.wa_phone),
+    optedOut: optOut.length > 0,
+    sendingPaused: row.sending_paused,
+    limits: {
+      dailyReplyCap: row.daily_reply_cap,
+      hourlyConversationCap: row.hourly_conversation_cap,
+      quietHoursEnabled: row.quiet_hours_enabled,
+      quietHoursStart: row.quiet_hours_start,
+      quietHoursEnd: row.quiet_hours_end,
+    },
+    counts: {
+      repliesToday: counts[0].replies_today,
+      repliesThisConversationHour: counts[0].replies_this_conversation_hour,
+      identicalRecentReplies: counts[0].identical_recent_replies,
+    },
     defaultCountryCode: env.defaultCountryCode,
   });
 
   if (!decision.send) {
+    // A breach severe enough to suggest something is wrong stops ALL sending
+    // for this pharmacy until a person looks. On an unofficial channel,
+    // continuing at a slower rate is the wrong response to "this is unusual".
+    if (decision.pause) {
+      await db`
+        update pharmacies
+        set sending_paused = true,
+            paused_reason = ${`Automatic: ${decision.reason}`},
+            paused_at = now()
+        where id = ${job.pharmacy_id} and sending_paused = false
+      `;
+      console.error(JSON.stringify({
+        level: 'error',
+        msg: 'SENDING PAUSED — conduct breach, needs a human',
+        pharmacyId: job.pharmacy_id,
+        reason: decision.reason,
+      }));
+    }
     console.log(JSON.stringify({
       level: 'info', msg: 'reply suppressed', to: row.wa_phone, reason: decision.reason,
     }));
