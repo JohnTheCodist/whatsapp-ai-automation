@@ -96,15 +96,44 @@ async function start() {
   // it. Nothing retries on our behalf under Baileys, so a message dropped
   // here is a customer ignored with no trace.
   sessionManager.on('message', (msg) => {
-    ingest(msg).catch((err) => {
-      console.error(JSON.stringify({
-        level: 'error',
-        msg: 'inbound ingest failed',
-        accountId: msg.accountId,
-        providerMessageId: msg.providerMessageId,
-        error: err.message,
-      }));
-    });
+    console.log(JSON.stringify({
+      level: 'info',
+      msg: 'inbound accepted',
+      from: msg.phoneNumber,
+      hasText: Boolean(msg.text),
+      hasMedia: msg.hasMedia,
+      providerMessageId: msg.providerMessageId,
+    }));
+    ingest(msg)
+      .then((r) => console.log(JSON.stringify({
+        level: 'info', msg: 'inbound ingested', stored: r.stored, reason: r.reason || null, messageId: r.messageId || null,
+      })))
+      .catch((err) => {
+        console.error(JSON.stringify({
+          level: 'error',
+          msg: 'inbound ingest failed',
+          accountId: msg.accountId,
+          providerMessageId: msg.providerMessageId,
+          error: err.message,
+        }));
+      });
+  });
+
+  // Every message the manager declines to process says so. A drop that
+  // leaves no trace is indistinguishable from a message that never arrived,
+  // and that ambiguity is what makes "the assistant never answered me"
+  // impossible to investigate.
+  sessionManager.on('message-ignored', (e) => {
+    console.log(JSON.stringify({
+      level: 'info',
+      msg: 'inbound ignored',
+      accountId: e.accountId,
+      reason: e.reason,
+      jid: e.jid,
+      type: e.type,
+      messageType: e.messageType,
+      count: e.count,
+    }));
   });
 
   // Failures inside the manager are reported on 'session-error', never on

@@ -561,20 +561,40 @@ class SessionManager extends EventEmitter {
   }
 
   async _onMessages(session, { messages, type }) {
-    // 'notify' is a genuinely new message. 'append' is history backfill —
-    // replying to those would mean answering questions the pharmacy already
-    // handled, possibly days ago.
-    if (type !== 'notify') return;
+    // EVERY drop below is announced. An ignored message that leaves no trace
+    // is indistinguishable from one that never arrived, and telling those two
+    // apart is the only way to debug "the assistant never answered me".
+    // Silent `continue` statements here cost an afternoon once already.
+    const ignore = (reason, detail) => this.emit('message-ignored', {
+      accountId: session.accountId,
+      pharmacyId: session.pharmacyId,
+      reason,
+      ...detail,
+    });
+
+    // 'notify' is a genuinely new message. 'append' and 'prepend' are history
+    // backfill — replying to those would mean answering questions the
+    // pharmacy already handled, possibly days ago.
+    if (type !== 'notify') {
+      ignore('not_notify', { type, count: messages?.length ?? 0 });
+      return;
+    }
 
     for (const msg of messages || []) {
-      if (msg.key?.fromMe) continue;
+      if (msg.key?.fromMe) {
+        ignore('from_me', { jid: msg.key?.remoteJid });
+        continue;
+      }
 
       const jid = msg.key?.remoteJid;
       // Groups, broadcasts, newsletters and bots are out of scope. A pharmacy
       // assistant replying inside a group chat broadcasts one customer's
       // medicine enquiry to everyone in it — see jidPolicy.js for why this
       // is an allowlist rather than "anything that isn't a group".
-      if (!isDirectUserChat(jid)) continue;
+      if (!isDirectUserChat(jid)) {
+        ignore('not_direct_chat', { jid, messageType: msg.message ? Object.keys(msg.message)[0] : null });
+        continue;
+      }
 
       const text =
         msg.message?.conversation ||
