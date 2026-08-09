@@ -240,6 +240,56 @@ router.post('/selftest', requireAuth, async (req, res, next) => {
   }
 });
 
+/**
+ * Recent messages for this tenant.
+ *
+ * Exists because "did my message arrive?" was unanswerable: the session
+ * manager emitted inbound messages and nothing stored them, so the only
+ * witness was an ephemeral SSE stream. Reading from the durable rows makes
+ * the answer checkable rather than inferred.
+ */
+router.get('/messages', requireAuth, async (req, res, next) => {
+  try {
+    assertPharmacyId(req.pharmacyId);
+    const limit = Math.min(parseInt(req.query.limit, 10) || 25, 100);
+    const db = getSql();
+
+    const rows = await db`
+      select m.id, m.direction, m.author, m.body, m.created_at,
+             c.wa_phone, c.display_name
+      from messages m
+      join conversations conv on conv.id = m.conversation_id
+      join customers c on c.id = conv.customer_id
+      where m.pharmacy_id = ${req.pharmacyId}
+      order by m.created_at desc
+      limit ${limit}
+    `;
+
+    const [counts] = await db`
+      select
+        (select count(*)::int from messages where pharmacy_id = ${req.pharmacyId}) as messages,
+        (select count(*)::int from customers where pharmacy_id = ${req.pharmacyId}) as customers,
+        (select count(*)::int from inbound_events where pharmacy_id = ${req.pharmacyId}) as events,
+        (select count(*)::int from jobs where pharmacy_id = ${req.pharmacyId} and status = 'queued') as queued_jobs
+    `;
+
+    res.json({
+      counts,
+      messages: rows.map((r) => ({
+        id: String(r.id),
+        direction: r.direction,
+        author: r.author,
+        body: r.body,
+        from: r.wa_phone,
+        name: r.display_name,
+        at: r.created_at,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/disconnect', requireAuth, async (req, res, next) => {
   try {
     const account = await getOrCreateAccount(req.pharmacyId);

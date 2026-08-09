@@ -90,6 +90,35 @@ async function start() {
   // awaited: a slow or unreachable session must not stop the API from
   // accepting requests, and the dashboard is how anyone would diagnose it.
   const { sessionManager } = require('./services/whatsapp/sessionManager');
+  const { ingest } = require('./services/whatsapp/inboundIngest');
+
+  // Every inbound message becomes durable rows before anything interprets
+  // it. Nothing retries on our behalf under Baileys, so a message dropped
+  // here is a customer ignored with no trace.
+  sessionManager.on('message', (msg) => {
+    ingest(msg).catch((err) => {
+      console.error(JSON.stringify({
+        level: 'error',
+        msg: 'inbound ingest failed',
+        accountId: msg.accountId,
+        providerMessageId: msg.providerMessageId,
+        error: err.message,
+      }));
+    });
+  });
+
+  // Failures inside the manager are reported on 'session-error', never on
+  // the reserved 'error' name — see sessionManager's constructor.
+  sessionManager.on('session-error', (e) => {
+    console.error(JSON.stringify({
+      level: 'error',
+      msg: 'session error',
+      accountId: e.accountId,
+      phase: e.phase,
+      error: e.error?.message || String(e.error),
+    }));
+  });
+
   sessionManager.start().then((n) => {
     if (n > 0) console.log(JSON.stringify({ level: 'info', msg: 'restoring whatsapp sessions', count: n }));
   }).catch((err) => {

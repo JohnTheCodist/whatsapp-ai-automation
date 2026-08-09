@@ -53,6 +53,7 @@ export default function ConnectWhatsApp() {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const [selfTest, setSelfTest] = useState(null);
+  const [inbox, setInbox] = useState(null);
   const logRef = useRef(null);
 
   const log = useCallback((type, detail) => {
@@ -70,7 +71,21 @@ export default function ConnectWhatsApp() {
     }
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  const loadInbox = useCallback(async () => {
+    try {
+      setInbox(await api('/messages?limit=25'));
+    } catch { /* the status panel already reports connectivity problems */ }
+  }, []);
+
+  useEffect(() => { refresh(); loadInbox(); }, [refresh, loadInbox]);
+
+  // Poll the durable rows rather than trusting the event stream. The SSE log
+  // is ephemeral — it shows nothing that arrived before the page opened, and
+  // that is exactly the question being asked here.
+  useEffect(() => {
+    const t = setInterval(loadInbox, 5000);
+    return () => clearInterval(t);
+  }, [loadInbox]);
 
   // Live connection events. The server filters to this tenant's account, so
   // everything arriving here is ours.
@@ -94,7 +109,7 @@ export default function ConnectWhatsApp() {
     on('pairing-code', (d) => log('pairing-code', d.code));
     on('reconnecting', (d) => log('reconnecting', `attempt ${d.attempt}, waiting ${Math.round(d.waitMs / 1000)}s`));
     on('session-dead', (d) => { log('session-dead', `${d.status} — ${d.detail}`); refresh(); });
-    on('message', (d) => log('message', `inbound from ${d.from}`));
+    on('message', (d) => { log('message', `inbound from ${d.from}`); loadInbox(); });
 
     es.onerror = () => log('sse', 'stream dropped — the browser will retry');
 
@@ -260,6 +275,49 @@ export default function ConnectWhatsApp() {
           {error}
         </p>
       )}
+
+      {/* ---- messages ---- */}
+      <div className="mt-6 border-t border-slate-100 pt-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-slate-400">
+            Messages received
+          </h3>
+          {inbox?.counts && (
+            <p className="font-mono text-xs text-slate-400 tabular-nums">
+              {inbox.counts.messages} messages · {inbox.counts.customers} customers · {inbox.counts.queued_jobs} queued
+            </p>
+          )}
+        </div>
+
+        <div className="mt-2 max-h-64 overflow-y-auto rounded border border-slate-200">
+          {(!inbox || inbox.messages.length === 0) && (
+            <p className="p-3 text-sm text-slate-400">
+              Nothing yet. Message {status?.phoneNumber || 'the connected number'} from another phone
+              and it will appear here within a few seconds.
+            </p>
+          )}
+          {inbox?.messages.map((m) => (
+            <div key={m.id} className="flex gap-3 border-b border-slate-100 p-2 last:border-b-0">
+              <span
+                className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${
+                  m.direction === 'inbound'
+                    ? 'bg-sky-50 text-sky-700'
+                    : 'bg-slate-100 text-slate-500'
+                }`}
+              >
+                {m.direction === 'inbound' ? 'in' : 'out'}
+              </span>
+              <span className="shrink-0 font-mono text-xs text-slate-500 tabular-nums">{m.from}</span>
+              <span className="min-w-0 flex-1 break-words text-sm text-slate-800">
+                {m.body || <em className="text-slate-400">(no text — media or unsupported type)</em>}
+              </span>
+              <span className="shrink-0 font-mono text-[10px] text-slate-400 tabular-nums">
+                {new Date(m.at).toLocaleTimeString()}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* ---- event log ---- */}
       <div className="mt-6 border-t border-slate-100 pt-4">
