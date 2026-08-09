@@ -28,6 +28,10 @@ const REQUIRED = [
   'DATABASE_URL',
   'SUPABASE_URL',
   'SUPABASE_SERVICE_ROLE_KEY',
+  // Required, not optional, from the moment Baileys is the channel: without
+  // it no WhatsApp session can be persisted at all. Booting without it would
+  // mean discovering the problem when a pharmacy tries to pair.
+  'SESSION_ENCRYPTION_KEY',
 ];
 
 /** Throws unless every required variable is present. Call once, at boot. */
@@ -57,7 +61,18 @@ const env = {
   // provider-specific and validated by that adapter, not here, so adding a
   // second provider doesn't mean editing this file.
   channel: {
-    provider: process.env.CHANNEL_PROVIDER || 'twilio',
+    provider: process.env.CHANNEL_PROVIDER || 'baileys',
+    baileys: {
+      // Datacenter IPs are a reported ban signal (ARCHITECTURE.md §6.2).
+      // TWO agents are needed: `agent` covers the socket, `fetchAgent`
+      // covers media upload/download. Setting only the first still leaks
+      // the host IP on every image a pharmacy sends or receives.
+      proxyUrl: process.env.BAILEYS_PROXY_URL || '',
+      // Human-like reply latency. Instant replies at all hours are a
+      // machine signature; this is a safety control, not a UX nicety.
+      minReplyDelayMs: parseInt(process.env.BAILEYS_MIN_REPLY_DELAY_MS || '1000', 10),
+      maxReplyDelayMs: parseInt(process.env.BAILEYS_MAX_REPLY_DELAY_MS || '3000', 10),
+    },
     twilio: {
       accountSid: process.env.TWILIO_ACCOUNT_SID || '',
       authToken: process.env.TWILIO_AUTH_TOKEN || '',
@@ -86,6 +101,12 @@ const env = {
 };
 
 function isChannelConfigured() {
+  if (env.channel.provider === 'baileys') {
+    // Baileys needs no provider credentials — that is the point of it. The
+    // only hard requirement is somewhere to put session credentials, and
+    // assertRequiredEnv already guarantees that at boot.
+    return Boolean(process.env.SESSION_ENCRYPTION_KEY);
+  }
   if (env.channel.provider === 'twilio') {
     return Boolean(env.channel.twilio.accountSid && env.channel.twilio.authToken);
   }
