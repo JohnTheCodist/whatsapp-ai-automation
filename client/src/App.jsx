@@ -1,29 +1,25 @@
 /**
- * Scaffold shell.
+ * App shell.
  *
- * Renders the three onboarding steps as the app's spine, because that flow
- * IS the product's first-run experience and everything else in the
- * dashboard hangs off having completed it. Steps are placeholders until
- * their phase lands — see ARCHITECTURE.md.
+ * The three onboarding steps are the product's spine — everything else in
+ * the dashboard depends on having completed them. Step 1 is live as of
+ * Phase 2; the rest are placeholders until their phase lands.
  */
 
 import { useEffect, useState } from 'react';
+import ConnectWhatsApp from './ConnectWhatsApp.jsx';
 
-const STEPS = [
-  {
-    id: 'whatsapp',
-    title: 'Connect WhatsApp',
-    body: 'Link the pharmacy WhatsApp number. No Twilio or Meta console required.',
-    phase: 'Phase 2',
-  },
+const PENDING_STEPS = [
   {
     id: 'catalogue',
+    n: 2,
     title: 'Upload catalogue',
     body: 'Drop in the stock spreadsheet. Columns are detected automatically; anything unclear is asked once.',
     phase: 'Phase 3',
   },
   {
     id: 'golive',
+    n: 3,
     title: 'Go live',
     body: 'Send a test message, confirm the reply, and switch the assistant on.',
     phase: 'Phase 4',
@@ -47,12 +43,16 @@ export default function App() {
         WhatsApp customer service and sales for independent pharmacies.
       </p>
 
-      <ol className="mt-10 space-y-4">
-        {STEPS.map((step, i) => (
-          <li key={step.id} className="rounded-lg border border-slate-200 p-5">
+      <div className="mt-10">
+        <ConnectWhatsApp />
+      </div>
+
+      <ol className="mt-4 space-y-4">
+        {PENDING_STEPS.map((step) => (
+          <li key={step.id} className="rounded-lg border border-slate-200 p-5 opacity-60">
             <div className="flex items-baseline justify-between gap-4">
               <h2 className="font-medium">
-                <span className="mr-2 text-slate-400 tabular-nums">{i + 1}</span>
+                <span className="mr-2 text-slate-400 tabular-nums">{step.n}</span>
                 {step.title}
               </h2>
               <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">

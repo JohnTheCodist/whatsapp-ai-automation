@@ -43,6 +43,21 @@ function assertRequiredEnv() {
       `Copy server/.env.example to server/.env and fill them in.`
     );
   }
+
+  // DEV_AUTH_BYPASS disables authentication entirely. It exists so the
+  // WhatsApp pairing flow can be exercised locally without standing up a
+  // sign-in UI first. In production it would mean anyone on the internet
+  // acting as a pharmacy.
+  //
+  // Refusing to boot is the point. A warning would be read once and ignored;
+  // a dead process gets fixed. This is the only correct behaviour for a flag
+  // whose failure mode is "no authentication at all".
+  if (process.env.DEV_AUTH_BYPASS === 'true' && process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'DEV_AUTH_BYPASS=true with NODE_ENV=production. Refusing to start.\n' +
+      'This flag disables authentication completely. Remove it from the production environment.'
+    );
+  }
 }
 
 const env = {
@@ -51,6 +66,10 @@ const env = {
   isProduction: process.env.NODE_ENV === 'production',
 
   databaseUrl: process.env.DATABASE_URL,
+
+  // Local testing only. Never true in production — assertRequiredEnv()
+  // refuses to boot rather than allowing it.
+  devAuthBypass: process.env.DEV_AUTH_BYPASS === 'true' && process.env.NODE_ENV !== 'production',
 
   supabase: {
     url: process.env.SUPABASE_URL,

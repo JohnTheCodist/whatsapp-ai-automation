@@ -12,7 +12,8 @@
     "@supabase/supabase-js": "^2.110.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.0"
+    "react-router-dom": "^6.26.0",
+    "whatsapp-ai-automation": "file:.."
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.2",

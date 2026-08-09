@@ -64,7 +64,7 @@ app.get('/api/health', async (req, res) => {
 // hard to get wrong; that trade is worth it here.
 // ---------------------------------------------------------------------
 app.use('/api/pharmacies', require('./routes/pharmacies'));  // Phase 1
-// app.use('/webhooks', require('./routes/webhooks'));               // Phase 2
+app.use('/api/whatsapp', require('./routes/whatsapp'));      // Phase 2
 // app.use('/api/catalogue', require('./routes/catalogue'));         // Phase 3
 // app.use('/api/conversations', require('./routes/conversations')); // Phase 4
 // app.use('/api/orders', require('./routes/orders'));               // Phase 5
@@ -79,7 +79,24 @@ async function start() {
   assertRequiredEnv();
   await ping();
 
-  app.listen(env.port, () => {
+  if (env.devAuthBypass) {
+    console.warn(JSON.stringify({
+      level: 'warn',
+      msg: 'DEV_AUTH_BYPASS IS ON — every API route is unauthenticated. Local use only.',
+    }));
+  }
+
+  // Restore sessions that were live when this process last stopped. Not
+  // awaited: a slow or unreachable session must not stop the API from
+  // accepting requests, and the dashboard is how anyone would diagnose it.
+  const { sessionManager } = require('./services/whatsapp/sessionManager');
+  sessionManager.start().then((n) => {
+    if (n > 0) console.log(JSON.stringify({ level: 'info', msg: 'restoring whatsapp sessions', count: n }));
+  }).catch((err) => {
+    console.error(JSON.stringify({ level: 'error', msg: 'session restore failed', error: err.message }));
+  });
+
+  const server = app.listen(env.port, () => {
     console.log(JSON.stringify({
       level: 'info',
       msg: 'WhatsApp AI Automation API listening',
@@ -89,6 +106,20 @@ async function start() {
       llm: isLlmConfigured() ? 'configured' : 'not_configured',
     }));
   });
+
+  // Close sockets deliberately on shutdown. Without this they die as an
+  // abrupt drop, which the next boot has to recover from as if it were a
+  // fault rather than a planned restart.
+  const shutdown = async (signal) => {
+    console.log(JSON.stringify({ level: 'info', msg: 'shutting down', signal }));
+    server.close();
+    await sessionManager.stop();
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+
+  return server;
 }
 
 if (require.main === module) {

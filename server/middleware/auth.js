@@ -147,9 +147,48 @@ async function requireAuthOnly(req, res, next) {
   }
 }
 
+/**
+ * Local-testing shortcut. Resolves to the first pharmacy in the database,
+ * creating one if none exists, with NO credential check whatsoever.
+ *
+ * Gated twice: `env.devAuthBypass` is already false unless NODE_ENV is
+ * non-production, and assertRequiredEnv() refuses to boot if the flag is set
+ * in production. It also logs on every single request, because a bypass that
+ * runs silently is one somebody forgets is on.
+ */
+async function devBypass(req, res, next) {
+  const db = getSql();
+  let [row] = await db`select id, name from pharmacies order by created_at limit 1`;
+
+  if (!row) {
+    const [created] = await db`
+      insert into pharmacies (name, slug, status)
+      values ('Dev Pharmacy', ${'dev-pharmacy-' + Date.now()}, 'onboarding')
+      returning id, name
+    `;
+    row = created;
+  }
+
+  console.warn(JSON.stringify({
+    level: 'warn',
+    msg: 'DEV_AUTH_BYPASS active — request served with no authentication',
+    path: req.originalUrl,
+    pharmacyId: row.id,
+  }));
+
+  req.user = { id: '00000000-0000-0000-0000-000000000000', email: 'dev@localhost' };
+  req.pharmacyId = row.id;
+  req.pharmacyRole = 'owner';
+  req.pharmacyStatus = 'onboarding';
+  req.memberships = [{ pharmacy_id: row.id, role: 'owner', name: row.name }];
+  next();
+}
+
 /** Valid session AND a real membership. The default for every tenant route. */
 async function requireAuth(req, res, next) {
   try {
+    if (env.devAuthBypass) return devBypass(req, res, next);
+
     const user = await verifyUser(req, res);
     if (!user) return;
     req.user = user;
