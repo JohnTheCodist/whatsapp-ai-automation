@@ -70,6 +70,25 @@ function buildAgents() {
   return { agent, fetchAgent: agent };
 }
 
+/**
+ * Does this session need a socket built for it?
+ *
+ * Pure, and separated out because the bug it encodes is invisible: get it
+ * wrong in the "no" direction and reconnects silently stop happening, with
+ * no error anywhere — the session just sits in `connecting` forever having
+ * actually linked successfully. Get it wrong in the "yes" direction and two
+ * live sockets fight over one session until WhatsApp knocks both off.
+ *
+ * @param {object|undefined} session
+ * @returns {boolean}
+ */
+function needsNewSocket(session) {
+  if (!session) return true;        // never connected
+  if (!session.sock) return true;   // record exists, socket never built
+  if (session.closed) return true;  // socket is dead and must be replaced
+  return false;                     // live socket — reuse it
+}
+
 class SessionManager extends EventEmitter {
   constructor() {
     super();
@@ -127,7 +146,7 @@ class SessionManager extends EventEmitter {
     assertPharmacyId(pharmacyId);
 
     const existing = this.sessions.get(accountId);
-    if (existing && existing.sock && !existing.closed) return existing;
+    if (!needsNewSocket(existing)) return existing;
 
     const auth = existing?.auth || (await createAuthStore(pharmacyId, accountId));
 
@@ -470,6 +489,20 @@ class SessionManager extends EventEmitter {
     }
 
     // reconnect
+    //
+    // Mark the socket dead BEFORE scheduling. connect() is idempotent on
+    // purpose — a second live socket for one session makes WhatsApp knock
+    // both off with connectionReplaced — but that guard reads
+    // session.sock/closed, so a session left looking alive makes the
+    // reconnect a silent no-op.
+    //
+    // That is exactly what happened on the first successful pairing: 515
+    // restartRequired arrived, we scheduled a reconnect, connect() saw the
+    // dead socket still attached and returned it unchanged, and the session
+    // sat at 'connecting' forever having genuinely linked. The session
+    // record itself is kept so the reconnect reuses the in-memory creds
+    // Baileys just mutated.
+    session.closed = true;
     session.attempts += 1;
     if (session.attempts > MAX_RECONNECT_ATTEMPTS) {
       session.closed = true;
@@ -556,4 +589,4 @@ class SessionManager extends EventEmitter {
 // One manager per process, matching the one-socket-per-session reality.
 const sessionManager = new SessionManager();
 
-module.exports = { sessionManager, SessionManager };
+module.exports = { sessionManager, SessionManager, needsNewSocket };
