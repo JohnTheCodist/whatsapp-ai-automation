@@ -105,6 +105,30 @@ test('transient outcomes do not page anyone', () => {
   }
 });
 
+test('a 401 on a session that never paired does not claim the owner logged us out', () => {
+  const never = classifyDisconnect(DisconnectReason.loggedOut, { wasRegistered: false });
+  assert.match(never.detail, /Pairing never completed/);
+  assert.doesNotMatch(
+    never.detail, /logged this device out/,
+    'telling someone who never received a code that they logged us out sends them to the wrong place',
+  );
+  // The ACTION is identical either way — only the explanation differs.
+  assert.equal(never.action, 'stop');
+  assert.equal(never.clearAuth, true);
+});
+
+test('a 401 on a previously paired session still reads as a logout', () => {
+  const was = classifyDisconnect(DisconnectReason.loggedOut, { wasRegistered: true });
+  assert.match(was.detail, /logged this device out/);
+});
+
+test('wasRegistered defaults to true, so existing callers are unaffected', () => {
+  assert.deepEqual(
+    classifyDisconnect(DisconnectReason.loggedOut),
+    classifyDisconnect(DisconnectReason.loggedOut, { wasRegistered: true }),
+  );
+});
+
 test('a suspected ban says so plainly rather than calling itself a glitch', () => {
   const d = classifyDisconnect(DisconnectReason.forbidden);
   assert.equal(d.status, 'banned');

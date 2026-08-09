@@ -224,19 +224,41 @@ class SessionManager extends EventEmitter {
       throw new Error('This session is already registered. Disconnect it before pairing again.');
     }
 
+    // MUST wait. requestPairingCode writes a node straight to the WebSocket,
+    // but connect() returns as soon as makeWASocket() is called — the
+    // handshake is still in flight. Calling it immediately throws
+    // "Connection Closed", which then looks like a pairing failure rather
+    // than a race in our own code. Measured: this is what happens.
+    await this._waitForPairingReady(session);
+
     session.pairingPhoneNumber = digits;
     const code = await session.sock.requestPairingCode(digits);
 
-    const db = getSql();
-    await db`
-      update whatsapp_accounts
-      set pairing_code = ${code},
-          pairing_expires_at = now() + interval '3 minutes',
-          status = 'pending_scan',
-          status_detail = 'Waiting for the owner to enter the pairing code.',
-          updated_at = now()
-      where id = ${accountId}
-    `;
+    // Persistence is BEST-EFFORT and must not fail the request.
+    //
+    // The moment WhatsApp issues this code it is live and expires in about
+    // three minutes. Throwing here because we could not write a row would
+    // discard a valid code the user could have typed, and make them wait for
+    // another — which is exactly what happened on the first live attempt:
+    // the code was obtained successfully and then thrown away by a database
+    // connect timeout.
+    //
+    // The row is a convenience for redisplay after a refresh. The socket is
+    // the thing that actually completes pairing, and it is already live.
+    try {
+      const db = getSql();
+      await db`
+        update whatsapp_accounts
+        set pairing_code = ${code},
+            pairing_expires_at = now() + interval '3 minutes',
+            status = 'pending_scan',
+            status_detail = 'Waiting for the owner to enter the pairing code.',
+            updated_at = now()
+        where id = ${accountId}
+      `;
+    } catch (err) {
+      this.emit('error', { accountId, phase: 'persistPairingCode', error: err });
+    }
 
     this.emit('pairing-code', { accountId, pharmacyId, code });
     return code;
@@ -325,6 +347,51 @@ class SessionManager extends EventEmitter {
   // internals
   // -------------------------------------------------------------------------
 
+  /**
+   * Resolve once the socket is far enough along to accept a pairing request.
+   *
+   * For an unregistered session Baileys emits a `qr` on connection.update as
+   * soon as the handshake completes and the server offers pairing. That is
+   * the readiness signal — we ignore the QR itself and use the pairing code
+   * flow, but its arrival proves the socket can carry a node.
+   *
+   * A fixed sleep would be the tempting shortcut and would fail on a slow
+   * connection exactly where it matters most: a first-time pairing on a poor
+   * mobile network.
+   */
+  _waitForPairingReady(session, timeoutMs = 25000) {
+    const sock = session.sock;
+    return new Promise((resolve, reject) => {
+      let settled = false;
+
+      const finish = (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try { sock.ev.off('connection.update', handler); } catch { /* emitter gone */ }
+        if (err) reject(err); else resolve();
+      };
+
+      const handler = (u) => {
+        if (u.qr || u.connection === 'open') return finish();
+        if (u.connection === 'close') {
+          const code = u.lastDisconnect?.error?.output?.statusCode;
+          finish(new Error(
+            `WhatsApp closed the connection before a pairing code could be requested ` +
+            `(${code ?? 'no status code'}). Check the network and try again.`
+          ));
+        }
+      };
+
+      const timer = setTimeout(() => finish(new Error(
+        'Timed out waiting for WhatsApp to accept the connection. ' +
+        'The network may be blocking it, or WhatsApp may be unreachable.'
+      )), timeoutMs);
+
+      sock.ev.on('connection.update', handler);
+    });
+  }
+
   async _onConnectionUpdate(session, update) {
     const { connection, lastDisconnect } = update;
     const { accountId } = session;
@@ -361,7 +428,9 @@ class SessionManager extends EventEmitter {
     if (session.intentionalClose || this.stopping) return;
 
     const statusCode = lastDisconnect?.error?.output?.statusCode;
-    const decision = classifyDisconnect(statusCode);
+    const decision = classifyDisconnect(statusCode, {
+      wasRegistered: Boolean(session.auth?.state?.creds?.registered),
+    });
 
     await this._setStatus(accountId, decision.status, decision.detail, statusCode);
 

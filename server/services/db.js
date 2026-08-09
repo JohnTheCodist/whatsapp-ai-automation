@@ -29,7 +29,13 @@ function getSql() {
       // error. Raise this only alongside a measured need.
       max: parseInt(process.env.PG_POOL_MAX || '10', 10),
       idle_timeout: 30,
-      connect_timeout: 10,
+      // 30s, not 10. Two things stack against a short timeout here: the
+      // Supabase pooler is a transatlantic hop (measured 1.3-2.1s just to
+      // connect), and Baileys generates Curve25519 pre-keys synchronously
+      // during pairing, which blocks the event loop and delays the timer
+      // that enforces this. A pairing attempt tripped the 10s limit that
+      // way and discarded a valid code.
+      connect_timeout: parseInt(process.env.PG_CONNECT_TIMEOUT || '30', 10),
       // Postgres bigint exceeds JS Number.MAX_SAFE_INTEGER. Money is stored
       // as bigint kobo, so it comes back as a string by default; we coerce
       // to Number deliberately here because no realistic naira amount gets

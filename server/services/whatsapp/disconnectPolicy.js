@@ -32,9 +32,14 @@ const { DisconnectReason } = require('baileys');
 
 /**
  * @param {number|undefined} statusCode  from lastDisconnect.error.output.statusCode
+ * @param {{wasRegistered?: boolean}} [context]
+ *   `wasRegistered` distinguishes a session that had completed pairing from
+ *   one that never did. Both produce a 401, but they are different problems
+ *   and telling a pharmacy the wrong one sends them looking in the wrong
+ *   place — "you logged us out" is nonsense to someone who never got a code.
  * @returns {DisconnectDecision}
  */
-function classifyDisconnect(statusCode) {
+function classifyDisconnect(statusCode, { wasRegistered = true } = {}) {
   switch (statusCode) {
     // --- terminal: the credentials are gone or refused -------------------
 
@@ -43,7 +48,10 @@ function classifyDisconnect(statusCode) {
         action: 'stop',
         clearAuth: true,
         status: 'logged_out',
-        detail: 'The pharmacy logged this device out from their phone. Re-pairing is required.',
+        detail: wasRegistered
+          ? 'The pharmacy logged this device out from their phone. Re-pairing is required.'
+          : 'Pairing never completed — WhatsApp rejected the session before it was linked. '
+            + 'The code may have expired or been entered on a different number. Request a new code.',
         immediate: false,
         needsHuman: true,
       };
