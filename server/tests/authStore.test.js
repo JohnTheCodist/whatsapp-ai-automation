@@ -174,6 +174,49 @@ test('key values round-trip binary correctly', { skip: SKIP && skipReason }, asy
   assert.deepEqual(Buffer.from(got.alice.data), secret);
 });
 
+test('a batch of 30 pre-keys writes fast enough for Baileys initialisation', { skip: SKIP && skipReason }, async () => {
+  // Baileys uploads pre-keys in batches of about this size during
+  // initialisation and gives up on its own timeout. An earlier version wrote
+  // one row per round trip, which against a remote pooler took long enough
+  // that a genuinely paired session never reached `open` — the only symptom
+  // was "Pre-key upload timeout" buried in the Baileys logs.
+  const { state } = await createAuthStore(ctx.a.id, ctx.accA);
+
+  const batch = {};
+  for (let i = 0; i < 30; i++) {
+    batch[`pk${i}`] = { public: crypto.randomBytes(32), private: crypto.randomBytes(32) };
+  }
+
+  const started = Date.now();
+  await state.keys.set({ 'pre-key': batch });
+  const elapsed = Date.now() - started;
+
+  // Generous: the point is to catch a return to per-key round trips, which
+  // would be an order of magnitude slower, not to police normal latency.
+  assert.ok(
+    elapsed < 10000,
+    `writing 30 pre-keys took ${elapsed}ms — that is round-trip-per-key territory and will time out Baileys`,
+  );
+
+  const readBack = await state.keys.get('pre-key', ['pk0', 'pk29']);
+  assert.ok(readBack.pk0 && readBack.pk29, 'every key in the batch must actually be stored');
+
+  await state.keys.set({ 'pre-key': Object.fromEntries(Object.keys(batch).map((k) => [k, null])) });
+});
+
+test('a batch of deletes is issued per type, not per key', { skip: SKIP && skipReason }, async () => {
+  const { state } = await createAuthStore(ctx.a.id, ctx.accA);
+  const batch = {};
+  for (let i = 0; i < 20; i++) batch[`d${i}`] = { v: i };
+  await state.keys.set({ session: batch });
+
+  const started = Date.now();
+  await state.keys.set({ session: Object.fromEntries(Object.keys(batch).map((k) => [k, null])) });
+  assert.ok(Date.now() - started < 10000);
+
+  assert.deepEqual(await state.keys.get('session', ['d0', 'd19']), {});
+});
+
 test('setting a key to null deletes it', { skip: SKIP && skipReason }, async () => {
   const { state } = await createAuthStore(ctx.a.id, ctx.accA);
   await state.keys.set({ session: { doomed: { data: Buffer.from('x') } } });

@@ -95,6 +95,26 @@ class SessionManager extends EventEmitter {
     /** @type {Map<string, object>} accountId -> session record */
     this.sessions = new Map();
     this.stopping = false;
+
+    // 'error' is a RESERVED EventEmitter name: emitting it with no listener
+    // registered makes Node throw ERR_UNHANDLED_ERROR, which is unhandled at
+    // the top of an async callback and kills the process.
+    //
+    // That is not theoretical. A statement timeout on a status write was
+    // caught, reported via emit('error', ...), and took the entire server
+    // down — every pharmacy's session with it. The handler written to report
+    // the failure WAS the failure.
+    //
+    // Failures are now emitted as 'session-error'. This listener exists only
+    // so that a stray emit('error') from future code cannot repeat that, and
+    // it logs rather than swallowing so the mistake stays visible.
+    this.on('error', (err) => {
+      console.error(JSON.stringify({
+        level: 'error',
+        msg: 'sessionManager emitted a reserved "error" event — use "session-error" instead',
+        error: err?.message || String(err),
+      }));
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -127,7 +147,7 @@ class SessionManager extends EventEmitter {
       // Not awaited: one unreachable session must not block the rest from
       // coming up. Failures surface as status rows and 'error' events.
       this.connect(row.pharmacy_id, row.id).catch((err) => {
-        this.emit('error', { accountId: row.id, phase: 'restore', error: err });
+        this.emit('session-error', { accountId: row.id, phase: 'restore', error: err });
       });
       await new Promise((r) => setTimeout(r, staggerMs));
     }
@@ -212,19 +232,19 @@ class SessionManager extends EventEmitter {
       } catch (err) {
         // Losing creds updates silently means the session works until the
         // next restart and then mysteriously does not.
-        this.emit('error', { accountId, phase: 'saveCreds', error: err });
+        this.emit('session-error', { accountId, phase: 'saveCreds', error: err });
       }
     });
 
     sock.ev.on('connection.update', (update) => {
       this._onConnectionUpdate(session, update).catch((err) => {
-        this.emit('error', { accountId, phase: 'connection.update', error: err });
+        this.emit('session-error', { accountId, phase: 'connection.update', error: err });
       });
     });
 
     sock.ev.on('messages.upsert', (payload) => {
       this._onMessages(session, payload).catch((err) => {
-        this.emit('error', { accountId, phase: 'messages.upsert', error: err });
+        this.emit('session-error', { accountId, phase: 'messages.upsert', error: err });
       });
     });
 
@@ -290,7 +310,7 @@ class SessionManager extends EventEmitter {
         where id = ${accountId}
       `;
     } catch (err) {
-      this.emit('error', { accountId, phase: 'persistPairingCode', error: err });
+      this.emit('session-error', { accountId, phase: 'persistPairingCode', error: err });
     }
 
     this.emit('pairing-code', { accountId, pharmacyId, code });
@@ -431,23 +451,32 @@ class SessionManager extends EventEmitter {
 
     if (connection === 'open') {
       session.attempts = 0;
-      const db = getSql();
       // The number is only knowable once the socket is up — under Baileys we
       // learn it from WhatsApp rather than being told it during signup.
       const number = session.sock?.user?.id?.split(':')[0] || null;
-      await db`
-        update whatsapp_accounts
-        set status = 'connected',
-            status_detail = 'Socket open.',
-            display_phone_number = coalesce(${number}, display_phone_number),
-            last_connected_at = now(),
-            last_seen_at = now(),
-            disconnect_reason = null,
-            pairing_code = null,
-            pairing_expires_at = null,
-            updated_at = now()
-        where id = ${accountId}
-      `;
+
+      // Non-fatal. This is the write that once crashed the process: a
+      // statement timeout here propagated out of a socket event handler and
+      // killed the server at the exact moment a session had SUCCEEDED in
+      // connecting. Failing to record a success must never undo it.
+      try {
+        const db = getSql();
+        await db`
+          update whatsapp_accounts
+          set status = 'connected',
+              status_detail = 'Socket open.',
+              display_phone_number = coalesce(${number}, display_phone_number),
+              last_connected_at = now(),
+              last_seen_at = now(),
+              disconnect_reason = null,
+              pairing_code = null,
+              pairing_expires_at = null,
+              updated_at = now()
+          where id = ${accountId}
+        `;
+      } catch (err) {
+        this.emit('session-error', { accountId, phase: 'markConnected', error: err });
+      }
       // NOTE: 'connected' here means the socket is genuinely open, which is a
       // fact worth recording. It is NOT the same as telling the pharmacy they
       // are live — that requires the self-test round trip, which the
@@ -471,7 +500,7 @@ class SessionManager extends EventEmitter {
       try {
         await session.auth.clear();
       } catch (err) {
-        this.emit('error', { accountId, phase: 'clearAuth', error: err });
+        this.emit('session-error', { accountId, phase: 'clearAuth', error: err });
       }
     }
 
@@ -526,7 +555,7 @@ class SessionManager extends EventEmitter {
     session.timer = setTimeout(() => {
       if (this.stopping || session.intentionalClose) return;
       this.connect(session.pharmacyId, accountId).catch((err) => {
-        this.emit('error', { accountId, phase: 'reconnect', error: err });
+        this.emit('session-error', { accountId, phase: 'reconnect', error: err });
       });
     }, wait);
   }
@@ -571,17 +600,33 @@ class SessionManager extends EventEmitter {
     }
   }
 
+  /**
+   * Record a status change. A database failure here is logged, never thrown.
+   *
+   * The socket is the source of truth for whether a session is alive; this
+   * row is a projection of it for the dashboard. Letting a transient write
+   * failure propagate out of a socket event handler is what crashed the
+   * process once already, and it would be the wrong trade even if it were
+   * safe: a live, working WhatsApp session should not be torn down because
+   * Postgres was briefly slow.
+   */
   async _setStatus(accountId, status, detail, disconnectCode) {
-    const db = getSql();
-    await db`
-      update whatsapp_accounts
-      set status = ${status},
-          status_detail = ${detail || null},
-          disconnect_reason = ${disconnectCode !== undefined ? String(disconnectCode) : null},
-          last_seen_at = now(),
-          updated_at = now()
-      where id = ${accountId}
-    `;
+    try {
+      const db = getSql();
+      await db`
+        update whatsapp_accounts
+        set status = ${status},
+            status_detail = ${detail || null},
+            disconnect_reason = ${disconnectCode !== undefined ? String(disconnectCode) : null},
+            last_seen_at = now(),
+            updated_at = now()
+        where id = ${accountId}
+      `;
+    } catch (err) {
+      this.emit('session-error', { accountId, phase: 'setStatus', error: err });
+    }
+    // Emitted regardless. Listeners care about the transition, not about
+    // whether we managed to persist it.
     this.emit('status', { accountId, status, detail });
   }
 }

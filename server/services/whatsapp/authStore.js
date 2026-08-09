@@ -127,34 +127,56 @@ async function createAuthStore(pharmacyId, accountId) {
      */
     async set(data) {
       const upserts = [];
-      const deletes = [];
+      const deletesByType = new Map();
 
       for (const type of Object.keys(data)) {
         for (const id of Object.keys(data[type] || {})) {
           const value = data[type][id];
           if (value === null || value === undefined) {
-            deletes.push({ type, id });
+            if (!deletesByType.has(type)) deletesByType.set(type, []);
+            deletesByType.get(type).push(id);
           } else {
-            upserts.push({ type, id, value: encrypt(serialise(value)) });
+            upserts.push({
+              whatsapp_account_id: accountId,
+              key_type: type,
+              key_id: id,
+              value_encrypted: encrypt(serialise(value)),
+            });
           }
         }
       }
 
-      if (upserts.length === 0 && deletes.length === 0) return;
+      if (upserts.length === 0 && deletesByType.size === 0) return;
 
+      // ONE statement for all the upserts, not one per key.
+      //
+      // Baileys writes pre-keys in batches of ~30 during initialisation, and
+      // a loop of single-row inserts is ~30 sequential round trips. Against a
+      // transatlantic pooler at a few hundred milliseconds each that runs to
+      // tens of seconds, which blows straight past Baileys' own pre-key
+      // upload timeout. The session then sits in `connecting` forever with
+      // "Pre-key upload timeout" as the only clue, having genuinely paired.
+      //
+      // Measured: this is what stopped the first successful link from ever
+      // reaching `open`.
       await db.begin(async (tx) => {
-        for (const { type, id, value } of upserts) {
+        if (upserts.length > 0) {
           await tx`
-            insert into whatsapp_auth_keys (whatsapp_account_id, key_type, key_id, value_encrypted, updated_at)
-            values (${accountId}, ${type}, ${id}, ${value}, now())
+            insert into whatsapp_auth_keys ${tx(
+              upserts, 'whatsapp_account_id', 'key_type', 'key_id', 'value_encrypted'
+            )}
             on conflict (whatsapp_account_id, key_type, key_id) do update
               set value_encrypted = excluded.value_encrypted, updated_at = now()
           `;
         }
-        for (const { type, id } of deletes) {
+        // One statement per key TYPE rather than per key. Baileys rarely
+        // deletes more than a handful of types at once.
+        for (const [type, ids] of deletesByType) {
           await tx`
             delete from whatsapp_auth_keys
-            where whatsapp_account_id = ${accountId} and key_type = ${type} and key_id = ${id}
+            where whatsapp_account_id = ${accountId}
+              and key_type = ${type}
+              and key_id = any(${ids})
           `;
         }
       });
