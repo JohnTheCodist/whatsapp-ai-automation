@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "WhatsApp AI customer-service and sales automation for independent pharmacies. Multi-tenant SaaS.",
+  "//engines": "22.12 is a hard floor, not a preference. Baileys 7 is ESM ('type': 'module'); this server is CommonJS. require()-ing an ESM module only works from Node 22.12 onward. On Node 18 or 20 the app throws ERR_REQUIRE_ESM on startup — measured 2026-08-09. Lowering this will produce a crash at boot on the host, not a warning here.",
   "engines": {
-    "node": ">=18.18.0"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "start": "node server/index.js",

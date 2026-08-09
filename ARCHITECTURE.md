@@ -475,7 +475,7 @@ What must not happen is designing *against* the eventual fix. Beyond one process
 - `whatsapp_accounts` carries a `worker_id`, nullable and unused in MVP.
 - Nothing assumes "the process handling this HTTP request is the process holding this socket."
 
-**Memory per session is the binding constraint and it is unmeasured.** Measure at 1, 10, and 50 sessions before quoting any capacity number to anyone. **UNVERIFIED** and worth an early spike — it determines your hosting bill and your per-pharmacy margin.
+**Memory per session — measured 2026-08-09, and it is NOT the binding constraint.** See §6.8.
 
 #### Anti-ban hygiene as a design requirement, not an afterthought
 
@@ -485,7 +485,7 @@ The reported detection signals map directly onto design decisions:
 - **Human-like latency.** A 1–3 second jittered delay before replying. Instant responses to every message at all hours is a machine signature.
 - **Rate limit per conversation and per session.** Already in the design for cost; keep it.
 - **Never initiate.** Reactive only. This is the load-bearing property of the whole risk argument (§6.2) — the moment outbound campaigns exist, it collapses.
-- **IP reputation.** Datacenter ranges are a reported signal. **UNVERIFIED:** whether Baileys supports clean per-socket proxy configuration. Research item before production hosting is chosen.
+- **IP reputation.** Datacenter ranges are a reported signal. **Per-socket proxy is supported — measured, see §6.8.**
 
 #### Onboarding — the genuine five-minute flow
 
@@ -507,7 +507,66 @@ Plus a consent record for the §6.2 ban-risk acknowledgement — timestamped, ve
 
 #### Version risk
 
-Baileys v7 introduced breaking changes. **Pin the version.** Upgrade deliberately, tested against a burner number, never as a transitive bump. A protocol library that tracks an undocumented moving target will break on someone else's schedule; the mitigation is that it breaks in staging first.
+Baileys v7 introduced breaking changes. **Pin the version.** Upgrade deliberately, tested against a burner number, never as a transitive bump. A protocol library that tracks an undocumented moving target will break on someone else's schedule; the mitigation is that it breaks in staging first. §6.8 makes this concrete and worse than it sounds.
+
+### 6.8 Spike results — **measured 2026-08-09**
+
+Run against `baileys@7.0.0-rc14` on Node 22.14, Windows. Harness created real sockets that negotiated to the QR stage (**verified: a 277-character QR was received**), so these are live connections, not stubs.
+
+#### Memory — resolved, and it is not the constraint
+
+| Sessions | RSS | Marginal cost per socket |
+|---|---|---|
+| 0 (module loaded) | 71.5 MB | — |
+| 1 | 83.1 MB | first socket carries one-time init |
+| 3 | 85.2 MB | ~1.0 MB |
+| 5 | 87.5 MB | ~1.2 MB |
+| 10 | 97.9 MB | ~2.1 MB |
+
+**Marginal cost is roughly 1–2 MB per socket.** Linear extrapolation: 50 sessions ≈ 200 MB, 100 ≈ 340 MB, on top of a ~70 MB baseline.
+
+**Verdict: a 1 GB instance holds 50–100 pharmacies comfortably.** Memory was flagged as the thing that would gate capacity; measured, it is not. Risk 4e is substantially reduced — the ceiling is far beyond MVP need.
+
+**Caveat, stated plainly:** these are *unauthenticated* sockets at the QR stage. A live session additionally holds Signal protocol state per contact. That would be the real risk — except for the next finding, which removes it.
+
+#### The finding that actually settles capacity
+
+The auth store interface is **`get(type, ids: string[])`** — a batched read *by id*, not a load-everything call. `makeInMemoryStore` has been **removed in v7** (`undefined`), so the unbounded in-memory store that causes most Baileys memory blowups is no longer even available to misuse.
+
+**Consequence, and it is a build requirement:** implement the Postgres auth store with **lazy per-key reads**. Fetch only the ids requested. Do that, and memory scales with *socket count* — bounded, predictable, measured above — rather than with *contact count*, which is unbounded. Load the whole key set into memory per session and you reintroduce exactly the problem v7 removed.
+
+#### Proxy — supported, with a trap
+
+Two **separate** agents in the socket config:
+
+| Option | Covers |
+|---|---|
+| `agent` | The WebSocket connection itself |
+| `fetchAgent` | Media upload and download |
+
+**Set only `agent` and your datacenter IP still leaks on every image the pharmacy sends or receives.** Both must be configured, or neither is worth configuring.
+
+#### Unplanned finding 1 — the published version situation is bad
+
+| Tag / range | Resolves to | Published |
+|---|---|---|
+| `latest` (what `npm i baileys` gives you) | **`7.0.0-rc14` — a release candidate** | 2026-07-29 |
+| `legacy` | `6.7.24` | 2026-07-29 |
+| `^6` | **`6.17.16`** | **2025-03-04** |
+
+Three problems. The default install is a **release candidate**. There is no stable 7.x. And `^6` resolves to `6.17.16`, which is semver-higher than `6.7.24` but **over a year old** — so a caret range silently gets you a stale version rather than the maintained legacy line.
+
+**Requirement: pin an exact version. Never use a caret or tilde range on this dependency.** Choose deliberately between `7.0.0-rc14` (where development is, but an RC) and `6.7.24` (the maintained stable line). This document does not make that call for you; it is a risk-appetite decision.
+
+#### Unplanned finding 2 — ESM/CJS, and a live production landmine
+
+Baileys 7 declares `"type": "module"`. This server is CommonJS. The spike's `require('baileys')` **succeeded** — but only because Node 22.14 supports `require(esm)`, which landed in **Node 22.12**.
+
+Baileys' own `engines` says `>=20.0.0`, which is **misleading for CommonJS consumers**: on Node 20 a `require()` of it throws `ERR_REQUIRE_ESM`.
+
+`package.json` declared `>=18.18.0`. **That would have allowed a deploy onto Node 18 or 20, where the app crashes at boot** — not a warning, a hard failure, discovered in production. Corrected to `>=22.12.0` with the reason recorded inline.
+
+If a lower Node floor is ever needed, the alternatives are dynamic `import()` from CJS (works everywhere) or converting the server to ESM. Both are deliberate choices; neither should happen by accident.
 - **RECOMMENDATION:** get a written answer on the second one before onboarding pharmacy #1. It could change what the assistant is permitted to say, which is architecture, not policy copy.
 
 ---
@@ -572,7 +631,7 @@ Last N turns (bounded, ~10) plus `conversations.context` for referents. Not the 
 | 4b | **Baileys auth state leaks** (§6.7) | Full account takeover of the pharmacy's WhatsApp: read all history, send as them. Blast radius covers every customer who ever messaged them. Worse than a breach of the product's own data. | Encrypted at rest per pharmacy, key from env. Never logged, never in an error payload, never returned by an API. Treat as the crown jewel it is. |
 | 4c | **Messages lost while a socket is down** (§6.7) | Silent. A customer is ignored and nobody knows. There is **no provider retrying on your behalf** — this guarantee existed under Cloud API and is now gone. | Persist first, process second. Fast staggered reconnect. **Measure the reconnection gap** and treat it as a real data-loss window rather than assuming it is zero. |
 | 4d | **Baileys breaks on a WhatsApp protocol change** | Every pharmacy goes silent simultaneously. v7 already shipped breaking changes; the library tracks an undocumented moving target. | Pin the version. Upgrade deliberately against a burner number, never as a transitive bump. Keep `channelProvider.js` genuinely swappable. |
-| 4e | **Single-process session ceiling reached sooner than expected** (§6.7) | Cannot onboard pharmacy N+1 without an architecture change under time pressure. | Memory per session is **unmeasured** — spike it at 1/10/50 before quoting capacity. `worker_id` column exists now as the seam; nothing assumes request-process and socket-process are the same. |
+| 4e | **Single-process session ceiling** (§6.8) | Cannot onboard pharmacy N+1 without an architecture change under time pressure. | **Largely retired by measurement (§6.8):** ~1–2 MB marginal per socket, so a 1 GB instance holds 50–100 pharmacies. Conditional on implementing the auth store with lazy per-key reads. `worker_id` remains the seam. |
 | 4f | **A provisioning step fails silently and "Connected ✓" is a lie** | A pharmacy believes it is live and is not. Invisible until a customer is ignored. | Mandatory self-test round trip before the status flips. Channel-independent requirement. |
 | 5 | **Duplicate webhook → duplicate reply** | Customer receives two AI replies; looks broken | Unique constraint on `provider_message_id`. Already in the schema. |
 | 6 | **Real catalogues are messier than the pipeline expects** | Onboarding stalls at step 2 | Ported, proven mapping stack. Mandatory confirmation step. Per-column memory. **Test against 5 real pharmacy files before writing more pipeline code.** |
@@ -654,7 +713,7 @@ TEST_DATABASE_URL=postgres://... npm test
 
 | Task | Detail |
 |---|---|
-| 2.0 | **Spike first, before committing to task order:** memory footprint per Baileys session at 1/10/50, and whether per-socket proxy config is supported. Both are unmeasured and both affect hosting and margin. |
+| 2.0 | ✅ **Done 2026-08-09 — results in §6.8.** Memory is not the constraint (~1–2 MB/socket). Proxy supported via `agent` **and** `fetchAgent`. Two unplanned findings: pin an exact Baileys version (never a caret range), and Node ≥22.12 is a hard floor for the CJS/ESM interop. |
 | 2.1 | Baileys adapter implementing `channelProvider.js` — keep the interface honest so a Cloud API adapter stays a one-file addition |
 | 2.2 | `sessionManager.js` — own N sockets, one per pharmacy; staggered reconnect on boot |
 | 2.3 | Encrypted per-pharmacy auth-state persistence; migration for the new `whatsapp_accounts` columns |
