@@ -132,7 +132,11 @@ flowchart TB
 
 ## 4. Major components
 
-### 4.1 Webhook ingress — `server/routes/webhooks.js`
+### 4.1 Message ingress — **superseded by §6.7 for the Baileys build**
+
+> **Channel decision, 2026-08-09:** the primary channel is Baileys, which delivers messages over a held WebSocket rather than an inbound HTTP webhook. The component below describes the **Cloud API migration target**, not what Phase 2 builds. Under Baileys the ingress is `sessionManager.js` (§6.7), which emits into the same `inbound_events` → `jobs` pipeline. Everything downstream is unchanged.
+>
+> The dedupe, persistence, and acknowledge-fast discipline below still applies — it just runs against socket events instead of HTTP requests, and the guarantees are weaker because there is no provider retrying on your behalf. **That is the real loss:** a dropped Cloud API webhook gets retried by Meta; a message missed while your socket was down is simply gone. Persist first, process second, and treat reconnection gaps as a real data-loss window worth measuring.
 
 | | |
 |---|---|
@@ -244,26 +248,54 @@ erDiagram
 
 ## 6. Critical external integrations
 
-### 6.1 WhatsApp — responsibility split
+### 6.1 Channel decision — **Baileys, decided 2026-08-09**
+
+**DECIDED:** the channel is [Baileys](https://github.com/WhiskeySockets/Baileys), an unofficial WhatsApp Web multi-device library. Not Twilio, not Meta Cloud API.
+
+This is not a provider swap. It inverts the shape of the system: Cloud API is stateless HTTP with inbound webhooks; Baileys is a **long-lived authenticated WebSocket per pharmacy, held in your process**. Sections 6.2 and 6.5 below are retained but now describe the *migration target*, not the build. §6.7 describes what is actually being built.
 
 | Party | Owns |
 |---|---|
-| **Meta** | WhatsApp Business Platform, business verification, phone-number registration, display-name review, messaging limits and quality rating, template approval, policy enforcement |
-| **Provider (Twilio or Meta Cloud API direct)** | API surface, webhook delivery, delivery receipts, media hosting, retries |
-| **Sterling** | Tenant routing, conversation state, catalogue truth, assistant behaviour, safety routing, audit |
+| **WhatsApp / Meta** | The network. No commercial relationship, no API contract, no support, no SLA. |
+| **Baileys** | Protocol implementation, encryption, session handling, event emission. Community-maintained; breaks when WhatsApp changes protocol. |
+| **Sterling** | Everything else, including the session lifecycle Meta would otherwise own: connection state, auth persistence, reconnection, QR/pairing onboarding, and the consequences of a ban. |
 
-**FACT:** business-initiated messages outside the customer-service window require pre-approved templates; free-form replies are only permitted inside it. **UNVERIFIED:** the exact window duration, template categories, per-tier messaging caps, and current signature-header names — all have changed before and **must be read from current official documentation, not from this document and not from a model's memory.**
+Note the third row. Moving off Cloud API does not remove work — it **transfers Meta's operational responsibilities onto you**. That is the real cost, and it is larger than the licence fee it saves.
 
-### 6.2 The Twilio-vs-Meta decision
+### 6.2 What Baileys buys, and what it costs
 
-Your brief specifies Twilio *and* Embedded Signup. That combination needs verification before it drives any code.
+**Every blocker the 2026-08-09 Meta research surfaced disappears:**
 
-- **UNVERIFIED:** whether your intended Twilio path supports Meta Embedded Signup such that each pharmacy's WABA is provisioned under your control without them touching a Twilio console.
-- **FACT (economics, direction not magnitude):** Twilio charges a per-message fee on top of Meta's conversation pricing. Direct Cloud API removes that layer.
+| Meta blocker | Under Baileys |
+|---|---|
+| Sterling business verification + App Review before pharmacy #1 | Gone. No approval gate. |
+| Pharmacy adds a payment method in WhatsApp Manager | Gone. No billing relationship. |
+| Service messages billable from 1 Oct 2026 | Gone. No per-message cost. |
+| 24-hour customer service window; templates for anything outside it | Gone. Free-form, any time. |
+| Messaging limit tiers (250 → 2,000 → …) | Gone. |
+| Display-name review | Gone. |
+| Coexistence configuration to keep the Business app | Not needed — it *is* the app's protocol. |
 
-**The five-minute requirement in §6.5 largely settles this.** Embedded Signup is a Meta Tech Provider flow, and the automation it depends on — webhook subscription, number registration, credit-line sharing — are Meta Graph operations against the pharmacy's WABA. Routing that through a reseller adds a second onboarding surface between you and the thing you are trying to make instant. **RECOMMENDATION:** build against Meta Cloud API direct, and keep `channelProvider.js` so a reseller adapter stays possible for a future channel rather than as a hedge on this one.
+That is a genuinely large amount of friction removed, and it makes a real sub-five-minute onboarding possible for the first time: scan a QR, connected.
 
-Still worth a one-day spike to confirm the Graph calls in step 1–7 of §6.5 behave as documented before Phase 2 depends on them.
+**The cost is one risk, and it is not symmetric.**
+
+**FACT (from the project's own README):** the maintainers *"discourage any stalkerware, bulk or automated messaging usage"* and state the project is not affiliated with WhatsApp. An automated pharmacy assistant is automated messaging usage.
+
+**ASSUMPTION (widely reported, not authoritative — treat the number as directional, not measured):** commentary in this space reports ban windows ranging from days to indefinite with no reliable pattern, and one source claims roughly one in five accounts on unofficial APIs is banned within a year. Bans are permanent; there is no appeal path.
+
+**The asymmetry that matters commercially:** the banned asset is *the pharmacy's* phone number, not Sterling's. It is their customer relationship, their signage, their receipts. A ban does not degrade the product — it destroys the customer's business channel and Sterling caused it. That liability must be named in writing before a pharmacy connects, not discovered afterwards.
+
+**RECOMMENDATION — why this is more defensible here than in most Baileys products:** the reported detection signals are cold outreach, bulk sending, messaging strangers outside the contact graph, robotic timing, and datacenter IP ranges. This assistant is **purely reactive** — it only ever replies to a customer who messaged first. That produces a high reply ratio and no stranger-contact, which are the two strongest exculpatory signals. Of the remaining signals, timing is mitigable and IP reputation is a hosting decision. This is close to the best-case traffic pattern for the approach.
+
+That is a real argument, and it is why proceeding is reasonable. It is not a guarantee, and the architecture must assume a ban will eventually happen to someone.
+
+**Consequences the product now owns:**
+
+- **Written informed consent per pharmacy**, before connecting, in plain language: this uses an unofficial connection, the number can be permanently banned, there is no appeal. Store it like the consent record it is.
+- **Keep `channelProvider.js` genuinely abstract.** It was a hedge before; it is now the migration path. A Cloud API adapter should remain a one-file addition.
+- **Start the Meta business verification anyway.** It is free, takes weeks of calendar time you are not otherwise using, and converts "we must rebuild if this fails" into "we flip an adapter". Do it in the background regardless of whether you ever ship on it.
+- **Never add proactive/outbound campaigns on Baileys.** Every exculpatory signal above evaporates the moment the system initiates contact. If outbound is ever wanted, it goes on Cloud API — the two can coexist per-pharmacy.
 
 ### 6.3 LLM provider
 
@@ -387,6 +419,95 @@ Sterling-side, all automated:
 
 - **UNVERIFIED:** Nigeria Data Protection Act obligations for processing customer health-adjacent data and for a data-processing agreement between Sterling and each pharmacy.
 - **UNVERIFIED:** whether PCN or NAFDAC rules constrain automated responses about medicines, and whether any of this constitutes advertising of pharmaceutical products.
+
+### 6.7 Baileys architecture — the stateful session layer
+
+#### The inversion
+
+This is the single most important consequence of the channel decision, and it invalidates §4.1.
+
+| | Cloud API | Baileys |
+|---|---|---|
+| Inbound | Meta HTTP POSTs your webhook | Your process holds an authenticated WebSocket and receives events |
+| State | Stateless. Any process handles any message. | **One live socket per pharmacy, pinned to one process** |
+| Scaling | Add web instances behind a load balancer | Route each pharmacy to the process holding its socket |
+| Credential | Scoped, revocable API token | Full session keys — equivalent to being logged in as them |
+| Hosting | Anything that serves HTTP, including serverless | Persistent process with stable memory. **Not serverless, not shared hosting.** |
+
+**§4.1 Webhook ingress no longer applies to the primary path.** There is no inbound HTTP from a provider, no signature to verify, no provider retry semantics to rely on. Delete that dependency from the mental model and replace it with a session manager that emits in-process events into the *same* `inbound_events` → `jobs` pipeline. Everything downstream of the ingress — dedupe, persistence, the job queue, the assistant — is unchanged and still correct.
+
+#### New component — `server/services/whatsapp/sessionManager.js`
+
+| | |
+|---|---|
+| **Responsibility** | Own the lifecycle of N Baileys sockets, one per connected pharmacy. Nothing about conversations or AI. |
+| **Input** | Auth state from Postgres; connect/disconnect commands from the dashboard |
+| **Output** | Normalised inbound message events → `inbound_events` + `jobs` rows; connection-status transitions |
+| **Depends on** | Baileys, Postgres, the encryption key |
+| **Failure cases** | See the lifecycle table below. Every one of them is normal operation, not an exception. |
+
+On boot it loads every `whatsapp_accounts` row in `connected` state, restores auth, and reconnects — **staggered**, because reconnecting fifty sockets simultaneously after a deploy is both a thundering herd against your own database and an unusual traffic signature.
+
+#### Auth state is the highest-value secret in the system
+
+Baileys persists credentials plus Signal protocol keys per session. Treat this as more sensitive than any other data you hold:
+
+- A Cloud API token is scoped and revocable. **This is not.** Possession of a Baileys auth state means full account takeover — read the pharmacy's entire message history, send as them, to anyone.
+- Store encrypted at rest, per pharmacy, keyed from an env secret. Never log it, never include it in an error payload, never return it from an API.
+- A leak here is worse than a database breach of the product's own data, because the blast radius extends to every customer who ever messaged that pharmacy.
+
+#### Connection lifecycle
+
+| Event | Correct behaviour |
+|---|---|
+| Transient drop | Reconnect with exponential backoff and jitter. Queue outbound messages; do not fail them. |
+| `loggedOut` | **Stop. Do not retry.** Mark `disconnected`, surface in the dashboard, require a fresh scan. A reconnect loop against a logged-out session is itself a suspicious pattern. |
+| Owner revokes from their phone | Arrives as a logout. Must reach pharmacy staff quickly — a silently dead assistant is worse than a visibly dead one. |
+| Process restart | Staggered reconnect of all sessions. |
+| Ban | Indistinguishable from logout at first. If re-scan fails repeatedly, escalate to a human — do not present it to the pharmacy as a technical glitch. |
+
+#### Scaling — the real constraint
+
+MVP is a single Node process holding every session. That is correct and sufficient for 1–5 pharmacies, and probably for dozens.
+
+What must not happen is designing *against* the eventual fix. Beyond one process you need a session→worker registry and sticky routing, so:
+
+- `whatsapp_accounts` carries a `worker_id`, nullable and unused in MVP.
+- Nothing assumes "the process handling this HTTP request is the process holding this socket."
+
+**Memory per session is the binding constraint and it is unmeasured.** Measure at 1, 10, and 50 sessions before quoting any capacity number to anyone. **UNVERIFIED** and worth an early spike — it determines your hosting bill and your per-pharmacy margin.
+
+#### Anti-ban hygiene as a design requirement, not an afterthought
+
+The reported detection signals map directly onto design decisions:
+
+- **Consolidate replies.** One message, never three. This was already required for Cloud API cost reasons and is now required for survival reasons — same code, two justifications.
+- **Human-like latency.** A 1–3 second jittered delay before replying. Instant responses to every message at all hours is a machine signature.
+- **Rate limit per conversation and per session.** Already in the design for cost; keep it.
+- **Never initiate.** Reactive only. This is the load-bearing property of the whole risk argument (§6.2) — the moment outbound campaigns exist, it collapses.
+- **IP reputation.** Datacenter ranges are a reported signal. **UNVERIFIED:** whether Baileys supports clean per-socket proxy configuration. Research item before production hosting is chosen.
+
+#### Onboarding — the genuine five-minute flow
+
+Dashboard shows a **pairing code** (preferable to a QR — the owner is holding the phone the code goes into, and photographing your screen is a worse experience than typing eight characters). Live status via SSE. The **self-test round trip remains mandatory** before status flips to `connected`; that requirement is channel-independent and was always the point.
+
+#### Schema changes
+
+`whatsapp_accounts` sheds its Meta-specific columns and gains:
+
+| Column | Purpose |
+|---|---|
+| `auth_state_encrypted` | The session credential. Encrypted, never logged. |
+| `session_status` | `pending_scan` / `connecting` / `connected` / `disconnected` / `logged_out` / `banned` |
+| `pairing_code`, `pairing_expires_at` | Short-lived onboarding artefacts |
+| `last_connected_at`, `disconnect_reason` | Diagnosis without reading logs |
+| `worker_id` | Nullable in MVP; the seam for multi-process later |
+
+Plus a consent record for the §6.2 ban-risk acknowledgement — timestamped, versioned to the wording shown, and treated as evidence rather than a boolean.
+
+#### Version risk
+
+Baileys v7 introduced breaking changes. **Pin the version.** Upgrade deliberately, tested against a burner number, never as a transitive bump. A protocol library that tracks an undocumented moving target will break on someone else's schedule; the mitigation is that it breaks in staging first.
 - **RECOMMENDATION:** get a written answer on the second one before onboarding pharmacy #1. It could change what the assistant is permitted to say, which is architecture, not policy copy.
 
 ---
@@ -447,10 +568,12 @@ Last N turns (bounded, ~10) plus `conversations.context` for referents. Not the 
 | 1 | **The assistant states a wrong price or availability** | Direct commercial and trust damage; recoverable only once | Four-layer grounding (§7). Null price ≠ zero. Validation before send. |
 | 2 | **A clinical question gets an automated answer** | Patient harm. Existential for the company. | Deterministic pre-model filter, fails closed. Validate against real logs before launch. |
 | 3 | **Cross-tenant leakage** | Existential. Every pharmacy churns. | `pharmacy_id` on every row; `assertPharmacyId` guard; RLS as second layer; tenant id never client-supplied. |
-| 4 | **Meta App Review gates pharmacy #1** — Sterling's own business verification plus Advanced Access review must complete before *any* customer can be onboarded (§6.5) | Blocks launch entirely. Duration unpublished and outside your control. Was missed in the first draft of this document. | **Start the submission now, in parallel with Phase 2 development, not after it.** Treat as days-to-weeks. Phase 2 is buildable against Sterling's own test WABA meanwhile. |
-| 4b | **Service messages become billable 1 Oct 2026** (§6.5) | MVP traffic is almost entirely service messages, free today. Any pharmacy pricing built on current rates is obsolete in seven weeks. | Reply-batching in the orchestrator from day one — one consolidated reply, never three. Re-model unit economics when Nigeria rates publish ~1 Sept 2026. |
-| 4c | **Payment method is added outside your product** — Tech Providers cannot share a credit line (§6.5) | Onboarding hands off to WhatsApp Manager mid-flow. Likely the single largest drop-off point. | Distinct `pending_payment` status, guided hand-off, direct link. Measure drop-off here specifically. Solution Partner tier only if this proves fatal. |
-| 4d | **A provisioning step fails silently and "Connected ✓" is a lie** | A pharmacy believes it is live and is not. Worst possible failure — invisible until a customer is ignored. | Mandatory self-test round trip before the status flips (§6.5, step 6). `status_detail` records which step failed. |
+| 4 | **A pharmacy's number is permanently banned** (§6.2) | **The most severe risk in this document.** Not product degradation — destruction of the customer's primary business channel, permanent, no appeal, and Sterling caused it. | Reactive-only traffic (the load-bearing mitigation). Human-like latency, consolidated replies, rate limits. **Written informed consent before connecting.** A documented response plan including Cloud API migration — decided before it happens, not during. |
+| 4b | **Baileys auth state leaks** (§6.7) | Full account takeover of the pharmacy's WhatsApp: read all history, send as them. Blast radius covers every customer who ever messaged them. Worse than a breach of the product's own data. | Encrypted at rest per pharmacy, key from env. Never logged, never in an error payload, never returned by an API. Treat as the crown jewel it is. |
+| 4c | **Messages lost while a socket is down** (§6.7) | Silent. A customer is ignored and nobody knows. There is **no provider retrying on your behalf** — this guarantee existed under Cloud API and is now gone. | Persist first, process second. Fast staggered reconnect. **Measure the reconnection gap** and treat it as a real data-loss window rather than assuming it is zero. |
+| 4d | **Baileys breaks on a WhatsApp protocol change** | Every pharmacy goes silent simultaneously. v7 already shipped breaking changes; the library tracks an undocumented moving target. | Pin the version. Upgrade deliberately against a burner number, never as a transitive bump. Keep `channelProvider.js` genuinely swappable. |
+| 4e | **Single-process session ceiling reached sooner than expected** (§6.7) | Cannot onboard pharmacy N+1 without an architecture change under time pressure. | Memory per session is **unmeasured** — spike it at 1/10/50 before quoting capacity. `worker_id` column exists now as the seam; nothing assumes request-process and socket-process are the same. |
+| 4f | **A provisioning step fails silently and "Connected ✓" is a lie** | A pharmacy believes it is live and is not. Invisible until a customer is ignored. | Mandatory self-test round trip before the status flips. Channel-independent requirement. |
 | 5 | **Duplicate webhook → duplicate reply** | Customer receives two AI replies; looks broken | Unique constraint on `provider_message_id`. Already in the schema. |
 | 6 | **Real catalogues are messier than the pipeline expects** | Onboarding stalls at step 2 | Ported, proven mapping stack. Mandatory confirmation step. Per-column memory. **Test against 5 real pharmacy files before writing more pipeline code.** |
 | 7 | **Provider or LLM outage** | Assistant silent | Job retries with backoff. LLM down → all conversations route to human, and staff are *told* that is why. |
@@ -527,19 +650,26 @@ TEST_DATABASE_URL=postgres://... npm test
 
 ### Phase 2 — Channel ingress and egress
 
+**Rewritten 2026-08-09 for Baileys (§6.7).** The Twilio/webhook tasks below were replaced wholesale — there is no inbound HTTP and no signature to verify. Everything downstream of ingress is unchanged.
+
 | Task | Detail |
 |---|---|
-| 2.1 | Twilio adapter implementing `channelProvider.js` |
-| 2.2 | `POST /webhooks/whatsapp` — signature verify against raw body |
-| 2.3 | `inbound_events` write with dedupe; ack under 500ms |
-| 2.4 | Number → pharmacy routing; `unroutable` handling |
-| 2.5 | `jobs` table worker: claim, retry with backoff, dead-letter |
-| 2.6 | Send path + outbound `messages` row |
-| 2.7 | Delivery status callback handling |
-| 2.8 | Admin-only endpoint to attach a number to a pharmacy (fallback path) |
+| 2.0 | **Spike first, before committing to task order:** memory footprint per Baileys session at 1/10/50, and whether per-socket proxy config is supported. Both are unmeasured and both affect hosting and margin. |
+| 2.1 | Baileys adapter implementing `channelProvider.js` — keep the interface honest so a Cloud API adapter stays a one-file addition |
+| 2.2 | `sessionManager.js` — own N sockets, one per pharmacy; staggered reconnect on boot |
+| 2.3 | Encrypted per-pharmacy auth-state persistence; migration for the new `whatsapp_accounts` columns |
+| 2.4 | Pairing-code onboarding endpoint + live status (SSE), with the self-test round trip before `connected` |
+| 2.5 | Connection lifecycle: transient reconnect with backoff+jitter; `loggedOut` **stops retrying** and surfaces to staff |
+| 2.6 | Socket event → `inbound_events` write with dedupe; persist before processing |
+| 2.7 | Session → pharmacy routing; `unroutable` handling |
+| 2.8 | `jobs` table worker: claim, retry with backoff, dead-letter |
+| 2.9 | Send path + outbound `messages` row, with **consolidated single reply** and 1–3s jittered human-like delay |
+| 2.10 | Delivery receipt events → message status |
+| 2.11 | Ban-risk consent capture — versioned to the exact wording shown, stored as evidence |
+| 2.12 | Pin the Baileys version; document the upgrade procedure against a burner number |
 
-**Tests:** replayed real payloads; forged signature rejected; duplicate delivery produces one row.
-**Acceptance:** a real WhatsApp message to a connected number produces exactly one `messages` row, and a hardcoded echo reply reaches the phone.
+**Tests:** duplicate socket event produces one row; `loggedOut` does not enter a retry loop; auth state round-trips through encryption; reconnect after a forced socket kill loses nothing.
+**Acceptance:** a real WhatsApp message to a connected pharmacy number produces exactly one `messages` row, and a hardcoded echo reply reaches the phone. Then kill the process, restart, and confirm the session restores without a re-scan.
 
 ### Phase 2b — Five-minute self-serve connect
 
