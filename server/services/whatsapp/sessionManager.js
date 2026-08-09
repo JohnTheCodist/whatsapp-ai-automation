@@ -157,9 +157,23 @@ class SessionManager extends EventEmitter {
         keys: makeCacheableSignalKeyStore(auth.state.keys, baileysLogger),
       },
       logger: baileysLogger,
-      // Identifies the linked device in the pharmacy's WhatsApp app. They
-      // will see this string, so it should be recognisably us.
-      browser: Browsers.appropriate('Desktop'),
+      // The library default, and deliberately not customised.
+      //
+      // The tuple is [os, browser, version], and Baileys derives the
+      // registration's platformType from browser[1] via
+      //   proto.DeviceProps.PlatformType[browser[1].toUpperCase()] || CHROME
+      //
+      // An earlier attempt used Browsers.appropriate('Desktop') to get a
+      // recognisable name in the pharmacy's linked-devices list. That maps
+      // to PlatformType.DESKTOP, i.e. we announce ourselves as the NATIVE
+      // WhatsApp Desktop application — which does not link by pairing code.
+      // The phone answered "Couldn't link device" and the server saw no
+      // error at all, because nothing had gone wrong on our side.
+      //
+      // Any browser[1] that is not a known PlatformType falls back to CHROME,
+      // so a custom display name is possible later. Establish a link on the
+      // known-good default first.
+      browser: Browsers.macOS('Chrome'),
       printQRInTerminal: false,
       // The pharmacy may still be using the WhatsApp Business app on this
       // number. Marking ourselves online would steal presence from them and
