@@ -144,6 +144,23 @@ const RULES = [
     ],
   },
   {
+    category: 'clinical_comparison',
+    reason: 'Asks which medicine is better or more suitable — that is a pharmacist\'s judgement.',
+    patterns: [
+      // "Between amoxicillin and Augmentin, which one is good?" reached the
+      // assistant in real traffic. The model refused, but that was the
+      // PROMPT — the weakest layer, and the one that changes when the model
+      // does. Choosing between two antibiotics is clinical advice.
+      /\bwhich (one|of (them|these)|is)\b.{0,25}\b(better|best|good|stronger|stronger|effective|work(s)? (better|faster)|suitable|right for)\b/i,
+      /\bwhich (should|can|do) i (take|use|buy|get)\b/i,
+      /\bbetween\b.{0,60}\bwhich\b/i,
+      /\bis\b.{0,30}\b(better|stronger|more effective)\b.{0,20}\bthan\b/i,
+      /\bwhat (do|would) you recommend\b/i,
+      /\b(recommend|suggest)\b.{0,20}\b(one|any|something)\b.{0,20}\bfor\b/i,
+      /\bwhich (one )?is (stronger|better)\b/i,
+    ],
+  },
+  {
     category: 'prescription',
     reason: 'Prescription interpretation — must be handled by a pharmacist.',
     patterns: [

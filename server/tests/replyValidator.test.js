@@ -175,6 +175,48 @@ test('an unremembered price is still invention', () => {
   assert.equal(validateReply('Coartem is ₦1,970.', [], { knownPrices: [] }).ok, false);
 });
 
+// ---- promises the system cannot keep ----
+
+test('claiming to have reserved stock is blocked', () => {
+  // Real traffic: "Done, I've set aside 3 packs of Amoxicillin 500mg for you."
+  // Nothing was set aside, no order existed, and the pharmacy was never told.
+  // The customer would arrive expecting held stock.
+  const r = validateReply("Done, I've set aside 3 packs of Amoxicillin 500mg for you.", TOOL_RESULT);
+  assert.equal(r.ok, false);
+  assert.equal(r.violations[0].type, 'unfulfillable_promise');
+});
+
+test('every shape of completed-action claim is blocked', () => {
+  for (const text of [
+    'Your order has been placed.',
+    "I've told the pharmacist for you.",
+    "I have reserved them for you.",
+    'They are set aside and ready for collection.',
+    "I've arranged delivery for tomorrow.",
+  ]) {
+    assert.equal(validateReply(text, TOOL_RESULT).ok, false, `should have been blocked: ${text}`);
+  }
+});
+
+test('an OFFER is fine — the difference is tense', () => {
+  // "Shall I set them aside?" is a perfectly good thing to say. Blocking it
+  // would leave the assistant unable to move toward a sale at all.
+  for (const text of [
+    'Shall I set them aside for you?',
+    'I can reserve them if you like.',
+    'Would you like to come in and collect them?',
+  ]) {
+    assert.equal(validateReply(text, TOOL_RESULT).ok, true, `should have been allowed: ${text}`);
+  }
+});
+
+test('the check lifts once the system can genuinely act', () => {
+  // When ordering lands this becomes "did the order tool run this turn"
+  // rather than being deleted.
+  const r = validateReply("I've set them aside for you.", TOOL_RESULT, { canTakeActions: true });
+  assert.equal(r.ok, true);
+});
+
 test('a violation says what was quoted and why it failed', () => {
   const r = validateReply('It is ₦9,999.', TOOL_RESULT);
   assert.match(r.violations[0].detail, /9,999/, 'the offending figure must be in the message');

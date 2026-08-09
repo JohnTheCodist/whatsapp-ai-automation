@@ -76,6 +76,38 @@ function extractStockClaims(text) {
 }
 
 /**
+ * Claims to have DONE something the system cannot do.
+ *
+ * Real traffic produced: "Done, I've set aside 3 packs of Amoxicillin 500mg
+ * for you." Nothing was set aside. There is no order, no reservation, and the
+ * pharmacy was never told — the customer will arrive expecting held stock
+ * that does not exist.
+ *
+ * A price the assistant invents is caught by tracing it to a tool. An action
+ * it invents has no number to trace, so it needs its own check.
+ *
+ * Only COMPLETED claims match. "Shall I set them aside?" is an offer and a
+ * perfectly good thing to say; "I have set them aside" is a lie until orders
+ * exist. The difference is tense, and it is the whole distinction.
+ */
+function extractActionClaims(text) {
+  const claims = [];
+  const patterns = [
+    { re: /\b(i(?:'ve| have)|we(?:'ve| have))\s+(?:now\s+)?(set (?:it|them|these|\d+\s*\w+)?\s*aside|reserved|put (?:it|them|these) aside|held)\b/i, what: 'reserved stock' },
+    { re: /\b(i(?:'ve| have)|we(?:'ve| have))\s+(?:now\s+)?(placed|created|logged|recorded|booked|processed)\b.{0,20}\border\b/i, what: 'created an order' },
+    { re: /\byour order (is|has been)\s+(placed|confirmed|received|logged|recorded|processed)\b/i, what: 'confirmed an order' },
+    { re: /\b(i(?:'ve| have)|we(?:'ve| have))\s+(?:now\s+)?(told|informed|notified|alerted|messaged)\b.{0,25}\b(pharmacist|staff|team|shop)\b/i, what: 'notified staff' },
+    { re: /\b(it|they|the items?|your (order|items?))\s+(is|are|has been|have been)\s+(reserved|set aside|waiting for you|ready for (pick ?up|collection))\b/i, what: 'reserved stock' },
+    { re: /\b(i(?:'ve| have)|we(?:'ve| have))\s+(?:now\s+)?arranged\b.{0,20}\b(delivery|dispatch)\b/i, what: 'arranged delivery' },
+  ];
+  for (const { re, what } of patterns) {
+    const m = text.match(re);
+    if (m) claims.push({ matched: m[0].slice(0, 80), what });
+  }
+  return claims;
+}
+
+/**
  * Collect every number the tools actually returned, walking the whole result
  * tree so a nested product list is covered without hard-coding its shape.
  */
@@ -164,7 +196,21 @@ function validateReply(text, toolResults = [], options = {}) {
     }
   }
 
+  // Until orders exist (Phase 5) there is no action the assistant can take,
+  // so any completed-action claim is false by construction. When ordering
+  // lands, this check becomes "did the order tool actually run this turn"
+  // rather than being removed.
+  if (!options.canTakeActions) {
+    for (const claim of extractActionClaims(text)) {
+      violations.push({
+        type: 'unfulfillable_promise',
+        value: claim.matched,
+        detail: `The reply says it ${claim.what} ("${claim.matched}"), but nothing was recorded and the pharmacy was not told.`,
+      });
+    }
+  }
+
   return { ok: violations.length === 0, violations };
 }
 
-module.exports = { validateReply, extractMoney, extractStockClaims, collectFacts, MAX_QUANTITY };
+module.exports = { validateReply, extractMoney, extractStockClaims, extractActionClaims, collectFacts, MAX_QUANTITY };
