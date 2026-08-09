@@ -65,12 +65,40 @@ app.get('/api/health', async (req, res) => {
 // ---------------------------------------------------------------------
 app.use('/api/pharmacies', require('./routes/pharmacies'));  // Phase 1
 app.use('/api/whatsapp', require('./routes/whatsapp'));      // Phase 2
+app.use('/api/catalogue', require('./routes/catalogue'));    // Phase 3
 // app.use('/api/catalogue', require('./routes/catalogue'));         // Phase 3
 // app.use('/api/conversations', require('./routes/conversations')); // Phase 4
 // app.use('/api/orders', require('./routes/orders'));               // Phase 5
 
 app.use(notFound);
 app.use(errorHandler);
+
+/**
+ * A stray promise rejection must not disconnect every pharmacy.
+ *
+ * This process holds a live WhatsApp socket per tenant. Node's default is to
+ * treat an unhandled rejection as fatal, which means one slow database query
+ * on one request ends every session in the process — and that has now
+ * happened twice, from two different error paths.
+ *
+ * So it is logged loudly and the process survives. This is NOT a licence to
+ * ignore them: an unhandled rejection is always a bug in the code that
+ * produced it, and both of the ones seen so far were fixed at the source.
+ * This only stops a local mistake becoming a total outage.
+ *
+ * uncaughtException is deliberately NOT handled the same way. A rejected
+ * promise usually leaves the process coherent; a thrown exception escaping
+ * the stack does not, and continuing on unknown state is worse than
+ * restarting — session restore takes about four seconds.
+ */
+process.on('unhandledRejection', (reason) => {
+  console.error(JSON.stringify({
+    level: 'error',
+    msg: 'unhandled promise rejection — process kept alive to preserve live sessions',
+    error: reason?.message || String(reason),
+    stack: reason?.stack?.split('\n').slice(0, 4).join(' | '),
+  }));
+});
 
 async function start() {
   // Fail at boot, not on the first customer message. Config first, so a

@@ -8,15 +8,9 @@
 
 import { useEffect, useState } from 'react';
 import ConnectWhatsApp from './ConnectWhatsApp.jsx';
+import UploadCatalogue from './UploadCatalogue.jsx';
 
 const PENDING_STEPS = [
-  {
-    id: 'catalogue',
-    n: 2,
-    title: 'Upload catalogue',
-    body: 'Drop in the stock spreadsheet. Columns are detected automatically; anything unclear is asked once.',
-    phase: 'Phase 3',
-  },
   {
     id: 'golive',
     n: 3,
@@ -43,8 +37,9 @@ export default function App() {
         WhatsApp customer service and sales for independent pharmacies.
       </p>
 
-      <div className="mt-10">
+      <div className="mt-10 space-y-4">
         <ConnectWhatsApp />
+        <UploadCatalogue />
       </div>
 
       <ol className="mt-4 space-y-4">

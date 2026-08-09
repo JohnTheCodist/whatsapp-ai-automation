@@ -187,7 +187,12 @@ async function devBypass(req, res, next) {
 /** Valid session AND a real membership. The default for every tenant route. */
 async function requireAuth(req, res, next) {
   try {
-    if (env.devAuthBypass) return devBypass(req, res, next);
+    // AWAITED, not returned bare. `return devBypass(...)` hands back a promise
+    // nothing is watching: Express 4 does not catch async middleware
+    // rejections, so a database timeout in here became an unhandled rejection
+    // and killed the process — taking every pharmacy's live WhatsApp socket
+    // with it. Measured, not hypothetical.
+    if (env.devAuthBypass) return await devBypass(req, res, next);
 
     const user = await verifyUser(req, res);
     if (!user) return;
