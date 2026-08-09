@@ -1,0 +1,18 @@
+node_modules/
+dist/
+build/
+
+# Secrets — service-role keys and provider tokens live here.
+.env
+.env.*
+!.env.example
+server/.env
+
+*.log
+npm-debug.log*
+tmp/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+coverage/

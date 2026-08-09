@@ -1,0 +1,28 @@
+{
+  "name": "whatsapp-ai-automation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WhatsApp AI customer-service and sales automation for independent pharmacies. Multi-tenant SaaS.",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test \"server/tests/*.test.js\"",
+    "build": "npm --prefix client install && npm --prefix client run build",
+    "migrate": "node scripts/migrate.js",
+    "doctor": "node scripts/doctor.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.8",
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^4.19.2",
+    "express-rate-limit": "^8.6.2",
+    "helmet": "^8.3.0",
+    "multer": "^2.2.0",
+    "postgres": "^3.4.9",
+    "xlsx": "^0.18.5"
+  }
+}
