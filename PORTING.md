@@ -47,7 +47,7 @@ added — see the adaptation list.
 | `datasetClassifier.js` | Classifies sales vs inventory | Repurpose as the "you uploaded a sales export, not a catalogue" guard — genuinely useful, small change |
 | `productIdentityResolver.js` | Sound logic, but resolves against the analytics `product` table | Repoint at the new `products` table and its `natural_key` |
 | `llmMapper.js` | Prompt describes sales columns | Rewrite the prompt; keep the call/parse/validate structure, which is the valuable part |
-| `nafdacLookup.js` | Loads a bundled CSV at startup, blocking | Keep the lookup, make the load lazy; confirm the dataset's licence permits redistribution |
+| `nafdacLookup.js` | Loads a bundled CSV at startup, blocking | Keep the lookup, make the load lazy — 1.1 MB parsed synchronously on require delays the health check during boot. Licence now confirmed; see the note at the end of this file. |
 | `columnAlias.js` | Fine as-is | None beyond the rename already applied |
 
 ### Deliberately NOT ported
@@ -70,6 +70,11 @@ Augmentin".
 
 ## Licence note
 
-`server/data/pharma_nafdac_dataset.csv` came across with the port. Confirm
-its provenance and redistribution terms before this repo goes public or the
-product ships to paying customers. **UNVERIFIED.**
+`server/data/pharma_nafdac_dataset.csv` came across with the port.
+Redistribution was **confirmed permissible by the project owner on
+2026-08-09**, ahead of this repository being made public.
+
+Provenance, column-level caveats, and staleness behaviour are documented in
+[`server/data/README.md`](server/data/README.md). The source URL is still
+blank there and should be filled in — a public repo that ships a dataset
+without saying where it came from puts the burden on everyone downstream.
