@@ -2,16 +2,17 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "api",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["server/index.js"],
-      "port": 4000
-    },
-    {
-      "name": "web",
+      "//": "Ports are 4100/5273, not the defaults. This project runs alongside rxnaija-analytics and they would otherwise fight over 4000/5173.",
+      "name": "whatsapp-web",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "client", "run", "dev"],
-      "port": 5173
+      "port": 5273
+    },
+    {
+      "name": "whatsapp-api",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server/index.js"],
+      "port": 4100
     }
   ]
 }
