@@ -24,6 +24,7 @@
 const { getSql } = require('./db');
 const { sessionManager } = require('./whatsapp/sessionManager');
 const { evaluateOutbound, isOptOutRequest } = require('./whatsapp/conductPolicy');
+const { evaluateWarmup } = require('./whatsapp/warmupPolicy');
 const { normalizeMsisdn } = require('./whatsapp/senderIdentity');
 const { respond } = require('./ai/assistant');
 const { buildMenu, isMenuRequest, parseSelection, intentBriefing } = require('./ai/menu');
@@ -66,6 +67,25 @@ const TRANSIENT_CATEGORIES = new Set([
   'assistant_error',
   'filter_error',
 ]);
+
+/**
+ * Start the warm-up clock on the first message this number ever sends.
+ *
+ * `is null` in the WHERE clause is what makes this safe to call after every
+ * send: only the first one wins, so a number cannot be made "new" again by
+ * reconnecting, re-pairing, or a later code path forgetting the order.
+ *
+ * Called from one place rather than at each of the three send sites, because
+ * a fourth send site added later would silently not start the clock — and a
+ * warm-up that never starts is indistinguishable from one that is working.
+ */
+async function markWarmupStarted(db, pharmacyId) {
+  await db`
+    update pharmacies
+    set warmup_started_at = now()
+    where id = ${pharmacyId} and warmup_started_at is null
+  `;
+}
 
 const WORKER_ID = `${process.pid}@${require('node:os').hostname()}`;
 
@@ -154,6 +174,7 @@ async function processInbound(db, job) {
            ph.bot_name, ph.menu_enabled, ph.welcome_note,
            ph.daily_reply_cap, ph.hourly_conversation_cap,
            ph.quiet_hours_enabled, ph.quiet_hours_start, ph.quiet_hours_end,
+           ph.warmup_started_at, ph.warmup_enabled, ph.warmup_day1_limit, ph.warmup_days,
            wa.id as account_id, wa.status as account_status
     from messages m
     join conversations conv on conv.id = m.conversation_id
@@ -260,6 +281,36 @@ async function processInbound(db, job) {
     return { sent: false, reason: decision.reason };
   }
 
+  // ---- new-number warm-up -------------------------------------------------
+  //
+  // Separate from the conduct gate above, and deliberately so. That one's
+  // daily cap is a steady-state ceiling whose breach means "something is
+  // wrong, stop and let a person look". This is a temporary, expected,
+  // shrinking limit where hitting it is the system working — so it must not
+  // pause the pharmacy, or every Door A number would trip its own circuit
+  // breaker on day one for behaving exactly as designed.
+  const warmup = evaluateWarmup({
+    startedAt: row.warmup_started_at,
+    enabled: row.warmup_enabled,
+    day1Limit: row.warmup_day1_limit,
+    warmupDays: row.warmup_days,
+    // Reuses the count the conduct gate already fetched, rather than a
+    // second trailing-24h query per message.
+    sentToday: counts[0].replies_today,
+  });
+
+  if (!warmup.send) {
+    console.log(JSON.stringify({
+      level: 'info',
+      msg: 'reply held by warm-up',
+      to: row.wa_phone,
+      day: warmup.day,
+      limit: warmup.limit,
+      sentToday: warmup.sentToday,
+    }));
+    return { sent: false, reason: warmup.reason };
+  }
+
   if (!row.wa_jid) throw new Error(`customer has no wa_jid to reply to (message ${messageId})`);
   if (row.account_status !== 'connected') {
     throw new Error(`whatsapp account is ${row.account_status}, cannot send`);
@@ -308,6 +359,7 @@ async function processInbound(db, job) {
     });
 
     console.log(JSON.stringify({ level: 'info', msg: 'menu sent', to: row.wa_phone, returning: Boolean(row.greeted_at) }));
+    await markWarmupStarted(db, job.pharmacy_id);
     return { sent: true, reason: wantsMenu ? 'menu_requested' : 'greeting' };
   }
 
@@ -342,6 +394,7 @@ async function processInbound(db, job) {
         (${job.pharmacy_id}, ${row.conversation_id}, 'outbound', 'system',
          ${ack}, ${sent.providerMessageId}, 'sent')
     `;
+    await markWarmupStarted(db, job.pharmacy_id);
     return { sent: true, reason: 'menu:pharmacist' };
   }
 
@@ -448,6 +501,7 @@ async function processInbound(db, job) {
   console.log(JSON.stringify({
     level: 'info', msg: 'assistant replied', to: row.wa_phone, toolCalls: outcome.toolResults.length,
   }));
+  await markWarmupStarted(db, job.pharmacy_id);
   return { sent: true, reason: decision.reason };
 }
 
