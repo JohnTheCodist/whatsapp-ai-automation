@@ -53,6 +53,10 @@ function buildSystemPrompt({ pharmacyName, context, botName, menuBriefing }) {
     // separately, because the model's instinct is to promise the reassuring
     // version.
     '- You CAN send an order to the pharmacy, using create_order. Only after the customer has said exactly what they want and how many.',
+    // Without an explicit route for "we don't have it", the model either
+    // invents a substitute — clinical judgement it must never make — or ends
+    // the conversation, which loses a sale the pharmacy never hears about.
+    '- If find_products finds nothing, or the product is out of stock, and the customer still wants it: use ask_pharmacist. Never suggest a different medicine yourself, even one you are confident about. Deciding what substitutes for what is a pharmacist\'s job.',
     // Stock IS now held internally at this point (migration 0010), but the
     // customer must not be told so. The pharmacy has not agreed yet, and the
     // hold expires if nobody does. Telling someone their medicine is reserved
@@ -76,6 +80,24 @@ function buildSystemPrompt({ pharmacyName, context, botName, menuBriefing }) {
 
   // Conversational memory, passed as FACTS rather than as instructions, so a
   // customer cannot smuggle directives into the prompt through it.
+  // A pharmacist answered a request while the assistant was not in the loop.
+  // Without this, a customer replying "yes please" to the pharmacist's
+  // suggestion gets asked what they mean — having just been told.
+  //
+  // Stated as a fact about what a human already decided, not as permission to
+  // recommend anything: the assistant still may not propose a substitute of
+  // its own, only act on the one a pharmacist chose.
+  if (context?.pending_suggestion?.product_name) {
+    const s = context.pending_suggestion;
+    lines.push(
+      '',
+      'A PHARMACIST HAS ALREADY ANSWERED THIS CUSTOMER:',
+      `- They could not supply what was asked for, and suggested "${s.product_name}" at ₦${Number(s.price_naira).toLocaleString('en-NG')}.`,
+      '- The customer has seen that message. If they agree, place the order for that product with create_order.',
+      '- That suggestion came from a pharmacist. Do not add reasoning of your own about why it is suitable, and never suggest a different medicine yourself.',
+    );
+  }
+
   if (context?.last_product_name) {
     lines.push(
       '',

@@ -12,6 +12,7 @@ import ConnectWhatsApp from './ConnectWhatsApp.jsx';
 import UploadCatalogue from './UploadCatalogue.jsx';
 import Inbox from './Inbox.jsx';
 import Orders from './Orders.jsx';
+import Requests from './Requests.jsx';
 import AssistantSettings from './AssistantSettings.jsx';
 import { playOrderChime, unlockChime, isUnlocked } from './orderChime.js';
 
@@ -19,6 +20,7 @@ const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'inbox', label: 'Inbox' },
   { id: 'orders', label: 'Orders' },
+  { id: 'requests', label: 'Requests' },
   { id: 'setup', label: 'Setup' },
 ];
 
@@ -28,7 +30,7 @@ export default function App() {
   // Badge counts live in the shell so a staff member on the Orders tab still
   // sees that someone is waiting in the Inbox. A count only visible from
   // inside the tab it describes is useless.
-  const [badges, setBadges] = useState({ inbox: 0, orders: 0 });
+  const [badges, setBadges] = useState({ inbox: 0, orders: 0, requests: 0 });
   const [soundOn, setSoundOn] = useState(false);
   // The previous pending count, so the chime fires on an INCREASE rather than
   // on every poll. Without this it would ring every 30 seconds for as long as
@@ -52,7 +54,12 @@ export default function App() {
         const s = await fetch('/api/summary').then((r) => r.json());
         if (!cancelled) {
           const pending = s?.pending_orders || 0;
-          setBadges({ inbox: s?.open_handoffs || 0, orders: pending });
+          setBadges((b) => ({
+            ...b,
+            inbox: s?.open_handoffs || 0,
+            orders: pending,
+            requests: s?.open_requests ?? b.requests,
+          }));
 
           // Ring only when the count GOES UP. The first poll seeds the
           // baseline without ringing, so opening the dashboard to five
@@ -141,6 +148,9 @@ export default function App() {
         {tab === 'overview' && <Overview onNavigate={setTab} />}
         {tab === 'inbox' && <Inbox />}
         {tab === 'orders' && <Orders />}
+        {tab === 'requests' && (
+          <Requests onCount={(n) => setBadges((b) => (b.requests === n ? b : { ...b, requests: n }))} />
+        )}
         {tab === 'setup' && (
           <div className="space-y-4">
             <AssistantSettings />

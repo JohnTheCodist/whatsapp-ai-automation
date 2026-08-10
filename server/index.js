@@ -85,7 +85,9 @@ app.get('/api/summary', require('./middleware/auth').requireAuth, async (req, re
         (select count(*)::int from handoffs
            where pharmacy_id = ${req.pharmacyId} and resolved_at is null) as open_handoffs,
         (select count(*)::int from orders
-           where pharmacy_id = ${req.pharmacyId} and status = 'pending') as pending_orders
+           where pharmacy_id = ${req.pharmacyId} and status = 'pending') as pending_orders,
+        (select count(*)::int from product_requests
+           where pharmacy_id = ${req.pharmacyId} and status = 'open') as open_requests
     `;
     res.json(row);
   } catch (err) {
@@ -98,6 +100,7 @@ app.use('/api/pharmacies', require('./routes/pharmacies'));  // Phase 1
 app.use('/api/whatsapp', require('./routes/whatsapp'));      // Phase 2
 app.use('/api/catalogue', require('./routes/catalogue'));    // Phase 3
 app.use('/api/conversations', require('./routes/conversations')); // Phase 4 — staff inbox
+app.use('/api/requests', require('./routes/requests'));      // pharmacist alternatives
 app.use('/api/orders', require('./routes/orders'));               // Phase 5 — order queue
 
 app.use(notFound);

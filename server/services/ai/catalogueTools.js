@@ -162,6 +162,51 @@ const TOOLS = [
     },
   },
   {
+    name: 'ask_pharmacist',
+    description:
+      'Ask the pharmacy staff whether they can supply something the catalogue does not have, or can '
+      + 'suggest an alternative. Use this when find_products found nothing (or the product is out of '
+      + 'stock) AND the customer still wants it. Do NOT suggest an alternative medicine yourself — '
+      + 'only a pharmacist may decide what substitutes for what. After calling this, tell the customer '
+      + 'you have asked the pharmacist and will come back to them.',
+    parameters: {
+      type: 'object',
+      properties: {
+        product: {
+          type: 'string',
+          description: 'What the customer asked for, in their words, e.g. "ibucap" or "cough syrup for a child".',
+        },
+      },
+      required: ['product'],
+    },
+    async run(ctx, args) {
+      const { pharmacyId, conversationId, customerId } = ctx;
+      assertPharmacyId(pharmacyId);
+
+      if (!conversationId || !customerId) {
+        return { asked: false, error: 'This conversation cannot raise a request right now.' };
+      }
+      const product = String(args?.product || '').trim();
+      if (!product) return { asked: false, error: 'No product was named.' };
+
+      const { openRequest } = require('../orders/requestService');
+      const { request, created } = await openRequest(pharmacyId, {
+        conversationId, customerId, requestedText: product,
+      });
+
+      return {
+        asked: true,
+        already_pending: !created,
+        request_id: request.id,
+        note:
+          'A pharmacist has been asked and will answer shortly. Tell the customer you have checked with '
+          + 'the pharmacist and will come back to them. Do NOT suggest a substitute yourself, do not '
+          + 'guess what they might offer, and do not promise a timeframe.',
+      };
+    },
+  },
+
+  {
     name: 'create_order',
     description:
       'Send an order to the pharmacy for a customer who has said they want to buy specific products. '
