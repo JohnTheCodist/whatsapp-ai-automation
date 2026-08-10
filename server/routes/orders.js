@@ -33,7 +33,14 @@ function customerMessage(order, toStatus) {
   const ref = order.reference;
   switch (toStatus) {
     case 'confirmed':
-      return `Your order ${ref} has been confirmed by the pharmacy. Total ${money(order.total_kobo)}. We'll let you know when it's ready.`;
+      // The ONLY place the word "reserved" is used to a customer, and it is
+      // true here for the first time: stock was held at order creation, and
+      // a pharmacist has now agreed to supply it. Saying this any earlier
+      // would promise something no human had approved — which is why the
+      // assistant is blocked from saying it at all.
+      return order.stock_held
+        ? `Your order ${ref} is confirmed and reserved for you. Total ${money(order.total_kobo)}. We'll let you know when it's ready to collect.`
+        : `Your order ${ref} has been confirmed by the pharmacy. Total ${money(order.total_kobo)}. We'll let you know when it's ready.`;
     case 'ready':
       return `Your order ${ref} is ready for collection. Total ${money(order.total_kobo)}.`;
     case 'completed':

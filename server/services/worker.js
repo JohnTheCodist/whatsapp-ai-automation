@@ -26,6 +26,7 @@ const { sessionManager } = require('./whatsapp/sessionManager');
 const { evaluateOutbound, isOptOutRequest } = require('./whatsapp/conductPolicy');
 const { evaluateWarmup } = require('./whatsapp/warmupPolicy');
 const { normalizeMsisdn } = require('./whatsapp/senderIdentity');
+const { expireStaleHolds } = require('./orders/orderService');
 const { respond } = require('./ai/assistant');
 const { buildMenu, isMenuRequest, parseSelection, intentBriefing } = require('./ai/menu');
 const { env } = require('../config/env');
@@ -420,6 +421,8 @@ async function processInbound(db, job) {
     // account.
     customerId: row.customer_id,
     conversationId: row.conversation_id,
+    // For the staff alert, so it can say who ordered rather than just a number.
+    customer: { display_name: row.display_name, wa_phone: row.wa_phone },
     botName: row.bot_name,
     // A menu choice is a bare digit, which tells the model nothing on its
     // own. Passed as a FACT about what was chosen, not as an instruction —
@@ -534,6 +537,69 @@ async function tick() {
   return true;
 }
 
+/**
+ * Return stock from holds nobody confirmed, and tell those customers.
+ *
+ * Throttled to once a minute rather than running every loop: this scans for
+ * due orders, and the loop runs every couple of seconds. Held stock coming
+ * back a minute late costs nothing; hammering the database for it costs
+ * connections, which is the failure that already took this system down once.
+ */
+let lastSweepAt = 0;
+const SWEEP_INTERVAL_MS = 60_000;
+
+async function sweepExpiredHolds(db) {
+  if (Date.now() - lastSweepAt < SWEEP_INTERVAL_MS) return;
+  lastSweepAt = Date.now();
+
+  const expired = await expireStaleHolds();
+  for (const order of expired) {
+    console.log(JSON.stringify({
+      level: 'info', msg: 'reservation expired, stock returned',
+      reference: order.reference, orderId: order.id,
+    }));
+
+    // Tell the customer. They were never promised the stock — only that the
+    // request went to the pharmacy — so this reports an outcome rather than
+    // breaking a promise. Best-effort: a failed send must not stop the next
+    // order's stock from being released.
+    try {
+      const [target] = await db`
+        select c.wa_jid, c.wa_phone, wa.id as account_id
+        from orders o
+        join customers c on c.id = o.customer_id
+        left join whatsapp_accounts wa
+          on wa.pharmacy_id = o.pharmacy_id and wa.provider = 'baileys' and wa.status = 'connected'
+        where o.id = ${order.id}
+      `;
+      if (!target?.account_id) continue;
+
+      const body = `Order ${order.reference} has expired because the pharmacy did not confirm it in time. `
+        + 'Nothing has been charged. Please message us again if you still need it.';
+
+      const sent = await sessionManager.sendText(
+        target.account_id,
+        target.wa_jid || `${target.wa_phone}@s.whatsapp.net`,
+        body,
+        { delay: false },
+      );
+      if (order.conversation_id) {
+        await db`
+          insert into messages (pharmacy_id, conversation_id, direction, author, body,
+                                provider_message_id, delivery_status)
+          values (${order.pharmacy_id}, ${order.conversation_id}, 'outbound', 'system', ${body},
+                  ${sent.providerMessageId}, 'sent')
+        `;
+      }
+    } catch (err) {
+      console.error(JSON.stringify({
+        level: 'warn', msg: 'could not tell customer their hold expired',
+        reference: order.reference, error: err.message,
+      }));
+    }
+  }
+}
+
 function start() {
   if (running) return;
   running = true;
@@ -541,6 +607,7 @@ function start() {
   const loop = async () => {
     if (!running) return;
     try {
+      await sweepExpiredHolds(getSql());
       // Drain rather than sleeping between each job, so a burst is not
       // served at one message per poll interval.
       let worked = true;

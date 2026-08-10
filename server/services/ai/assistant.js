@@ -53,7 +53,12 @@ function buildSystemPrompt({ pharmacyName, context, botName, menuBriefing }) {
     // separately, because the model's instinct is to promise the reassuring
     // version.
     '- You CAN send an order to the pharmacy, using create_order. Only after the customer has said exactly what they want and how many.',
-    '- Sending an order does NOT reserve, hold or set aside anything, and does not confirm it. Staff decide. Say "I\'ve sent this to the pharmacy and they\'ll confirm shortly" — never "reserved", "held", "set aside" or "confirmed".',
+    // Stock IS now held internally at this point (migration 0010), but the
+    // customer must not be told so. The pharmacy has not agreed yet, and the
+    // hold expires if nobody does. Telling someone their medicine is reserved
+    // and then cancelling it is worse than never saying it.
+    '- Sending an order does NOT confirm it, and you must NOT tell the customer anything is reserved, held or set aside. Only a pharmacist confirming makes that true, and they will be told separately when it happens.',
+    '- Say "I\'ve sent this to the pharmacy and they\'ll confirm shortly" — never "reserved", "held", "set aside" or "confirmed".',
     '- Always give the customer the order reference that create_order returns.',
     '- If create_order refuses, tell the customer the reason it gave, plainly. Do not retry it and do not pretend it worked.',
     '- Keep replies short. This is WhatsApp, not email. One or two sentences unless listing products.',
@@ -95,7 +100,7 @@ function buildSystemPrompt({ pharmacyName, context, botName, menuBriefing }) {
  * @returns {Promise<{action:'reply'|'handoff', text?:string, reason?:string,
  *   category?:string, toolResults:object[], contextUpdate?:object}>}
  */
-async function respond({ pharmacyId, pharmacyName, text, history = [], context = {}, customerId = null, conversationId = null, botName = null, menuBriefing = null }) {
+async function respond({ pharmacyId, pharmacyName, text, history = [], context = {}, customerId = null, conversationId = null, botName = null, menuBriefing = null, customer = null }) {
   // ---- 1. safety, before anything else ----------------------------------
   const screening = screenMessage(text);
   if (!screening.allow) {
@@ -169,7 +174,7 @@ async function respond({ pharmacyId, pharmacyName, text, history = [], context =
           args = {};
         }
 
-        const result = await runTool({ pharmacyId, customerId, conversationId }, call.function?.name, args);
+        const result = await runTool({ pharmacyId, customerId, conversationId, customer }, call.function?.name, args);
         toolResults.push(result);
 
         // Remember the top match so "I want two" resolves next turn, and

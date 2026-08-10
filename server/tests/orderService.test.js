@@ -70,7 +70,10 @@ before(async () => {
 
   ctx = {
     userA, userB, a, b, customerId: customer.id,
-    priced:    await mkProduct(a.id, { name: 'Amoxicillin 500mg', price_kobo: 156000, stock_tracked: true, stock_qty: 10 }),
+    // Deliberately generous: since 0010, every createOrder in this file
+    // actually decrements stock. A tight number here would make later tests
+    // fail for running out rather than for the thing they assert.
+    priced:    await mkProduct(a.id, { name: 'Amoxicillin 500mg', price_kobo: 156000, stock_tracked: true, stock_qty: 500 }),
     unpriced:  await mkProduct(a.id, { name: 'Mystery Syrup',     price_kobo: null }),
     lowStock:  await mkProduct(a.id, { name: 'Coartem',           price_kobo: 197000, stock_tracked: true, stock_qty: 2 }),
     hidden:    await mkProduct(a.id, { name: 'Withdrawn Tabs',    price_kobo: 100000, status: 'hidden' }),

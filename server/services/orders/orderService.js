@@ -13,11 +13,16 @@
  * argument at the counter. The catalogue is the source of truth for money;
  * the model is a way of finding rows in it.
  *
- * WHAT AN ORDER MEANS
- * `pending` means the customer asked. It does not mean stock is held or that
- * the pharmacy has agreed — a person confirms that. The assistant must say
- * "I've sent this to the pharmacy", never "it's reserved", because until
- * someone behind the counter looks, nothing is.
+ * WHAT AN ORDER MEANS — TWO STAGES
+ * `pending` DOES hold stock (0010), so a second customer cannot be sold the
+ * same pack while the pharmacist decides. It does NOT mean the pharmacy has
+ * agreed. Those are different facts and the customer is told only the second
+ * one: the assistant says "I've sent this to the pharmacy", never "it's
+ * reserved", until a human confirms. replyValidator enforces that.
+ *
+ * Holding without promising is the whole design. Holding at confirmation
+ * would let the pharmacist confirm a pack already gone; promising at
+ * creation would commit the pharmacy to something nobody approved.
  */
 
 const crypto = require('node:crypto');
@@ -93,6 +98,11 @@ async function createOrder(pharmacyId, { customerId, conversationId = null, item
   const db = getSql();
   const ids = [...wanted.keys()];
 
+  const [settings] = await db`
+    select reservation_hold_minutes from pharmacies where id = ${pharmacyId}
+  `;
+  const holdMinutes = settings?.reservation_hold_minutes ?? 120;
+
   // Scoped to the pharmacy: a product id from another tenant simply does not
   // resolve, so a leaked id cannot be ordered here.
   const products = await db`
@@ -122,6 +132,9 @@ async function createOrder(pharmacyId, { customerId, conversationId = null, item
         error: `${p.name} has no price in the catalogue, so it cannot be ordered here. A member of staff can confirm the price.`,
       };
     }
+    // Checked here for a good error message, but NOT relied on — the real
+    // guard is the conditional UPDATE inside the transaction below. Between
+    // this read and that write, another customer can take the last pack.
     if (p.stock_tracked && (p.stock_qty ?? 0) < quantity) {
       return {
         ok: false,
@@ -136,6 +149,9 @@ async function createOrder(pharmacyId, { customerId, conversationId = null, item
       unit_price_kobo: p.price_kobo,
       quantity,
       line_total_kobo: p.price_kobo * quantity,
+      // Not a column — stripped before insert. Tells the hold loop whether
+      // this product has a stock number to decrement at all.
+      _stock_tracked: p.stock_tracked,
     });
   }
 
@@ -148,17 +164,56 @@ async function createOrder(pharmacyId, { customerId, conversationId = null, item
     const reference = generateReference();
     try {
       const order = await db.begin(async (tx) => {
+        // ---- hold the stock, atomically -------------------------------
+        //
+        // `and stock_qty >= quantity` in the WHERE clause is the actual
+        // concurrency guard. The read above is only for a good error
+        // message; between it and here, another customer can take the last
+        // pack. Postgres evaluates this condition and the decrement in one
+        // statement, so exactly one of two racing orders can win.
+        //
+        // Untracked products hold nothing — the pharmacy is not counting
+        // them, so there is no number to decrement and nothing to restore
+        // later.
+        let heldAnything = false;
+        for (const line of lines) {
+          if (!line._stock_tracked) continue;
+
+          const [held] = await tx`
+            update products
+            set stock_qty = stock_qty - ${line.quantity}, updated_at = now()
+            where id = ${line.product_id}
+              and pharmacy_id = ${pharmacyId}
+              and stock_tracked = true
+              and stock_qty >= ${line.quantity}
+            returning id, stock_qty
+          `;
+
+          if (!held) {
+            // Someone took it while this order was being built. Aborting the
+            // transaction rolls back every hold placed above it, so a
+            // multi-line order never half-reserves.
+            const err = new Error(`RACE_LOST:${line.name_snapshot}`);
+            err.raceLost = line.name_snapshot;
+            throw err;
+          }
+          heldAnything = true;
+        }
+
         const [created] = await tx`
           insert into orders (pharmacy_id, customer_id, conversation_id, reference,
-                              status, total_kobo, fulfilment, note)
+                              status, total_kobo, fulfilment, note,
+                              stock_held, reserved_until)
           values (${pharmacyId}, ${customerId}, ${conversationId}, ${reference},
-                  'pending', ${totalKobo}, ${fulfilment}, ${note})
+                  'pending', ${totalKobo}, ${fulfilment}, ${note},
+                  ${heldAnything},
+                  ${heldAnything ? tx`now() + (${holdMinutes} || ' minutes')::interval` : null})
           returning *
         `;
 
         await tx`
           insert into order_items ${tx(
-            lines.map((l) => ({ ...l, order_id: created.id, pharmacy_id: pharmacyId })),
+            lines.map(({ _stock_tracked, ...l }) => ({ ...l, order_id: created.id, pharmacy_id: pharmacyId })),
             'order_id', 'pharmacy_id', 'product_id', 'name_snapshot',
             'unit_price_kobo', 'quantity', 'line_total_kobo'
           )}
@@ -174,6 +229,15 @@ async function createOrder(pharmacyId, { customerId, conversationId = null, item
 
       return { ok: true, order: { ...order, items: lines } };
     } catch (err) {
+      if (err.raceLost) {
+        // Another customer took it mid-transaction. Every hold this order
+        // placed was rolled back with it, so nothing is stranded.
+        return {
+          ok: false,
+          code: 'INSUFFICIENT_STOCK',
+          error: `Someone just took the last ${err.raceLost}. It is no longer available.`,
+        };
+      }
       if (/unique/i.test(err.message) && /reference/i.test(err.message)) continue;
       throw err;
     }
@@ -191,6 +255,44 @@ const ALLOWED_TRANSITIONS = {
   cancelled: [],
   rejected: [],
 };
+
+/** Statuses where the pharmacy is no longer going to supply the order. */
+const RELEASES_STOCK = new Set(['rejected', 'cancelled']);
+
+/**
+ * Return held units to the shelf. Exactly once.
+ *
+ * `and stock_released = false` is the guard, checked inside the same
+ * statement that sets the flag. Double-restoring would inflate stock — a
+ * wrong number in the direction that causes overselling, which is the
+ * failure a customer experiences at the counter rather than in a log.
+ *
+ * @param {object} tx  must be a transaction — the flag and the increments
+ *   have to land together or neither.
+ */
+async function releaseStock(tx, pharmacyId, orderId) {
+  const [claimed] = await tx`
+    update orders set stock_released = true
+    where id = ${orderId} and pharmacy_id = ${pharmacyId}
+      and stock_held = true and stock_released = false
+    returning id
+  `;
+  // Already released, or never held anything. Either way, nothing to do —
+  // and crucially, no error: a second cancel is not a failure.
+  if (!claimed) return 0;
+
+  const restored = await tx`
+    update products p
+    set stock_qty = p.stock_qty + oi.quantity, updated_at = now()
+    from order_items oi
+    where oi.order_id = ${orderId}
+      and oi.product_id = p.id
+      and p.pharmacy_id = ${pharmacyId}
+      and p.stock_tracked = true
+    returning p.id
+  `;
+  return restored.length;
+}
 
 async function updateStatus(pharmacyId, orderId, toStatus, { changedBy = null, note = null, actorType = 'staff' } = {}) {
   assertPharmacyId(pharmacyId);
@@ -215,8 +317,18 @@ async function updateStatus(pharmacyId, orderId, toStatus, { changedBy = null, n
   }
 
   const updated = await db.begin(async (tx) => {
+    // Stock goes back when the pharmacy is no longer supplying it. Not on
+    // `completed` — that stock genuinely left the shelf with the customer.
+    if (RELEASES_STOCK.has(toStatus)) {
+      await releaseStock(tx, pharmacyId, orderId);
+    }
+
     const [row] = await tx`
-      update orders set status = ${toStatus}, status_detail = ${note}, updated_at = now()
+      update orders set status = ${toStatus}, status_detail = ${note},
+             -- A confirmed order is not on a countdown any more; the hold
+             -- became a commitment the moment a person agreed to it.
+             reserved_until = ${toStatus === 'pending' ? tx`reserved_until` : null},
+             updated_at = now()
       where id = ${orderId} and pharmacy_id = ${pharmacyId}
       returning *
     `;
@@ -262,4 +374,71 @@ async function listOrders(pharmacyId, { status = null, limit = 50 } = {}) {
   return rows.map((o) => ({ ...o, items: byOrder.get(o.id) || [] }));
 }
 
-module.exports = { createOrder, updateStatus, listOrders, generateReference, ALLOWED_TRANSITIONS };
+/**
+ * Return stock from pending orders nobody acted on.
+ *
+ * WHY THIS EXISTS
+ * A hold with no deadline is inventory the pharmacy cannot sell to the person
+ * standing at the counter. One abandoned WhatsApp conversation would silently
+ * remove a pack from the shelf permanently — and the pharmacist would have no
+ * way to discover why their stock count is wrong.
+ *
+ * Runs across ALL pharmacies, so it takes no pharmacyId and is deliberately
+ * not exported through any tenant-scoped path. Every write below is still
+ * bounded to the order's own pharmacy_id.
+ *
+ * @returns {Promise<Array<{id, reference, pharmacy_id, conversation_id}>>}
+ *   the expired orders, so the caller can tell each customer.
+ */
+async function expireStaleHolds({ limit = 50 } = {}) {
+  const db = getSql();
+
+  const due = await db`
+    select id, reference, pharmacy_id, conversation_id, customer_id
+    from orders
+    where status = 'pending'
+      and stock_held = true
+      and stock_released = false
+      and reserved_until is not null
+      and reserved_until < now()
+    order by reserved_until
+    limit ${limit}
+  `;
+
+  const expired = [];
+  for (const order of due) {
+    // One transaction per order rather than one for the batch: a single
+    // problem order must not block every other pharmacy's stock from coming
+    // back.
+    try {
+      await db.begin(async (tx) => {
+        await releaseStock(tx, order.pharmacy_id, order.id);
+        await tx`
+          update orders
+          set status = 'cancelled',
+              status_detail = 'Expired — the pharmacy did not confirm in time.',
+              reserved_until = null,
+              updated_at = now()
+          where id = ${order.id} and status = 'pending'
+        `;
+        await tx`
+          insert into order_status_history (order_id, pharmacy_id, from_status, to_status, actor_type, note)
+          values (${order.id}, ${order.pharmacy_id}, 'pending', 'cancelled', 'system',
+                  'Hold expired before anyone confirmed it.')
+        `;
+      });
+      expired.push(order);
+    } catch (err) {
+      console.error(JSON.stringify({
+        level: 'error', msg: 'could not expire order hold',
+        orderId: order.id, error: err.message,
+      }));
+    }
+  }
+  return expired;
+}
+
+module.exports = {
+  createOrder, updateStatus, listOrders, generateReference,
+  expireStaleHolds, releaseStock, ALLOWED_TRANSITIONS, RELEASES_STOCK,
+};

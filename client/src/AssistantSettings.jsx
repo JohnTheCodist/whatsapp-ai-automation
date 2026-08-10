@@ -21,6 +21,7 @@ export default function AssistantSettings() {
   const [botName, setBotName] = useState('');
   const [welcomeNote, setWelcomeNote] = useState('');
   const [menuEnabled, setMenuEnabled] = useState(true);
+  const [notifyPhone, setNotifyPhone] = useState('');
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -42,6 +43,7 @@ export default function AssistantSettings() {
         setBotName(j.pharmacy.bot_name || '');
         setWelcomeNote(j.pharmacy.welcome_note || '');
         setMenuEnabled(j.pharmacy.menu_enabled !== false);
+        setNotifyPhone(j.pharmacy.notify_phone || '');
       } catch (e) {
         setError(e.message);
       } finally {
@@ -74,7 +76,7 @@ export default function AssistantSettings() {
         fetch('/api/pharmacies/me/assistant', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ botName, welcomeNote, menuEnabled }),
+          body: JSON.stringify({ botName, welcomeNote, menuEnabled, notifyPhone }),
         })
       );
 
@@ -206,6 +208,20 @@ export default function AssistantSettings() {
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={menuEnabled} onChange={(e) => setMenuEnabled(e.target.checked)} />
             <span className="text-sm text-slate-700">Show the menu of options after greeting</span>
+          </label>
+
+          <label className="block border-t border-slate-200 pt-4">
+            <span className="text-sm font-medium text-slate-700">Alert this number about new orders</span>
+            <input
+              value={notifyPhone}
+              onChange={(e) => setNotifyPhone(e.target.value.slice(0, 32))}
+              placeholder="2348012345678"
+              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+            />
+            <span className="mt-1 block text-xs text-slate-500">
+              A WhatsApp message goes here when a customer places an order — useful when nobody is
+              watching this screen. Leave blank for no alerts.
+            </span>
           </label>
 
           <div className="flex items-center gap-3 pt-2">

@@ -23,6 +23,7 @@
 
 const { getSql, assertPharmacyId } = require('../db');
 const { createOrder } = require('../orders/orderService');
+const { alertStaffOfNewOrder } = require('../orders/staffAlert');
 
 /** Kobo -> naira, for anything a human will read. */
 function naira(kobo) {
@@ -222,6 +223,17 @@ const TOOLS = [
         return { created: false, reason: result.error, code: result.code };
       }
 
+      // Alert staff, but never let a failed alert fail the order. The order
+      // exists and stock is already held; throwing here would tell the
+      // customer their request failed when it did not.
+      alertStaffOfNewOrder(pharmacyId, result.order, ctx.customer || {})
+        .then((r) => console.log(JSON.stringify({
+          level: r.sent ? 'info' : 'warn', msg: 'staff order alert', sent: r.sent, reason: r.reason,
+        })))
+        .catch((err) => console.error(JSON.stringify({
+          level: 'error', msg: 'staff order alert threw', error: err.message,
+        })));
+
       return {
         created: true,
         reference: result.order.reference,
@@ -235,7 +247,8 @@ const TOOLS = [
         })),
         note:
           'The order has been sent to the pharmacy and is awaiting their confirmation. '
-          + 'Give the customer the reference. Do NOT say the stock is reserved or held.',
+          + 'Give the customer the reference. Stock is held internally, but the customer must NOT '
+          + 'be told it is reserved — only a pharmacist confirming makes that true.',
       };
     },
   },

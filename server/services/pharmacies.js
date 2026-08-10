@@ -203,7 +203,9 @@ async function getPharmacy(pharmacyId) {
   assertPharmacyId(pharmacyId);
   const db = getSql();
   const [row] = await db`
-    select id, name, slug, status, bot_name, welcome_note, menu_enabled, created_at, updated_at
+    select id, name, slug, status, bot_name, welcome_note, menu_enabled,
+           notify_phone, notify_on_new_order, reservation_hold_minutes,
+           created_at, updated_at
     from pharmacies where id = ${pharmacyId}
   `;
   return row || null;
@@ -256,8 +258,16 @@ async function updateAssistantSettings(pharmacyId, fields = {}) {
     ? normaliseShortText(fields.welcomeNote, MAX_WELCOME_NOTE, 'Welcome note')
     : undefined;
 
+  // Where new-order alerts go. Stored as typed rather than normalised here,
+  // because the owner should see back exactly what they entered;
+  // normalizeMsisdn is applied at send time in staffAlert.js.
+  const notifyPhone = 'notifyPhone' in fields
+    ? normaliseShortText(fields.notifyPhone, 32, 'Alert number')
+    : undefined;
+
   const current = await db`
-    select bot_name, welcome_note, menu_enabled from pharmacies where id = ${pharmacyId}
+    select bot_name, welcome_note, menu_enabled, notify_phone, notify_on_new_order
+    from pharmacies where id = ${pharmacyId}
   `;
   if (!current.length) return null;
 
@@ -266,9 +276,12 @@ async function updateAssistantSettings(pharmacyId, fields = {}) {
       bot_name = ${botName !== undefined ? botName : current[0].bot_name},
       welcome_note = ${welcomeNote !== undefined ? welcomeNote : current[0].welcome_note},
       menu_enabled = ${'menuEnabled' in fields ? Boolean(fields.menuEnabled) : current[0].menu_enabled},
+      notify_phone = ${notifyPhone !== undefined ? notifyPhone : current[0].notify_phone},
+      notify_on_new_order = ${'notifyOnNewOrder' in fields ? Boolean(fields.notifyOnNewOrder) : current[0].notify_on_new_order},
       updated_at = now()
     where id = ${pharmacyId}
-    returning id, name, bot_name, welcome_note, menu_enabled, updated_at
+    returning id, name, bot_name, welcome_note, menu_enabled,
+              notify_phone, notify_on_new_order, updated_at
   `;
   return row;
 }

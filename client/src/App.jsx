@@ -6,12 +6,13 @@
  * steps, and the tab carrying work to do says how much.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ConnectWhatsApp from './ConnectWhatsApp.jsx';
 import UploadCatalogue from './UploadCatalogue.jsx';
 import Inbox from './Inbox.jsx';
 import Orders from './Orders.jsx';
 import AssistantSettings from './AssistantSettings.jsx';
+import { playOrderChime, unlockChime, isUnlocked } from './orderChime.js';
 
 const TABS = [
   { id: 'inbox', label: 'Inbox' },
@@ -26,6 +27,11 @@ export default function App() {
   // sees that someone is waiting in the Inbox. A count only visible from
   // inside the tab it describes is useless.
   const [badges, setBadges] = useState({ inbox: 0, orders: 0 });
+  const [soundOn, setSoundOn] = useState(false);
+  // The previous pending count, so the chime fires on an INCREASE rather than
+  // on every poll. Without this it would ring every 30 seconds for as long as
+  // an order sat unconfirmed, which is how an alert gets muted forever.
+  const prevPending = useRef(null);
 
   useEffect(() => {
     fetch('/api/health').then((r) => r.json()).then(setHealth).catch(() => setHealth({ status: 'unreachable' }));
@@ -43,7 +49,16 @@ export default function App() {
         // looked like a broken network.
         const s = await fetch('/api/summary').then((r) => r.json());
         if (!cancelled) {
-          setBadges({ inbox: s?.open_handoffs || 0, orders: s?.pending_orders || 0 });
+          const pending = s?.pending_orders || 0;
+          setBadges({ inbox: s?.open_handoffs || 0, orders: pending });
+
+          // Ring only when the count GOES UP. The first poll seeds the
+          // baseline without ringing, so opening the dashboard to five
+          // waiting orders does not sound an alarm about old news.
+          if (prevPending.current !== null && pending > prevPending.current) {
+            playOrderChime();
+          }
+          prevPending.current = pending;
         }
       } catch { /* the tabs still work without badges */ }
     };
@@ -61,13 +76,37 @@ export default function App() {
             WhatsApp customer service and sales for independent pharmacies.
           </p>
         </div>
-        <span
-          className={`rounded px-2 py-0.5 text-xs ${
-            health?.status === 'ok' ? 'bg-teal-100 text-teal-800' : 'bg-red-100 text-red-700'
-          }`}
-        >
-          {health ? health.status : 'checking…'}
-        </span>
+        <div className="flex items-center gap-2">
+          {/* Browsers refuse to play audio until the user clicks something, so
+              this cannot be a passive setting — it has to be a real click, and
+              it has to say plainly whether sound is actually working. A
+              pharmacist trusting an alert that is silently blocked is worse
+              off than one who knows there is none. */}
+          <button
+            type="button"
+            onClick={async () => {
+              if (soundOn) { setSoundOn(false); return; }
+              const ok = await unlockChime();
+              setSoundOn(ok);
+              if (ok) playOrderChime({ repeats: 1 });
+            }}
+            className={`rounded border px-2 py-0.5 text-xs transition ${
+              soundOn && isUnlocked()
+                ? 'border-teal-300 bg-teal-50 text-teal-800'
+                : 'border-slate-300 text-slate-500 hover:bg-slate-50'
+            }`}
+            title={soundOn ? 'New-order sound is on. Click to mute.' : 'Click to turn on a sound for new orders.'}
+          >
+            {soundOn && isUnlocked() ? '🔔 Sound on' : '🔕 Sound off'}
+          </button>
+          <span
+            className={`rounded px-2 py-0.5 text-xs ${
+              health?.status === 'ok' ? 'bg-teal-100 text-teal-800' : 'bg-red-100 text-red-700'
+            }`}
+          >
+            {health ? health.status : 'checking…'}
+          </span>
+        </div>
       </header>
 
       <nav className="mt-8 flex gap-1 border-b border-slate-200">
