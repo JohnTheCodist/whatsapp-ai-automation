@@ -47,6 +47,24 @@ router.get('/', requireAuth, async (req, res, next) => {
         (select count(*)::int from orders
            where pharmacy_id = ${pid} and status = 'pending') as pending_orders,
 
+        -- Conversations whose most recent message is from the CUSTOMER.
+        --
+        -- The single most important number on this page, and it was missing
+        -- from the first version: today showed 18 inbound, 5 replied, 2
+        -- handed off, and nothing accounted for the other 11. A dashboard
+        -- that reports what the assistant did but not who it left waiting
+        -- lets a pharmacy believe it is answering everyone.
+        --
+        -- Counted per conversation rather than per message, because three
+        -- messages answered by one reply is not three failures — someone
+        -- whose last word went unanswered is.
+        (select count(*)::int from conversations c
+           where c.pharmacy_id = ${pid}
+             and exists (select 1 from messages m where m.conversation_id = c.id)
+             and (select direction from messages m
+                    where m.conversation_id = c.id
+                    order by m.id desc limit 1) = 'inbound') as awaiting_reply,
+
         -- ---- today ----
         (select count(*)::int from messages
            where pharmacy_id = ${pid} and direction = 'inbound'
@@ -134,6 +152,11 @@ router.get('/', requireAuth, async (req, res, next) => {
       waiting: {
         handoffs: row.open_handoffs,
         orders: row.pending_orders,
+        // Customers whose last message got no response at all — from the
+        // assistant or a human. Distinct from `handoffs`: an open handoff is
+        // at least visible in the Inbox, whereas these are invisible unless
+        // this number exists.
+        customers: row.awaiting_reply,
       },
       today: {
         messagesIn: row.messages_in_24h,

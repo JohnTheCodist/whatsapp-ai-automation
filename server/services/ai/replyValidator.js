@@ -219,7 +219,19 @@ function validateReply(text, toolResults = [], options = {}) {
   // so any completed-action claim is false by construction. When ordering
   // lands, this check becomes "did the order tool actually run this turn"
   // rather than being removed.
-  const madeOrder = orderWasCreated(toolResults);
+  // An order created EARLIER in this conversation counts too.
+  //
+  // Real traffic hit this: the assistant recapped "I've sent this to the
+  // pharmacy" about an order placed a turn earlier, no create_order ran that
+  // turn, the reply was blocked, and the conversation was muted to a human
+  // permanently. The customer then got silence for every later message.
+  //
+  // The claim was TRUE. It was checked against the wrong window. This is the
+  // same fix already applied to prices via knownPrices — a fact verified
+  // earlier in the same conversation stays verified, and requiring a fresh
+  // tool call to restate it means the assistant can never refer back to
+  // anything it just did.
+  const madeOrder = orderWasCreated(toolResults) || (options.priorOrderReferences || []).length > 0;
   for (const claim of extractActionClaims(text)) {
     // An order-creation claim is fine when an order really was created —
     // verified against the tool result, not against the feature existing.

@@ -79,7 +79,7 @@ export default function Overview({ onNavigate }) {
 
   const { connection, waiting, today, sales, catalogue, limits, daily } = data;
   const connected = connection.status === 'connected';
-  const needsAttention = waiting.handoffs + waiting.orders;
+  const needsAttention = waiting.handoffs + waiting.orders + (waiting.customers || 0);
 
   return (
     <div className="space-y-6">
@@ -103,7 +103,23 @@ export default function Overview({ onNavigate }) {
       {/* ---- waiting for a human ---- */}
       <section>
         <h3 className="mb-2 text-sm font-medium text-slate-700">Waiting for you</h3>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-3">
+          {/* First, and deliberately so. A handoff is at least visible in the
+              Inbox; an unanswered customer is invisible unless this card
+              exists. It is the number most likely to be embarrassing, which
+              is exactly why it goes first. */}
+          <button onClick={() => onNavigate?.('inbox')} className="text-left">
+            <Card
+              label="Customers waiting for a reply"
+              value={waiting.customers ?? 0}
+              sub={
+                waiting.customers
+                  ? 'Their last message has had no answer from anyone'
+                  : 'Everyone has been answered'
+              }
+              tone={waiting.customers > 0 ? 'warn' : 'default'}
+            />
+          </button>
           <button onClick={() => onNavigate?.('inbox')} className="text-left">
             <Card
               label="Conversations needing a person"

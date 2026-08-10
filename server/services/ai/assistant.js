@@ -147,6 +147,9 @@ async function respond({ pharmacyId, pharmacyName, text, history = [], context =
         // could never confirm an order it had just priced.
         const check = validateReply(turn.content, toolResults, {
           knownPrices: Array.isArray(context?.verified_prices) ? context.verified_prices : [],
+          // Orders placed earlier in this conversation. A recap of one is a
+          // true statement, and blocking it mutes the conversation for good.
+          priorOrderReferences: Array.isArray(context?.order_references) ? context.order_references : [],
         });
         if (!check.ok) {
           return {
@@ -191,9 +194,26 @@ async function respond({ pharmacyId, pharmacyName, text, history = [], context =
             ...(Array.isArray(context?.verified_prices) ? context.verified_prices : []),
           ];
           contextUpdate = {
+            ...contextUpdate,
             last_product_name: top.name,
             last_product_id: top.id,
             verified_prices: [...new Set(carried)].slice(0, 10),
+          };
+        }
+
+        // Remember orders placed in this conversation, so a later turn may
+        // refer back to one. Without this the assistant can create an order
+        // and then be blocked from mentioning it a message later, which
+        // escalates a correct reply to a human and mutes the conversation.
+        if (result?.created === true && result.reference) {
+          contextUpdate = {
+            ...contextUpdate,
+            order_references: [
+              ...new Set([
+                result.reference,
+                ...(Array.isArray(context?.order_references) ? context.order_references : []),
+              ]),
+            ].slice(0, 5),
           };
         }
 

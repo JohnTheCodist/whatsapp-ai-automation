@@ -473,9 +473,38 @@ async function processInbound(db, job) {
       category: outcome.category,
       reason: outcome.reason,
     }));
-    // Deliberately silent to the customer. Telling them "a human will reply"
-    // when no staff inbox exists yet would be a promise the product cannot
-    // keep. The pharmacist sees it; that is what a handoff is for.
+
+    // TELL THE CUSTOMER. This used to be silent, on the grounds that promising
+    // "a human will reply" with no staff inbox in existence was a promise the
+    // product could not keep. The Inbox exists now, so that reasoning is spent
+    // — and silence turned out to be the worse failure: the customer keeps
+    // messaging a number that has simply stopped answering, with nothing to
+    // tell them why.
+    //
+    // Sent exactly once, because the conversation is muted above and every
+    // later message returns at the mode check before reaching this point.
+    // Nothing here claims a timeframe, since nothing in the system enforces
+    // one.
+    try {
+      const ack = 'Thanks — let me get one of our pharmacists to help you with that. '
+        + "They'll reply here shortly.";
+      const sent = await sessionManager.sendText(row.account_id, row.wa_jid, ack);
+      await db`
+        insert into messages (pharmacy_id, conversation_id, direction, author, body,
+                              provider_message_id, delivery_status)
+        values (${job.pharmacy_id}, ${row.conversation_id}, 'outbound', 'system', ${ack},
+                ${sent.providerMessageId}, 'sent')
+      `;
+      await markWarmupStarted(db, job.pharmacy_id);
+    } catch (err) {
+      // The handoff itself already succeeded and is what matters. A failed
+      // acknowledgement must not roll it back, or a send error would leave
+      // the pharmacist unaware of a customer who needs them.
+      console.error(JSON.stringify({
+        level: 'warn', msg: 'could not acknowledge handoff to customer', error: err.message,
+      }));
+    }
+
     return { sent: false, reason: `handoff:${outcome.category}` };
   }
 
