@@ -53,6 +53,19 @@ const HANDOFF_REASON = {
   max_iterations: 'low_confidence',
 };
 
+/**
+ * Failures that are about our infrastructure rather than about the message.
+ *
+ * These are retried rather than escalated, and crucially they do NOT mute the
+ * conversation — muting is for "a person is now handling this", and an
+ * unreachable model is not that.
+ */
+const TRANSIENT_CATEGORIES = new Set([
+  'assistant_unavailable',
+  'assistant_error',
+  'filter_error',
+]);
+
 const WORKER_ID = `${process.pid}@${require('node:os').hostname()}`;
 
 let running = false;
@@ -274,6 +287,24 @@ async function processInbound(db, job) {
 
   // ---- escalate -----------------------------------------------------------
   if (outcome.action === 'handoff') {
+    // A HANDOFF AND AN OUTAGE ARE NOT THE SAME EVENT.
+    //
+    // "A pharmacist should answer this" is a decision about the message.
+    // "We could not reach the model" is a fact about the network, and it says
+    // nothing about whether the assistant could have handled it.
+    //
+    // Treating them alike meant a two-second DNS blip muted a conversation
+    // permanently: mode went to 'human', the assistant never spoke again, and
+    // at 5am nobody was watching the inbox to notice. The customer simply
+    // stopped getting replies, with no error anywhere.
+    //
+    // So a transient failure is retried by the queue with backoff, and only
+    // becomes a real handoff once the retries are exhausted — at which point
+    // it genuinely does need a person.
+    if (TRANSIENT_CATEGORIES.has(outcome.category) && job.attempts < job.max_attempts) {
+      throw new Error(`Transient assistant failure (${outcome.category}): ${outcome.reason}`);
+    }
+
     await db.begin(async (tx) => {
       await tx`
         insert into handoffs (pharmacy_id, conversation_id, reason, detail, triggered_by)

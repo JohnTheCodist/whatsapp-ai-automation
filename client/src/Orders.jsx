@@ -14,7 +14,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-const POLL_MS = 8000;
+// Orders arrive minutes apart, not seconds. Polling faster than that
+// spends database connections to display nothing new.
+const POLL_MS = 20000;
 
 const STATUS_STYLE = {
   pending: 'bg-amber-100 text-amber-800',

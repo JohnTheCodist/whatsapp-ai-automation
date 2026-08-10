@@ -34,17 +34,20 @@ export default function App() {
     let cancelled = false;
     const poll = async () => {
       try {
-        const [c, o] = await Promise.all([
-          fetch('/api/conversations').then((r) => r.json()),
-          fetch('/api/orders').then((r) => r.json()),
-        ]);
+        // /api/summary, not the two full endpoints. This previously re-fetched
+        // every conversation and every order — with their joins and payloads —
+        // every ten seconds, to read two integers. Combined with the tabs
+        // polling the same endpoints, it exhausted Supabase's 15-client
+        // pooler, which then surfaced as DNS and connection-reset errors that
+        // looked like a broken network.
+        const s = await fetch('/api/summary').then((r) => r.json());
         if (!cancelled) {
-          setBadges({ inbox: c?.counts?.open_handoffs || 0, orders: o?.counts?.pending || 0 });
+          setBadges({ inbox: s?.open_handoffs || 0, orders: s?.pending_orders || 0 });
         }
       } catch { /* the tabs still work without badges */ }
     };
     poll();
-    const t = setInterval(poll, 10000);
+    const t = setInterval(poll, 30000);
     return () => { cancelled = true; clearInterval(t); };
   }, []);
 

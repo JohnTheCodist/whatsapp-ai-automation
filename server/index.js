@@ -63,6 +63,36 @@ app.get('/api/health', async (req, res) => {
 // where a route quietly ends up unauthenticated. Per-route is verbose and
 // hard to get wrong; that trade is worth it here.
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// Shell badge counts.
+//
+// Exists because the dashboard shell was polling /api/conversations AND
+// /api/orders every 10s purely to read two integers off responses the tabs
+// were already fetching — doubling the query load to display two numbers.
+// Together with over-eager tab polling that exhausted Supabase's 15-client
+// session pooler, which surfaced as ENOTFOUND and ECONNRESET everywhere and
+// looked like a network fault.
+//
+// Two counts, two indexed queries, no joins, no payload.
+// ---------------------------------------------------------------------
+app.get('/api/summary', require('./middleware/auth').requireAuth, async (req, res, next) => {
+  try {
+    const { getSql, assertPharmacyId } = require('./services/db');
+    assertPharmacyId(req.pharmacyId);
+    const db = getSql();
+    const [row] = await db`
+      select
+        (select count(*)::int from handoffs
+           where pharmacy_id = ${req.pharmacyId} and resolved_at is null) as open_handoffs,
+        (select count(*)::int from orders
+           where pharmacy_id = ${req.pharmacyId} and status = 'pending') as pending_orders
+    `;
+    res.json(row);
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.use('/api/pharmacies', require('./routes/pharmacies'));  // Phase 1
 app.use('/api/whatsapp', require('./routes/whatsapp'));      // Phase 2
 app.use('/api/catalogue', require('./routes/catalogue'));    // Phase 3

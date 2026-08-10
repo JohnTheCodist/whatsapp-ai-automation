@@ -14,7 +14,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-const POLL_MS = 5000;
+// 5s was chosen without thinking and helped exhaust the database pooler.
+// The list refreshes on every action anyway, so this only covers messages
+// arriving while nobody is clicking.
+const POLL_MS = 15000;
+// The open thread is what someone is actually watching, so it stays quicker.
+const THREAD_POLL_MS = 8000;
 
 const MODE_STYLE = {
   bot: 'bg-slate-100 text-slate-600',
@@ -87,7 +92,7 @@ export default function Inbox() {
   useEffect(() => {
     loadThread(selectedId);
     if (!selectedId) return undefined;
-    const t = setInterval(() => loadThread(selectedId), POLL_MS);
+    const t = setInterval(() => loadThread(selectedId), THREAD_POLL_MS);
     return () => clearInterval(t);
   }, [selectedId, loadThread]);
 
