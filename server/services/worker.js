@@ -26,6 +26,7 @@ const { sessionManager } = require('./whatsapp/sessionManager');
 const { evaluateOutbound, isOptOutRequest } = require('./whatsapp/conductPolicy');
 const { normalizeMsisdn } = require('./whatsapp/senderIdentity');
 const { respond } = require('./ai/assistant');
+const { buildMenu, isMenuRequest, parseSelection, intentBriefing } = require('./ai/menu');
 const { env } = require('../config/env');
 
 /**
@@ -147,9 +148,10 @@ async function processInbound(db, job) {
 
   const [row] = await db`
     select m.id, m.body,
-           conv.id as conversation_id, conv.mode, conv.context,
+           conv.id as conversation_id, conv.mode, conv.context, conv.greeted_at,
            cust.id as customer_id, cust.wa_phone, cust.wa_jid, cust.display_name,
            ph.name as pharmacy_name, ph.reply_mode, ph.sending_paused,
+           ph.bot_name, ph.menu_enabled, ph.welcome_note,
            ph.daily_reply_cap, ph.hourly_conversation_cap,
            ph.quiet_hours_enabled, ph.quiet_hours_start, ph.quiet_hours_end,
            wa.id as account_id, wa.status as account_status
@@ -265,6 +267,88 @@ async function processInbound(db, job) {
 
   // Recent turns, so "I want two" has something to refer back to. Fetched
   // oldest-first because that is the order a conversation happened in.
+  // ---- greeting and menu --------------------------------------------------
+  //
+  // Sent AFTER the conduct gate, so it obeys the allowlist and rate limits
+  // like anything else, and BEFORE the assistant, because a menu is a fixed
+  // string and does not need a model.
+  //
+  // `greeted_at` rather than "is this the first message": history sync, a
+  // re-pair, or a customer who wrote before the pharmacy went live all leave
+  // prior messages in the thread, and any of them would otherwise make a
+  // regular get greeted as a stranger — or never greeted at all.
+  const menuOn = row.menu_enabled !== false;
+  const wantsMenu = menuOn && isMenuRequest(row.body);
+  const needsGreeting = menuOn && !row.greeted_at;
+
+  if (wantsMenu || needsGreeting) {
+    const text = buildMenu({
+      pharmacyName: row.pharmacy_name,
+      botName: row.bot_name,
+      // WhatsApp's pushName — what the customer calls themselves. Used as a
+      // greeting only, never as identity.
+      customerName: row.display_name,
+      welcomeNote: row.welcome_note,
+      returning: wantsMenu && Boolean(row.greeted_at),
+    });
+
+    const sent = await sessionManager.sendText(row.account_id, row.wa_jid, text);
+    await db.begin(async (tx) => {
+      await tx`
+        insert into messages
+          (pharmacy_id, conversation_id, direction, author, body, provider_message_id, delivery_status)
+        values
+          (${job.pharmacy_id}, ${row.conversation_id}, 'outbound', 'assistant',
+           ${text}, ${sent.providerMessageId}, 'sent')
+      `;
+      await tx`
+        update conversations set greeted_at = now(), last_message_at = now()
+        where id = ${row.conversation_id}
+      `;
+    });
+
+    console.log(JSON.stringify({ level: 'info', msg: 'menu sent', to: row.wa_phone, returning: Boolean(row.greeted_at) }));
+    return { sent: true, reason: wantsMenu ? 'menu_requested' : 'greeting' };
+  }
+
+  // A bare number is a menu choice. "I want 1 pack" is not, and parseSelection
+  // deliberately refuses to read it as one.
+  const choice = menuOn ? parseSelection(row.body, {
+    pharmacyName: row.pharmacy_name, botName: row.bot_name,
+  }) : null;
+
+  // "Speak to the pharmacist" is the only option that is not a question for
+  // the assistant. It replaced the spec's "health questions, symptoms &
+  // advice", which the clinical filter would have refused anyway — so it goes
+  // straight to a person rather than through a model that must decline.
+  if (choice?.intent === 'pharmacist') {
+    await db.begin(async (tx) => {
+      await tx`
+        insert into handoffs (pharmacy_id, conversation_id, reason, detail, triggered_by)
+        values (${job.pharmacy_id}, ${row.conversation_id}, 'customer_request',
+                'Chose "Speak to the pharmacist" from the menu.', 'customer')
+      `;
+      await tx`update conversations set mode = 'human', last_menu_choice = ${choice.intent} where id = ${row.conversation_id}`;
+    });
+
+    // Unlike a silent escalation, this one WAS asked for, so saying it is
+    // happening is a promise the staff inbox can now actually keep.
+    const ack = 'A pharmacist will reply here shortly. Please tell us what you need in the meantime.';
+    const sent = await sessionManager.sendText(row.account_id, row.wa_jid, ack);
+    await db`
+      insert into messages
+        (pharmacy_id, conversation_id, direction, author, body, provider_message_id, delivery_status)
+      values
+        (${job.pharmacy_id}, ${row.conversation_id}, 'outbound', 'system',
+         ${ack}, ${sent.providerMessageId}, 'sent')
+    `;
+    return { sent: true, reason: 'menu:pharmacist' };
+  }
+
+  if (choice) {
+    await db`update conversations set last_menu_choice = ${choice.intent} where id = ${row.conversation_id}`;
+  }
+
   const history = (await db`
     select direction, body from messages
     where conversation_id = ${row.conversation_id} and id < ${messageId} and body is not null
@@ -283,6 +367,12 @@ async function processInbound(db, job) {
     // account.
     customerId: row.customer_id,
     conversationId: row.conversation_id,
+    botName: row.bot_name,
+    // A menu choice is a bare digit, which tells the model nothing on its
+    // own. Passed as a FACT about what was chosen, not as an instruction —
+    // same discipline as conversation context, so nothing arriving from a
+    // customer can become a directive by routing through here.
+    menuBriefing: choice ? intentBriefing(choice.intent, { pharmacyName: row.pharmacy_name }) : null,
   });
 
   // ---- escalate -----------------------------------------------------------
