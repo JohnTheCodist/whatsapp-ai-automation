@@ -93,6 +93,7 @@ app.get('/api/summary', require('./middleware/auth').requireAuth, async (req, re
   }
 });
 
+app.use('/api/overview', require('./routes/overview'));       // dashboard
 app.use('/api/pharmacies', require('./routes/pharmacies'));  // Phase 1
 app.use('/api/whatsapp', require('./routes/whatsapp'));      // Phase 2
 app.use('/api/catalogue', require('./routes/catalogue'));    // Phase 3

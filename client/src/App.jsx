@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import Overview from './Overview.jsx';
 import ConnectWhatsApp from './ConnectWhatsApp.jsx';
 import UploadCatalogue from './UploadCatalogue.jsx';
 import Inbox from './Inbox.jsx';
@@ -15,13 +16,14 @@ import AssistantSettings from './AssistantSettings.jsx';
 import { playOrderChime, unlockChime, isUnlocked } from './orderChime.js';
 
 const TABS = [
+  { id: 'overview', label: 'Overview' },
   { id: 'inbox', label: 'Inbox' },
   { id: 'orders', label: 'Orders' },
   { id: 'setup', label: 'Setup' },
 ];
 
 export default function App() {
-  const [tab, setTab] = useState('inbox');
+  const [tab, setTab] = useState('overview');
   const [health, setHealth] = useState(null);
   // Badge counts live in the shell so a staff member on the Orders tab still
   // sees that someone is waiting in the Inbox. A count only visible from
@@ -133,6 +135,10 @@ export default function App() {
       </nav>
 
       <div className="mt-6">
+        {/* onNavigate lets the Overview's cards be the way you get to the
+            work, rather than a wall of numbers you then have to act on by
+            hunting for the right tab. */}
+        {tab === 'overview' && <Overview onNavigate={setTab} />}
         {tab === 'inbox' && <Inbox />}
         {tab === 'orders' && <Orders />}
         {tab === 'setup' && (
