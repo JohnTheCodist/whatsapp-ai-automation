@@ -20,6 +20,8 @@
  */
 
 const { getSql, assertPharmacyId } = require('../db');
+const { shouldIngest } = require('./ingestionPolicy');
+const { env } = require('../../config/env');
 
 /** How long a customer-initiated reply window stays open. */
 const REPLY_WINDOW_HOURS = 24;
@@ -45,6 +47,38 @@ async function ingest(msg) {
   }
 
   const db = getSql();
+
+  // 0. SCOPE GATE — before the first insert, on purpose.
+  //
+  //    Baileys sees every conversation on the account, not just customers.
+  //    Filtering this later, at display time, would leave the owner's private
+  //    messages sitting in our database, which is the part that actually
+  //    matters. A message refused here leaves no row anywhere — not even the
+  //    sender's number.
+  //
+  //    Note what is NOT logged below: the message body, and in the personal
+  //    case the number too. Recording "we discarded a private message from
+  //    +234..." would defeat most of the point.
+  const [scope] = await db`
+    select
+      ph.ingest_mode,
+      coalesce(array(select wa_phone from outbound_allowlist where pharmacy_id = ph.id), '{}') as allowlist,
+      coalesce(array(select wa_phone from blocked_senders where pharmacy_id = ph.id), '{}') as blocked
+    from pharmacies ph where ph.id = ${pharmacyId}
+  `;
+
+  const decision = shouldIngest({
+    ingestMode: scope?.ingest_mode || 'all',
+    phone: phoneNumber,
+    allowlist: scope?.allowlist || [],
+    blocked: scope?.blocked || [],
+    fromMe: Boolean(msg.fromMe),
+    defaultCountryCode: env.defaultCountryCode,
+  });
+
+  if (!decision.ingest) {
+    return { stored: false, reason: `not_in_scope:${decision.reason}` };
+  }
 
   // 1. Durable record of the raw event. `do nothing` makes redelivery a
   //    no-op rather than an error — the constraint is doing the work.
