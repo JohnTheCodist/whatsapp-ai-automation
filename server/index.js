@@ -66,9 +66,8 @@ app.get('/api/health', async (req, res) => {
 app.use('/api/pharmacies', require('./routes/pharmacies'));  // Phase 1
 app.use('/api/whatsapp', require('./routes/whatsapp'));      // Phase 2
 app.use('/api/catalogue', require('./routes/catalogue'));    // Phase 3
-// app.use('/api/catalogue', require('./routes/catalogue'));         // Phase 3
-// app.use('/api/conversations', require('./routes/conversations')); // Phase 4
-// app.use('/api/orders', require('./routes/orders'));               // Phase 5
+app.use('/api/conversations', require('./routes/conversations')); // Phase 4 — staff inbox
+app.use('/api/orders', require('./routes/orders'));               // Phase 5 — order queue
 
 app.use(notFound);
 app.use(errorHandler);

@@ -135,7 +135,7 @@ async function processInbound(db, job) {
   const [row] = await db`
     select m.id, m.body,
            conv.id as conversation_id, conv.mode, conv.context,
-           cust.wa_phone, cust.wa_jid, cust.display_name,
+           cust.id as customer_id, cust.wa_phone, cust.wa_jid, cust.display_name,
            ph.name as pharmacy_name, ph.reply_mode, ph.sending_paused,
            ph.daily_reply_cap, ph.hourly_conversation_cap,
            ph.quiet_hours_enabled, ph.quiet_hours_start, ph.quiet_hours_end,
@@ -264,6 +264,12 @@ async function processInbound(db, job) {
     text: row.body,
     history,
     context: row.context || {},
+    // Bound here, from the row the job resolved — never from anything the
+    // model or the customer supplied. create_order writes against these, so
+    // a model-chosen customerId would be an order placed on someone else's
+    // account.
+    customerId: row.customer_id,
+    conversationId: row.conversation_id,
   });
 
   // ---- escalate -----------------------------------------------------------

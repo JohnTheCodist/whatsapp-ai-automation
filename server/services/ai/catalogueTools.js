@@ -22,6 +22,7 @@
  */
 
 const { getSql, assertPharmacyId } = require('../db');
+const { createOrder } = require('../orders/orderService');
 
 /** Kobo -> naira, for anything a human will read. */
 function naira(kobo) {
@@ -69,7 +70,8 @@ const TOOLS = [
       },
       required: ['query'],
     },
-    async run(pharmacyId, args) {
+    async run(ctx, args) {
+      const { pharmacyId } = ctx;
       assertPharmacyId(pharmacyId);
       const query = String(args?.query || '').trim();
       if (!query) return { products: [], note: 'No search term given.' };
@@ -115,7 +117,8 @@ const TOOLS = [
       'Get this pharmacy\'s address, opening hours, phone number and whether they deliver. '
       + 'Use for questions like "where are you?", "are you open?" or "do you deliver?".',
     parameters: { type: 'object', properties: {} },
-    async run(pharmacyId) {
+    async run(ctx) {
+      const { pharmacyId } = ctx;
       assertPharmacyId(pharmacyId);
       const db = getSql();
       const [row] = await db`
@@ -157,6 +160,85 @@ const TOOLS = [
       };
     },
   },
+  {
+    name: 'create_order',
+    description:
+      'Send an order to the pharmacy for a customer who has said they want to buy specific products. '
+      + 'Only call this AFTER the customer has confirmed what they want and how many. '
+      + 'You must have found each product with find_products first — use the exact product id it returned. '
+      + 'This does NOT reserve stock or confirm anything: it puts the order in front of pharmacy staff, '
+      + 'who decide. Tell the customer their order has been sent to the pharmacy and someone will confirm it. '
+      + 'Never tell them it is reserved, held, or confirmed.',
+    parameters: {
+      type: 'object',
+      properties: {
+        items: {
+          type: 'array',
+          description: 'The products the customer agreed to buy.',
+          items: {
+            type: 'object',
+            properties: {
+              product_id: { type: 'string', description: 'The id returned by find_products. Never invent one.' },
+              quantity: { type: 'integer', description: 'How many, as a whole number of at least 1.' },
+            },
+            required: ['product_id', 'quantity'],
+          },
+        },
+        fulfilment: {
+          type: 'string',
+          enum: ['pickup', 'delivery'],
+          description: 'Pickup unless the customer explicitly asked for delivery.',
+        },
+        note: { type: 'string', description: 'Anything the customer asked to pass on. Optional.' },
+      },
+      required: ['items'],
+    },
+    async run(ctx, args) {
+      const { pharmacyId, customerId, conversationId } = ctx;
+      assertPharmacyId(pharmacyId);
+
+      // Note what is NOT in the schema above: price, and total. The model
+      // supplies ids and quantities only. Every figure on the order is read
+      // from the catalogue inside createOrder, because a model that will
+      // say "I've set aside 3 packs" when nothing exists will equally
+      // confidently state a price that is wrong.
+      const items = Array.isArray(args?.items) ? args.items.map((i) => ({
+        productId: String(i?.product_id || ''),
+        quantity: Number(i?.quantity),
+      })) : [];
+
+      const result = await createOrder(pharmacyId, {
+        customerId,
+        conversationId,
+        items,
+        fulfilment: args?.fulfilment === 'delivery' ? 'delivery' : 'pickup',
+        note: args?.note ? String(args.note).slice(0, 500) : null,
+      });
+
+      if (!result.ok) {
+        // Returned as a refusal the model can read out, not an exception.
+        // The customer needs to hear why — "only 2 left" is useful, a stack
+        // trace is not.
+        return { created: false, reason: result.error, code: result.code };
+      }
+
+      return {
+        created: true,
+        reference: result.order.reference,
+        status: 'pending',
+        total_naira: naira(result.order.total_kobo),
+        items: result.order.items.map((l) => ({
+          name: l.name_snapshot,
+          quantity: l.quantity,
+          unit_price_naira: naira(l.unit_price_kobo),
+          line_total_naira: naira(l.line_total_kobo),
+        })),
+        note:
+          'The order has been sent to the pharmacy and is awaiting their confirmation. '
+          + 'Give the customer the reference. Do NOT say the stock is reserved or held.',
+      };
+    },
+  },
 ];
 
 const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
@@ -168,13 +250,17 @@ const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
  * even if the model invents a pharmacyId argument it is ignored, because it
  * is not read from `args` at any point.
  */
-async function runTool(pharmacyId, name, args) {
+async function runTool(ctx, name, args) {
   const tool = BY_NAME.get(name);
   if (!tool) {
     return { error: `Unknown tool "${name}".` };
   }
+  // Accepts a bare id as well as a context object so a caller that only has
+  // a pharmacy — a test, a future admin path — does not have to fabricate a
+  // customer to look up a price.
+  const context = typeof ctx === 'string' ? { pharmacyId: ctx } : (ctx || {});
   try {
-    return await tool.run(pharmacyId, args || {});
+    return await tool.run(context, args || {});
   } catch (err) {
     // Returned as data rather than thrown: the loop should be able to tell
     // the customer something went wrong, not crash mid-conversation.

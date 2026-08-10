@@ -210,11 +210,52 @@ test('an OFFER is fine — the difference is tense', () => {
   }
 });
 
-test('the check lifts once the system can genuinely act', () => {
-  // When ordering lands this becomes "did the order tool run this turn"
-  // rather than being deleted.
-  const r = validateReply("I've set them aside for you.", TOOL_RESULT, { canTakeActions: true });
-  assert.equal(r.ok, true);
+// ---- once ordering exists, the claim is checked against the tool result ----
+//
+// This replaces an earlier `canTakeActions` flag. A capability flag says "the
+// feature shipped"; what actually matters is whether an order was created on
+// THIS turn, which is the same standard prices are held to.
+
+const ORDER_CREATED = [
+  { name: 'create_order', result: { created: true, reference: 'ACD-EFG', total_naira: 3940 } },
+];
+const ORDER_REFUSED = [
+  { name: 'create_order', result: { created: false, reason: 'There are only 2 in stock.' } },
+];
+
+test('an order claim is allowed when an order really was created', () => {
+  for (const text of [
+    "I've sent your order to the pharmacy. Your reference is ACD-EFG.",
+    'Your order has been sent. Reference ACD-EFG.',
+    "I've notified the pharmacy — they'll confirm shortly.",
+  ]) {
+    assert.equal(validateReply(text, ORDER_CREATED).ok, true, `should have been allowed: ${text}`);
+  }
+});
+
+test('the same claim is blocked when the order tool refused', () => {
+  const r = validateReply("I've placed your order.", ORDER_REFUSED);
+  assert.equal(r.ok, false);
+  assert.equal(r.violations[0].type, 'unfulfillable_promise');
+});
+
+test('the same claim is blocked when no order tool ran at all', () => {
+  assert.equal(validateReply("I've placed your order.", TOOL_RESULT).ok, false);
+});
+
+test('RESERVED stays blocked even when an order exists', () => {
+  // The order is `pending`. Staff have not seen it, nothing is held. This is
+  // the exact sentence real traffic produced, and shipping ordering is what
+  // makes the model reach for it again.
+  for (const text of [
+    "Done, I've set aside 3 packs for you.",
+    'Your order has been confirmed.',
+    'They are waiting for you at the counter.',
+  ]) {
+    const r = validateReply(text, ORDER_CREATED);
+    assert.equal(r.ok, false, `should still be blocked: ${text}`);
+    assert.match(r.violations[0].detail, /PENDING|held|reserved/i);
+  }
 });
 
 test('a violation says what was quoted and why it failed', () => {

@@ -93,18 +93,37 @@ function extractStockClaims(text) {
 function extractActionClaims(text) {
   const claims = [];
   const patterns = [
-    { re: /\b(i(?:'ve| have)|we(?:'ve| have))\s+(?:now\s+)?(set (?:it|them|these|\d+\s*\w+)?\s*aside|reserved|put (?:it|them|these) aside|held)\b/i, what: 'reserved stock' },
-    { re: /\b(i(?:'ve| have)|we(?:'ve| have))\s+(?:now\s+)?(placed|created|logged|recorded|booked|processed)\b.{0,20}\border\b/i, what: 'created an order' },
-    { re: /\byour order (is|has been)\s+(placed|confirmed|received|logged|recorded|processed)\b/i, what: 'confirmed an order' },
-    { re: /\b(i(?:'ve| have)|we(?:'ve| have))\s+(?:now\s+)?(told|informed|notified|alerted|messaged)\b.{0,25}\b(pharmacist|staff|team|shop)\b/i, what: 'notified staff' },
-    { re: /\b(it|they|the items?|your (order|items?))\s+(is|are|has been|have been)\s+(reserved|set aside|waiting for you|ready for (pick ?up|collection))\b/i, what: 'reserved stock' },
-    { re: /\b(i(?:'ve| have)|we(?:'ve| have))\s+(?:now\s+)?arranged\b.{0,20}\b(delivery|dispatch)\b/i, what: 'arranged delivery' },
+    // ---- true ONLY if create_order actually ran and succeeded -------------
+    { re: /\b(i(?:'ve| have)|we(?:'ve| have))\s+(?:now\s+)?(placed|created|logged|recorded|booked|processed|sent)\b.{0,20}\border\b/i, what: 'created an order', needsOrder: true },
+    { re: /\byour order (is|has been)\s+(placed|received|logged|recorded|processed|sent)\b/i, what: 'created an order', needsOrder: true },
+    { re: /\b(i(?:'ve| have)|we(?:'ve| have))\s+(?:now\s+)?(told|informed|notified|alerted|messaged|sent (?:it|this|that) to)\b.{0,25}\b(pharmacist|staff|team|shop|pharmacy)\b/i, what: 'notified the pharmacy', needsOrder: true },
+
+    // ---- FALSE even when an order exists ----------------------------------
+    //
+    // An order is `pending`. Staff have not looked at it. Nothing is held,
+    // nothing is confirmed, and nothing is waiting on a shelf. These stay
+    // blocked unconditionally, because the moment ordering shipped is
+    // exactly when the model started reaching for this language.
+    { re: /\b(i(?:'ve| have)|we(?:'ve| have))\s+(?:now\s+)?(set (?:it|them|these|\d+\s*\w+)?\s*aside|reserved|put (?:it|them|these) aside|held)\b/i, what: 'reserved stock', needsOrder: false },
+    { re: /\byour order (is|has been)\s+(confirmed|approved|accepted)\b/i, what: 'confirmed an order', needsOrder: false },
+    { re: /\b(it|they|the items?|your (order|items?))\s+(is|are|has been|have been)\s+(reserved|set aside|waiting for you|ready for (pick ?up|collection))\b/i, what: 'reserved stock', needsOrder: false },
+    { re: /\b(i(?:'ve| have)|we(?:'ve| have))\s+(?:now\s+)?arranged\b.{0,20}\b(delivery|dispatch)\b/i, what: 'arranged delivery', needsOrder: false },
   ];
-  for (const { re, what } of patterns) {
+  for (const { re, what, needsOrder } of patterns) {
     const m = text.match(re);
-    if (m) claims.push({ matched: m[0].slice(0, 80), what });
+    if (m) claims.push({ matched: m[0].slice(0, 80), what, needsOrder });
   }
   return claims;
+}
+
+/**
+ * Did an order genuinely get created this turn?
+ *
+ * Same principle as prices: a claim is permitted because a tool result backs
+ * it, not because the feature exists somewhere in the codebase.
+ */
+function orderWasCreated(toolResults) {
+  return (toolResults || []).some((r) => r && r.result && r.result.created === true && r.result.reference);
 }
 
 /**
@@ -200,17 +219,25 @@ function validateReply(text, toolResults = [], options = {}) {
   // so any completed-action claim is false by construction. When ordering
   // lands, this check becomes "did the order tool actually run this turn"
   // rather than being removed.
-  if (!options.canTakeActions) {
-    for (const claim of extractActionClaims(text)) {
-      violations.push({
-        type: 'unfulfillable_promise',
-        value: claim.matched,
-        detail: `The reply says it ${claim.what} ("${claim.matched}"), but nothing was recorded and the pharmacy was not told.`,
-      });
-    }
+  const madeOrder = orderWasCreated(toolResults);
+  for (const claim of extractActionClaims(text)) {
+    // An order-creation claim is fine when an order really was created —
+    // verified against the tool result, not against the feature existing.
+    if (claim.needsOrder && madeOrder) continue;
+
+    violations.push({
+      type: 'unfulfillable_promise',
+      value: claim.matched,
+      detail: claim.needsOrder
+        ? `The reply says it ${claim.what} ("${claim.matched}"), but create_order did not run or did not succeed this turn.`
+        // The unconditional group. Worth stating the reason precisely,
+        // because "we have an orders feature now" is exactly the reasoning
+        // that would otherwise let this through.
+        : `The reply says it ${claim.what} ("${claim.matched}"). An order is only PENDING until staff confirm it — nothing is held, reserved or ready.`,
+    });
   }
 
   return { ok: violations.length === 0, violations };
 }
 
-module.exports = { validateReply, extractMoney, extractStockClaims, extractActionClaims, collectFacts, MAX_QUANTITY };
+module.exports = { validateReply, extractMoney, extractStockClaims, extractActionClaims, orderWasCreated, collectFacts, MAX_QUANTITY };

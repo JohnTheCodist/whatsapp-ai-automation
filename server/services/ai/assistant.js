@@ -46,10 +46,14 @@ function buildSystemPrompt({ pharmacyName, context }) {
     '- If a price is unknown, say you will confirm it. Do not say it is free and do not invent a figure.',
     '- Never give dosage, medical or clinical advice of any kind. If asked, say a pharmacist will help.',
     // Real traffic produced "Done, I've set aside 3 packs for you." Nothing
-    // was set aside. The validator now blocks it, but a blocked reply is a
-    // handoff and a silent customer — better not to write it at all.
-    '- You CANNOT place orders, reserve or set aside stock, or notify staff. Never say you have done any of those things.',
-    '- To take an order, tell the customer to come in or call, and confirm the price and total. Do not claim anything is being held for them.',
+    // was set aside. There is now a create_order tool, so the capability is
+    // real — but what it does and what it does NOT do have to be stated
+    // separately, because the model's instinct is to promise the reassuring
+    // version.
+    '- You CAN send an order to the pharmacy, using create_order. Only after the customer has said exactly what they want and how many.',
+    '- Sending an order does NOT reserve, hold or set aside anything, and does not confirm it. Staff decide. Say "I\'ve sent this to the pharmacy and they\'ll confirm shortly" — never "reserved", "held", "set aside" or "confirmed".',
+    '- Always give the customer the order reference that create_order returns.',
+    '- If create_order refuses, tell the customer the reason it gave, plainly. Do not retry it and do not pretend it worked.',
     '- Keep replies short. This is WhatsApp, not email. One or two sentences unless listing products.',
     '- Write in plain, warm Nigerian English. Do not use emoji.',
     '- Prices are in naira. Write them as ₦1,250.',
@@ -77,10 +81,12 @@ function buildSystemPrompt({ pharmacyName, context }) {
  * @param {string} args.text              the customer's message
  * @param {object[]} [args.history]       [{direction, body}] oldest first
  * @param {object} [args.context]         conversations.context
+ * @param {string} [args.customerId]      bound server-side; create_order needs it
+ * @param {string} [args.conversationId]  bound server-side, never model-supplied
  * @returns {Promise<{action:'reply'|'handoff', text?:string, reason?:string,
  *   category?:string, toolResults:object[], contextUpdate?:object}>}
  */
-async function respond({ pharmacyId, pharmacyName, text, history = [], context = {} }) {
+async function respond({ pharmacyId, pharmacyName, text, history = [], context = {}, customerId = null, conversationId = null }) {
   // ---- 1. safety, before anything else ----------------------------------
   const screening = screenMessage(text);
   if (!screening.allow) {
@@ -154,7 +160,7 @@ async function respond({ pharmacyId, pharmacyName, text, history = [], context =
           args = {};
         }
 
-        const result = await runTool(pharmacyId, call.function?.name, args);
+        const result = await runTool({ pharmacyId, customerId, conversationId }, call.function?.name, args);
         toolResults.push(result);
 
         // Remember the top match so "I want two" resolves next turn, and
