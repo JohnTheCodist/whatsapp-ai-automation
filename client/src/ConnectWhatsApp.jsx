@@ -83,7 +83,9 @@ export default function ConnectWhatsApp() {
   // is ephemeral — it shows nothing that arrived before the page opened, and
   // that is exactly the question being asked here.
   useEffect(() => {
-    const t = setInterval(loadInbox, 5000);
+    // 5s here was the same mistake that exhausted Supabase's connection pool
+    // via Inbox/Orders — see App.jsx and their POLL_MS comments. Same fix.
+    const t = setInterval(loadInbox, 15000);
     return () => clearInterval(t);
   }, [loadInbox]);
 

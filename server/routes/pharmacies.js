@@ -12,6 +12,9 @@ const express = require('express');
 const { requireAuth, requireAuthOnly, requireRole } = require('../middleware/auth');
 const { asyncRoute, HttpError } = require('../middleware/errorHandler');
 const pharmacies = require('../services/pharmacies');
+const { generateWelcomeNote } = require('../services/ai/welcomeNoteGenerator');
+const { LlmUnavailable } = require('../services/ai/llmClient');
+const { buildMenu } = require('../services/ai/menu');
 
 const router = express.Router();
 
@@ -74,6 +77,82 @@ router.patch('/me/profile', requireAuth, requireRole('owner', 'pharmacist'), asy
   const profile = await pharmacies.updateProfile(req.pharmacyId, req.body);
   if (!profile) throw new HttpError(404, 'Profile not found', 'NOT_FOUND');
   res.json({ profile });
+}));
+
+/**
+ * PATCH /api/pharmacies/me/assistant — bot name, welcome note, menu on/off.
+ *
+ * Separate from PATCH /me: the registered pharmacy name is a tenant fact
+ * with its own rules (slug retry, a 2-character minimum); this is
+ * presentation the owner can change or clear freely, including back to
+ * "use the pharmacy name".
+ */
+router.patch('/me/assistant', requireAuth, requireRole('owner', 'pharmacist'), asyncRoute(async (req, res) => {
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    throw new HttpError(400, 'Request body must be an object', 'INVALID_BODY');
+  }
+  const pharmacy = await pharmacies.updateAssistantSettings(req.pharmacyId, req.body);
+  if (!pharmacy) throw new HttpError(404, 'Pharmacy not found', 'NOT_FOUND');
+  res.json({ pharmacy });
+}));
+
+/**
+ * POST /api/pharmacies/me/assistant/welcome-note/generate — draft one line.
+ *
+ * Returns a DRAFT. It does not save anything — the owner reads it, edits it
+ * if they want, and PATCHes /me/assistant themselves. Auto-writing something
+ * an owner never approved into a field customers will see is not a shortcut
+ * worth taking.
+ */
+router.post('/me/assistant/welcome-note/generate', requireAuth, requireRole('owner', 'pharmacist'), asyncRoute(async (req, res) => {
+  const [pharmacy, profile] = await Promise.all([
+    pharmacies.getPharmacy(req.pharmacyId),
+    pharmacies.getProfile(req.pharmacyId),
+  ]);
+  if (!pharmacy) throw new HttpError(404, 'Pharmacy not found', 'NOT_FOUND');
+
+  try {
+    const note = await generateWelcomeNote({
+      pharmacyName: pharmacy.name,
+      botName: req.body?.botName || null,
+      city: profile?.city || null,
+      delivers: profile?.delivers ?? null,
+      extraInfo: profile?.extra_info || null,
+    });
+    res.json({ note });
+  } catch (err) {
+    if (err instanceof LlmUnavailable) {
+      throw new HttpError(503, 'The assistant is not available right now, so a note could not be drafted. Try writing one directly, or try again shortly.', 'LLM_UNAVAILABLE');
+    }
+    throw err;
+  }
+}));
+
+/**
+ * POST /api/pharmacies/me/assistant/preview — the exact greeting a customer
+ * would get, for whatever is currently in the settings form.
+ *
+ * Runs buildMenu() — the SAME function the worker calls for a real customer
+ * — rather than a hand-copied approximation in the client. The alternative
+ * is a settings screen that can silently drift from what the product
+ * actually sends, discoverable only by a customer screenshotting a mismatch.
+ * Nothing here is saved; it previews values the client hasn't submitted yet.
+ */
+router.post('/me/assistant/preview', requireAuth, asyncRoute(async (req, res) => {
+  const pharmacyName = String(req.body?.pharmacyName || '').trim();
+  if (!pharmacyName) throw new HttpError(400, 'pharmacyName is required to preview.', 'MISSING_NAME');
+
+  const menuEnabled = req.body?.menuEnabled !== false;
+  const text = menuEnabled
+    ? buildMenu({
+        pharmacyName,
+        botName: req.body?.botName || null,
+        welcomeNote: req.body?.welcomeNote || null,
+        customerName: req.body?.sampleCustomerName || 'Chidi',
+      })
+    : `Hi ${req.body?.sampleCustomerName || 'Chidi'} — I'm ${req.body?.botName || pharmacyName} from ${pharmacyName}. How can I help?`;
+
+  res.json({ text });
 }));
 
 /** GET /api/pharmacies/me/members — who can act on this tenant. */

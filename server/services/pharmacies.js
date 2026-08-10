@@ -203,7 +203,7 @@ async function getPharmacy(pharmacyId) {
   assertPharmacyId(pharmacyId);
   const db = getSql();
   const [row] = await db`
-    select id, name, slug, status, created_at, updated_at
+    select id, name, slug, status, bot_name, welcome_note, menu_enabled, created_at, updated_at
     from pharmacies where id = ${pharmacyId}
   `;
   return row || null;
@@ -223,6 +223,65 @@ async function updatePharmacy(pharmacyId, fields = {}) {
     returning id, name, slug, status, created_at, updated_at
   `;
   return row || null;
+}
+
+// ---------------------------------------------------------------------
+// Assistant identity — what the bot calls itself, and how it greets
+// ---------------------------------------------------------------------
+//
+// Deliberately separate from updatePharmacy. The pharmacy's registered name
+// is a tenant fact with its own validation (normalizeName, slug retry); bot
+// identity is presentation the owner can change freely, including clearing
+// it back to "use the pharmacy name" — which normalizeName's 2-char minimum
+// would wrongly reject if this reused that path.
+
+const MAX_BOT_NAME = 40;
+const MAX_WELCOME_NOTE = 300;
+
+/**
+ * @param {object} fields
+ * @param {string|null} [fields.botName]      null/'' clears it — falls back
+ *   to the pharmacy's own name, never to a vendor name.
+ * @param {string|null} [fields.welcomeNote]
+ * @param {boolean}     [fields.menuEnabled]
+ */
+async function updateAssistantSettings(pharmacyId, fields = {}) {
+  assertPharmacyId(pharmacyId);
+  const db = getSql();
+
+  const botName = 'botName' in fields
+    ? normaliseShortText(fields.botName, MAX_BOT_NAME, 'Bot name')
+    : undefined;
+  const welcomeNote = 'welcomeNote' in fields
+    ? normaliseShortText(fields.welcomeNote, MAX_WELCOME_NOTE, 'Welcome note')
+    : undefined;
+
+  const current = await db`
+    select bot_name, welcome_note, menu_enabled from pharmacies where id = ${pharmacyId}
+  `;
+  if (!current.length) return null;
+
+  const [row] = await db`
+    update pharmacies set
+      bot_name = ${botName !== undefined ? botName : current[0].bot_name},
+      welcome_note = ${welcomeNote !== undefined ? welcomeNote : current[0].welcome_note},
+      menu_enabled = ${'menuEnabled' in fields ? Boolean(fields.menuEnabled) : current[0].menu_enabled},
+      updated_at = now()
+    where id = ${pharmacyId}
+    returning id, name, bot_name, welcome_note, menu_enabled, updated_at
+  `;
+  return row;
+}
+
+/** Trims, caps length, and turns empty-ish input into NULL rather than ''. */
+function normaliseShortText(input, maxLen, label) {
+  if (input === null || input === undefined) return null;
+  const value = String(input).trim();
+  if (!value) return null;
+  if (value.length > maxLen) {
+    throw Object.assign(new Error(`${label} must be ${maxLen} characters or fewer`), { status: 400, code: 'TOO_LONG' });
+  }
+  return value;
 }
 
 // ---------------------------------------------------------------------
@@ -323,6 +382,7 @@ async function listMembers(pharmacyId) {
 }
 
 module.exports = {
+  updateAssistantSettings,
   createPharmacy,
   getPharmacy,
   updatePharmacy,

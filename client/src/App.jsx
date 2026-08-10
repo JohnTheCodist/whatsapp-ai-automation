@@ -11,6 +11,7 @@ import ConnectWhatsApp from './ConnectWhatsApp.jsx';
 import UploadCatalogue from './UploadCatalogue.jsx';
 import Inbox from './Inbox.jsx';
 import Orders from './Orders.jsx';
+import AssistantSettings from './AssistantSettings.jsx';
 
 const TABS = [
   { id: 'inbox', label: 'Inbox' },
@@ -97,6 +98,7 @@ export default function App() {
         {tab === 'orders' && <Orders />}
         {tab === 'setup' && (
           <div className="space-y-4">
+            <AssistantSettings />
             <ConnectWhatsApp />
             <UploadCatalogue />
             <section className="rounded-lg border border-slate-200 p-5">
