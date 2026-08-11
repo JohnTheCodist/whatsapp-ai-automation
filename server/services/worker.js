@@ -27,6 +27,7 @@ const { evaluateOutbound, isOptOutRequest } = require('./whatsapp/conductPolicy'
 const { evaluateWarmup } = require('./whatsapp/warmupPolicy');
 const { normalizeMsisdn } = require('./whatsapp/senderIdentity');
 const { expireStaleHolds } = require('./orders/orderService');
+const { escalationMessage, readEscalationAnswer } = require('./safety/escalationMessage');
 const { respond } = require('./ai/assistant');
 const { buildMenu, isMenuRequest, parseSelection, intentBriefing } = require('./ai/menu');
 const { env } = require('../config/env');
@@ -172,6 +173,7 @@ async function processInbound(db, job) {
            conv.id as conversation_id, conv.mode, conv.context, conv.greeted_at,
            cust.id as customer_id, cust.wa_phone, cust.wa_jid, cust.display_name,
            ph.name as pharmacy_name, ph.reply_mode, ph.sending_paused,
+           (select phone from pharmacy_profile pp where pp.pharmacy_id = ph.id) as pharmacy_phone,
            ph.bot_name, ph.menu_enabled, ph.welcome_note,
            ph.daily_reply_cap, ph.hourly_conversation_cap,
            ph.quiet_hours_enabled, ph.quiet_hours_start, ph.quiet_hours_end,
@@ -191,6 +193,71 @@ async function processInbound(db, job) {
   // the assistant can ignore is not a handoff.
   if (row.mode !== 'bot') {
     return { sent: false, reason: `conversation_mode:${row.mode}` };
+  }
+
+  // ---- did they answer "would you like a pharmacist?" ---------------------
+  //
+  // Handled before the assistant runs. A bare "yes" carries no meaning on its
+  // own, and letting the model see it would produce "yes to what?" — to a
+  // question it asked one message earlier.
+  const pendingEscalation = row.context?.pending_escalation;
+  if (pendingEscalation) {
+    const answer = readEscalationAnswer(row.body);
+
+    if (answer === true) {
+      await db.begin(async (tx) => {
+        await tx`update conversations set mode = 'human' where id = ${row.conversation_id}`;
+        await tx`
+          update conversations
+          set context = (coalesce(context, '{}'::jsonb) - 'pending_escalation')
+          where id = ${row.conversation_id}
+        `;
+      });
+      const body = "I've passed you to our pharmacist. They'll reply here.";
+      const sent = await sessionManager.sendText(row.account_id, row.wa_jid, body);
+      await db`
+        insert into messages (pharmacy_id, conversation_id, direction, author, body,
+                              provider_message_id, delivery_status)
+        values (${job.pharmacy_id}, ${row.conversation_id}, 'outbound', 'system', ${body},
+                ${sent.providerMessageId}, 'sent')
+      `;
+      return { sent: true, reason: 'escalation_accepted' };
+    }
+
+    if (answer === false) {
+      // Declining closes the handoff: leaving it open would fill the staff
+      // Inbox with people who said they did not want help, and the ones who
+      // do want it would be lost among them.
+      await db.begin(async (tx) => {
+        await tx`
+          update handoffs set resolved_at = now()
+          where conversation_id = ${row.conversation_id} and resolved_at is null
+        `;
+        await tx`
+          update conversations
+          set context = (coalesce(context, '{}'::jsonb) - 'pending_escalation')
+          where id = ${row.conversation_id}
+        `;
+      });
+      const body = "No problem. I'm still here for prices, what we have in stock, and placing an order.";
+      const sent = await sessionManager.sendText(row.account_id, row.wa_jid, body);
+      await db`
+        insert into messages (pharmacy_id, conversation_id, direction, author, body,
+                              provider_message_id, delivery_status)
+        values (${job.pharmacy_id}, ${row.conversation_id}, 'outbound', 'system', ${body},
+                ${sent.providerMessageId}, 'sent')
+      `;
+      return { sent: true, reason: 'escalation_declined' };
+    }
+
+    // Neither yes nor no — they moved on, or asked something else. Drop the
+    // question and treat this as an ordinary message rather than pressing
+    // for an answer they have clearly decided not to give.
+    await db`
+      update conversations
+      set context = (coalesce(context, '{}'::jsonb) - 'pending_escalation')
+      where id = ${row.conversation_id}
+    `;
   }
 
   // ---- "stop messaging me" is honoured before anything else ---------------
@@ -451,6 +518,8 @@ async function processInbound(db, job) {
       throw new Error(`Transient assistant failure (${outcome.category}): ${outcome.reason}`);
     }
 
+    const escalation = escalationMessage(outcome.category, { pharmacyPhone: row.pharmacy_phone });
+
     await db.begin(async (tx) => {
       await tx`
         insert into handoffs (pharmacy_id, conversation_id, reason, detail, triggered_by)
@@ -458,12 +527,28 @@ async function processInbound(db, job) {
                 ${HANDOFF_REASON[outcome.category] || 'unsupported'},
                 ${`${outcome.category}: ${outcome.reason}`}, 'assistant')
       `;
-      // Muting the assistant is the handoff. Without this it answers the
-      // customer's NEXT message and talks over the pharmacist who is now
-      // dealing with them.
-      await tx`
-        update conversations set mode = 'human' where id = ${row.conversation_id}
-      `;
+
+      // Muting the assistant is the handoff — without it the assistant answers
+      // the customer's NEXT message and talks over the pharmacist now dealing
+      // with them.
+      //
+      // But when we have OFFERED a pharmacist rather than imposed one, muting
+      // here would swallow the customer's own answer: they reply "yes" and
+      // nothing responds, which is exactly the silence this message exists to
+      // prevent. So the mute waits for their reply, and the handoff row is
+      // still written immediately so staff see the clinical question either
+      // way.
+      if (!escalation.asksPermission) {
+        await tx`update conversations set mode = 'human' where id = ${row.conversation_id}`;
+      } else {
+        await tx`
+          update conversations
+          set context = coalesce(context, '{}'::jsonb) || ${tx.json({
+            pending_escalation: { category: outcome.category, asked_at: new Date().toISOString() },
+          })}
+          where id = ${row.conversation_id}
+        `;
+      }
     });
 
     console.log(JSON.stringify({
@@ -486,8 +571,11 @@ async function processInbound(db, job) {
     // Nothing here claims a timeframe, since nothing in the system enforces
     // one.
     try {
-      const ack = 'Thanks — let me get one of our pharmacists to help you with that. '
-        + "They'll reply here shortly.";
+      // Named reason, and a question when there is a real choice to offer.
+      // A single generic line for every case left someone asking about their
+      // child reading a deliberate professional boundary as a broken bot.
+      const ack = escalation.text;
+      if (!ack) return { sent: false, reason: `handoff:${outcome.category}` };
       const sent = await sessionManager.sendText(row.account_id, row.wa_jid, ack);
       await db`
         insert into messages (pharmacy_id, conversation_id, direction, author, body,
