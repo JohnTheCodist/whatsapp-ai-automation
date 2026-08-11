@@ -151,14 +151,14 @@ router.get('/products', requireAuth, async (req, res, next) => {
     const rows = search
       ? await db`
           select id, name, generic_name, category, form, strength, pack_size,
-                 price_kobo, stock_qty, stock_tracked, status, data_flags
+                 price_kobo, stock_qty, stock_tracked, status, data_flags, description, is_featured
           from products
           where pharmacy_id = ${req.pharmacyId} and name ilike ${'%' + search + '%'}
           order by name limit ${limit}
         `
       : await db`
           select id, name, generic_name, category, form, strength, pack_size,
-                 price_kobo, stock_qty, stock_tracked, status, data_flags
+                 price_kobo, stock_qty, stock_tracked, status, data_flags, description, is_featured
           from products
           where pharmacy_id = ${req.pharmacyId}
           order by updated_at desc limit ${limit}
@@ -182,6 +182,40 @@ router.get('/products', requireAuth, async (req, res, next) => {
         price: p.price_kobo === null ? null : p.price_kobo / 100,
       })),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * PATCH a product's selling points.
+ *
+ * Only `description` and `is_featured` are editable here — deliberately.
+ * Price and stock come from the spreadsheet and are replaced on every
+ * re-import, so an edit made here would be silently undone by the next
+ * upload. Letting someone type a price into this screen would produce a
+ * number that looks authoritative and lasts until Tuesday.
+ */
+router.patch('/products/:id', requireAuth, async (req, res, next) => {
+  try {
+    assertPharmacyId(req.pharmacyId);
+    const { description, isFeatured } = req.body || {};
+    const db = getSql();
+
+    const [row] = await db`
+      update products set
+        description = ${
+          description === undefined
+            ? db`description`
+            : (String(description).trim() ? String(description).trim().slice(0, 300) : null)
+        },
+        is_featured = ${isFeatured === undefined ? db`is_featured` : Boolean(isFeatured)},
+        updated_at = now()
+      where id = ${req.params.id} and pharmacy_id = ${req.pharmacyId}
+      returning id, name, description, is_featured
+    `;
+    if (!row) return res.status(404).json({ error: 'Product not found.', code: 'NOT_FOUND' });
+    res.json({ product: row });
   } catch (err) {
     next(err);
   }

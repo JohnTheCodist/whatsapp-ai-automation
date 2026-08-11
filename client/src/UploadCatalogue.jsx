@@ -308,25 +308,113 @@ export default function UploadCatalogue() {
           <h3 className="text-xs font-medium uppercase tracking-wide text-slate-400">
             In the catalogue
           </h3>
-          <div className="mt-2 max-h-64 overflow-y-auto rounded border border-slate-200">
+          <p className="mt-1 text-xs text-slate-500">
+            Add a line about a product and the assistant will use your words when a customer asks
+            what you have. Star the ones you want it to recommend first.
+          </p>
+          <div className="mt-2 max-h-80 overflow-y-auto rounded border border-slate-200">
             {products.products.map((p) => (
-              <div key={p.id} className="flex gap-3 border-b border-slate-100 p-2 text-sm last:border-b-0">
-                <span className="min-w-0 flex-1 truncate">
-                  {p.name}
-                  {p.strength && <span className="text-slate-400"> · {p.strength}</span>}
-                </span>
-                <span className="shrink-0 tabular-nums">{naira(p.price)}</span>
-                <span className="w-20 shrink-0 text-right text-xs text-slate-500 tabular-nums">
-                  {p.stock_tracked ? `${p.stock_qty ?? '?'} in stock` : 'not tracked'}
-                </span>
-                {p.status !== 'active' && (
-                  <span className="shrink-0 rounded bg-slate-100 px-1.5 text-xs text-slate-500">{p.status}</span>
-                )}
-              </div>
+              <ProductRow key={p.id} product={p} naira={naira} />
             ))}
           </div>
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * One catalogue row, with the two fields the pharmacy owns.
+ *
+ * Price and stock are shown but NOT editable here: they come from the
+ * spreadsheet and are replaced on every re-import, so an edit made here
+ * would be silently undone by the next upload. Only the two fields that
+ * survive an import are editable.
+ */
+function ProductRow({ product, naira }) {
+  const [description, setDescription] = useState(product.description || '');
+  const [featured, setFeatured] = useState(Boolean(product.is_featured));
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  async function save(next = {}) {
+    setSaving(true);
+    try {
+      const r = await fetch(`/api/catalogue/products/${product.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description, isFeatured: featured, ...next }),
+      });
+      if (r.ok) {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 1500);
+        setEditing(false);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="border-b border-slate-100 p-2 text-sm last:border-b-0">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => { const v = !featured; setFeatured(v); save({ isFeatured: v }); }}
+          title={featured ? 'The assistant offers this first' : 'Mark as one you recommend'}
+          className={`shrink-0 text-base leading-none ${featured ? 'text-amber-500' : 'text-slate-300 hover:text-slate-400'}`}
+        >
+          {featured ? '★' : '☆'}
+        </button>
+        <span className="min-w-0 flex-1 truncate">
+          {product.name}
+          {product.strength && <span className="text-slate-400"> · {product.strength}</span>}
+        </span>
+        <span className="shrink-0 tabular-nums">{naira(product.price)}</span>
+        <span className="w-20 shrink-0 text-right text-xs text-slate-500 tabular-nums">
+          {product.stock_tracked ? `${product.stock_qty ?? '?'} in stock` : 'not tracked'}
+        </span>
+        <button
+          type="button"
+          onClick={() => setEditing((e) => !e)}
+          className="shrink-0 text-xs text-slate-500 underline hover:text-slate-800"
+        >
+          {description ? 'edit note' : 'add note'}
+        </button>
+      </div>
+
+      {description && !editing && (
+        <p className="mt-1 pl-7 text-xs italic text-slate-600">“{description}”</p>
+      )}
+
+      {editing && (
+        <div className="mt-2 pl-7">
+          <input
+            value={description}
+            onChange={(e) => setDescription(e.target.value.slice(0, 300))}
+            placeholder="e.g. Full 3-day course, one pack treats one adult"
+            className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+          />
+          <p className="mt-1 text-[11px] text-slate-500">
+            Sent to customers in your words. The assistant will not rewrite it or add claims of its own.
+          </p>
+          <div className="mt-1 flex gap-2">
+            <button
+              onClick={() => save()}
+              disabled={saving}
+              className="rounded bg-slate-900 px-2 py-1 text-xs text-white disabled:opacity-40"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button onClick={() => { setDescription(product.description || ''); setEditing(false); }}
+              className="px-1 text-xs text-slate-500">
+              Cancel
+            </button>
+            {saved && <span className="self-center text-xs text-teal-700">Saved</span>}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

@@ -158,6 +158,17 @@ const RULES = [
       /\bwhat (do|would) you recommend\b/i,
       /\b(recommend|suggest)\b.{0,20}\b(one|any|something)\b.{0,20}\bfor\b/i,
       /\bwhich (one )?is (stronger|better)\b/i,
+      // "which malaria drug is strongest" slipped through every pattern
+      // above, because they all expect "which one is". Asking which medicine
+      // is STRONGEST is a potency question and belongs to a pharmacist.
+      //
+      // Note what is deliberately NOT caught: "best", "top", "good". Those
+      // are how people ask a shop what it recommends, and browse_category
+      // answers them safely with the pharmacy's own pick and real prices.
+      // Escalating those would turn an ordinary sales question into a
+      // handoff and make the assistant useless for the thing it is for.
+      /\bwhich\b.{0,30}\b(is|are)\s+(the\s+)?(strongest|most (effective|powerful)|most potent)\b/i,
+      /\b(strongest|most potent)\b.{0,20}\b(drug|medicine|tablet|antibiotic|antimalarial|painkiller)\b/i,
     ],
   },
   {

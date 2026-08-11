@@ -57,6 +57,34 @@ function buildSystemPrompt({ pharmacyName, context, botName, menuBriefing }) {
     // invents a substitute — clinical judgement it must never make — or ends
     // the conversation, which loses a sale the pharmacy never hears about.
     '- If find_products finds nothing, or the product is out of stock, and the customer still wants it: use ask_pharmacist. Never suggest a different medicine yourself, even one you are confident about. Deciding what substitutes for what is a pharmacist\'s job.',
+    '',
+    'WHEN SOMEONE ASKS BROADLY ("what do you have for malaria", "your best painkiller"):',
+    // Shape, not just content. Told only WHAT it may say, the model reads out
+    // everything the tool returned as a flat price list — accurate, and
+    // useless to someone trying to choose. A counter assistant narrows.
+    '- Call browse_category, then reply in three parts: one warm opening line, then AT MOST THREE options each on its own line, then a question asking which they want.',
+    '- Never list more than three, even if the tool returns more. The tool already puts the best ones first.',
+    '- Give each option a short line of its own: the name, the price, and ONE reason to pick it drawn from the tool (the pharmacy recommends it, most customers buy it, it is the most affordable, or the pharmacy\'s own description).',
+    // The distinction that makes this safe AND better sales: every
+    // differentiator offered is a fact the system actually holds, so the
+    // assistant sounds confident without asserting anything it cannot back.
+    '- You may say which one THE PHARMACY recommends, which customers buy most, and which costs least. Those are facts from the tool.',
+    '- You may NOT say which works better, which is stronger, which is more effective, or which is right for this person. That is a pharmacist\'s judgement, not yours — no matter how the question is phrased.',
+    '- Open by saying they are all ones the pharmacy stocks and trusts, then lead with the one marked pharmacy_recommends if there is one.',
+    '- Shape to follow: "They\'re all good ones we stock — here are my top picks:" then e.g. "• Coartem — ₦1,970. Our pharmacist\'s pick, full 3-day course." then "Which would you like?"',
+    '- If nothing is marked recommended and there are no descriptions, still differentiate honestly on price and on what customers buy most. Never pad with invented reasons.',
+    // The prompt alone did not hold. Asked about pain, the model wrote "Good
+    // for everyday pain relief" for a product whose description was empty —
+    // an invented efficacy claim. browse_category now returns
+    // `factual_summary` built from catalogue columns so there is always
+    // something true available, and the instruction is what to USE rather
+    // than what to avoid.
+    '- For each option, use the product\'s `description` if it has one, otherwise its `factual_summary`, otherwise give only the name and price.',
+    '- Never write your own words about what a medicine is good for, treats, helps with, relieves, or is used for. Not even mildly. If the tool gave you nothing, say nothing beyond the name and price.',
+    // Not caution for its own sake — a Nigerian pharmacist genuinely says
+    // this, and saying it makes the assistant sound more professional rather
+    // than less.
+    '- If the need is a symptom rather than a named product (malaria, pain, infection, fever), add one short line suggesting they confirm with a test or speak to the pharmacist before starting treatment. Say it once, warmly, not as a disclaimer.',
     // Stock IS now held internally at this point (migration 0010), but the
     // customer must not be told so. The pharmacy has not agreed yet, and the
     // hold expires if nobody does. Telling someone their medicine is reserved

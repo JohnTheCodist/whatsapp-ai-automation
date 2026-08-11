@@ -23,6 +23,7 @@
 
 const { getSql, assertPharmacyId } = require('../db');
 const { createOrder } = require('../orders/orderService');
+const { categoriesFor } = require('./needVocabulary');
 const { alertStaffOfNewOrder } = require('../orders/staffAlert');
 
 /** Kobo -> naira, for anything a human will read. */
@@ -161,6 +162,107 @@ const TOOLS = [
       };
     },
   },
+  {
+    name: 'browse_category',
+    description:
+      'List what this pharmacy stocks for a need, when the customer asks broadly rather than for one '
+      + 'named product — "what do you have for malaria", "something for pain", "your best antimalarial". '
+      + 'Returns real products with prices, the pharmacy\'s own description of each, and which ones the '
+      + 'pharmacy recommends. Present these as options; do NOT rank them by how well they work.',
+    parameters: {
+      type: 'object',
+      properties: {
+        need: {
+          type: 'string',
+          description:
+            'What the customer is looking for, in their words — e.g. "malaria", "pain", "cough", '
+            + '"vitamins". Matched against product categories and names.',
+        },
+      },
+      required: ['need'],
+    },
+    async run(ctx, args) {
+      const { pharmacyId } = ctx;
+      assertPharmacyId(pharmacyId);
+      const need = String(args?.need || '').trim();
+      if (!need) return { products: [], note: 'No need was given.' };
+
+      const db = getSql();
+      // "pain" must find the shelf labelled "Analgesic". Without this the
+      // feature works only for categories whose clinical name happens to be
+      // the everyday one, and an empty result looks like an empty shop.
+      const terms = categoriesFor(need);
+
+      // Ordered by the pharmacy's own pick first, then by what actually
+      // sells, then price. Every one of those is a fact this system holds —
+      // none of them is a claim about which medicine works better.
+      const rows = await db`
+        select p.id, p.name, p.generic_name, p.strength, p.form, p.pack_size,
+               p.category, p.price_kobo, p.stock_qty, p.stock_tracked,
+               p.description, p.is_featured,
+               (select count(*)::int from order_items oi
+                  join orders o on o.id = oi.order_id
+                 where oi.product_id = p.id
+                   and o.status in ('confirmed','ready','completed')
+                   and o.created_at > now() - interval '90 days') as times_bought
+        from products p
+        where p.pharmacy_id = ${pharmacyId}
+          and p.status = 'active'
+          and p.price_kobo is not null
+          and exists (
+            select 1 from unnest(${terms}::text[]) as t(term)
+            where p.category ilike '%' || t.term || '%'
+               or p.name ilike '%' || t.term || '%'
+               or coalesce(p.generic_name,'') ilike '%' || t.term || '%'
+          )
+          and (p.stock_tracked = false or coalesce(p.stock_qty,0) > 0)
+        order by p.is_featured desc, times_bought desc, p.price_kobo
+        -- Four, not six. Given six the model reads out all six as a price
+        -- list, which is what a database does, not what a counter assistant
+        -- does. Someone asking "what do you have for pain" wants to be helped
+        -- to a decision, and a wall of options is the opposite of that.
+        -- Ordering already puts the pharmacy's pick first, so the ones cut
+        -- are the ones nobody chose to highlight.
+        limit 4
+      `;
+
+      return {
+        need,
+        match_count: rows.length,
+        products: rows.map((r) => ({
+          ...presentProduct(r),
+          // The pharmacy's words, or nothing. Never a description written here.
+          description: r.description || null,
+          // Something TRUE to say when the pharmacy has written nothing.
+          //
+          // Asked for pain, the model produced "Good for everyday pain
+          // relief" and "A trusted basic option" for products whose
+          // description was NULL — invented efficacy claims, despite the
+          // prompt forbidding exactly that. Telling a model not to fill a
+          // gap does not work; removing the gap does. This is assembled
+          // only from catalogue columns, so it states what the product IS
+          // and never what it does.
+          factual_summary: [
+            r.generic_name,
+            r.strength,
+            r.form,
+            r.pack_size ? `pack of ${r.pack_size}` : null,
+          ].filter(Boolean).join(', ') || null,
+          pharmacy_recommends: r.is_featured,
+          times_bought_90d: r.times_bought,
+        })),
+        note: rows.length === 0
+          ? `This pharmacy has nothing in stock matching "${need}". Use ask_pharmacist if the customer still wants something.`
+          : 'Offer these as options with their prices. You may say which the PHARMACY recommends, or which '
+            + 'customers buy most — both are facts. You may NOT say which works better, which is stronger, '
+            + 'or which is right for this person. '
+            + 'For the line about each product use `description` if present, otherwise `factual_summary`, '
+            + 'otherwise say only the name and price. Do NOT write your own words about what a medicine is '
+            + 'good for, treats, helps with or relieves — not even a mild one.',
+      };
+    },
+  },
+
   {
     name: 'ask_pharmacist',
     description:

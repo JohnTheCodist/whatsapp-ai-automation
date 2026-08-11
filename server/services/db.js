@@ -27,7 +27,19 @@ function getSql() {
       // both cap connections well below what a default pool would grab, and
       // an exhausted pool fails as mysterious timeouts rather than a clear
       // error. Raise this only alongside a measured need.
-      max: parseInt(process.env.PG_POOL_MAX || '10', 10),
+      // Under `node --test` this drops to 2. The runner forks one process
+      // per file in parallel, each building its own pool, so five DB-touching
+      // test files on a 4-core machine reached for up to 40 connections
+      // against a 15-client session pooler — with the dev server holding
+      // more. It surfaced as ENOTFOUND and ECONNRESET in whichever files
+      // happened to run together, which reads like a network fault and sent
+      // me looking at DNS twice.
+      //
+      // Keyed off TEST_DATABASE_URL rather than NODE_ENV: the test files set
+      // it themselves, so it is present exactly when the runner is active and
+      // needs nothing added to the npm script (which would have to work on
+      // both cmd.exe and sh).
+      max: parseInt(process.env.PG_POOL_MAX || (process.env.TEST_DATABASE_URL ? '2' : '10'), 10),
       idle_timeout: 30,
       // 30s, not 10. Two things stack against a short timeout here: the
       // Supabase pooler is a transatlantic hop (measured 1.3-2.1s just to
