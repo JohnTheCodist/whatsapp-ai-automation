@@ -46,6 +46,15 @@ async function ingest(msg) {
     return { stored: false, reason: 'no_provider_message_id' };
   }
 
+  if (!replyJid) {
+    // wa_jid is now the customer identity key (0016) and is NOT NULL at the
+    // database level. In real traffic this should never happen — Baileys
+    // always carries msg.key.remoteJid — so this guard exists to fail with a
+    // clear reason rather than let a malformed event hit the NOT NULL
+    // constraint and surface as an opaque insert error three lines down.
+    return { stored: false, reason: 'no_reply_jid' };
+  }
+
   const db = getSql();
 
   // 0. SCOPE GATE — before the first insert, on purpose.
@@ -98,22 +107,32 @@ async function ingest(msg) {
 
   try {
     const result = await db.begin(async (tx) => {
-      // 2. The customer. last_seen_at moves; first_seen_at does not.
+      // 2. The customer. Atomic find-or-create: a single statement guarded by
+      //    the (pharmacy_id, wa_jid) unique index, not a SELECT-then-INSERT.
+      //    Two inbound messages from a brand-new sender arriving on
+      //    overlapping connections cannot produce two customer rows — the
+      //    second insert blocks on the index, sees the first one committed,
+      //    and updates it instead. This is what makes patient identity safe
+      //    under real concurrency rather than merely safe in the common case.
       //
-      // wa_jid is refreshed every time: it is the routing WhatsApp gave us,
-      // and it can change as accounts migrate to LID addressing. A stale
-      // reply JID would mean answering into the void.
+      //    wa_jid is the identity key (0016) and is never in the SET clause:
+      //    it is the conflict target, so by definition it already equals
+      //    what is stored. A message that genuinely carries a DIFFERENT jid
+      //    is a different customer and inserts a new row — it does not, and
+      //    must not, silently take over an existing one.
       //
-      // display_name uses coalesce so a message that happens to arrive
-      // without a pushName does not erase a name we already knew.
+      //    wa_phone and wa_lid are best-effort and DO get refreshed: a later
+      //    message can resolve a real phone number where an earlier one
+      //    could not, and there is no reason to keep the worse value once a
+      //    better one arrives. last_seen_at moves; first_seen_at does not.
       const [customer] = await tx`
         insert into customers (pharmacy_id, wa_phone, wa_lid, wa_jid, display_name, last_seen_at)
-        values (${pharmacyId}, ${phoneNumber}, ${lid || null}, ${replyJid || null},
+        values (${pharmacyId}, ${phoneNumber}, ${lid || null}, ${replyJid},
                 ${displayName || null}, now())
-        on conflict (pharmacy_id, wa_phone) do update
+        on conflict (pharmacy_id, wa_jid) do update
           set last_seen_at  = now(),
+              wa_phone      = coalesce(excluded.wa_phone, customers.wa_phone),
               wa_lid        = coalesce(excluded.wa_lid, customers.wa_lid),
-              wa_jid        = coalesce(excluded.wa_jid, customers.wa_jid),
               display_name  = coalesce(excluded.display_name, customers.display_name)
         returning id
       `;

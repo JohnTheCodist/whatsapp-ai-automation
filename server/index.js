@@ -101,6 +101,7 @@ app.use('/api/whatsapp', require('./routes/whatsapp'));      // Phase 2
 app.use('/api/catalogue', require('./routes/catalogue'));    // Phase 3
 app.use('/api/conversations', require('./routes/conversations')); // Phase 4 — staff inbox
 app.use('/api/requests', require('./routes/requests'));      // pharmacist alternatives
+app.use('/api/customers', require('./routes/customers'));    // patient identity list
 app.use('/api/orders', require('./routes/orders'));               // Phase 5 — order queue
 
 app.use(notFound);

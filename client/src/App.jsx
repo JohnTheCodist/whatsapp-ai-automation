@@ -14,6 +14,7 @@ import Consultations from './Consultations.jsx';
 import Inbox from './Inbox.jsx';
 import Orders from './Orders.jsx';
 import Requests from './Requests.jsx';
+import Customers from './Customers.jsx';
 import AssistantSettings from './AssistantSettings.jsx';
 import { playOrderChime, playConsultationAlarm, unlockChime, isUnlocked } from './orderChime.js';
 
@@ -27,6 +28,7 @@ const TABS = [
   { id: 'inbox', label: 'Inbox' },
   { id: 'orders', label: 'Orders' },
   { id: 'requests', label: 'Requests' },
+  { id: 'customers', label: 'Customers' },
   { id: 'setup', label: 'Setup' },
 ];
 
@@ -228,6 +230,7 @@ export default function App() {
         {tab === 'requests' && (
           <Requests onCount={(n) => setBadges((b) => (b.requests === n ? b : { ...b, requests: n }))} />
         )}
+        {tab === 'customers' && <Customers />}
         {tab === 'setup' && (
           <div className="space-y-4">
             <AssistantSettings />
