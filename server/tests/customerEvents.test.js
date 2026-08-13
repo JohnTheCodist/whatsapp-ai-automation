@@ -48,8 +48,8 @@ before(async () => {
   const b = await pharmacies.createPharmacy(userB, { name: `${TAG} Beta` });
 
   const [customer] = await db`
-    insert into customers (pharmacy_id, wa_phone, wa_jid, display_name)
-    values (${a.id}, '2349070000001', '2349070000001@s.whatsapp.net', 'Events Tester')
+    insert into customers (pharmacy_id, identity_key, wa_phone, wa_jid, display_name)
+    values (${a.id}, '2349070000001', '2349070000001', '2349070000001@s.whatsapp.net', 'Events Tester')
     returning id
   `;
 
@@ -134,8 +134,8 @@ test('a customer belonging to pharmacy A returns no timeline when asked for unde
 
 test('events are ordered by occurred_at, not by insertion order or id', { skip: SKIP && skipReason }, async () => {
   const [customer] = await db`
-    insert into customers (pharmacy_id, wa_phone, wa_jid, display_name)
-    values (${ctx.a.id}, '2349070000002', '2349070000002@s.whatsapp.net', 'Order Test')
+    insert into customers (pharmacy_id, identity_key, wa_phone, wa_jid, display_name)
+    values (${ctx.a.id}, '2349070000002', '2349070000002', '2349070000002@s.whatsapp.net', 'Order Test')
     returning id
   `;
 
@@ -170,8 +170,8 @@ test('events are ordered by occurred_at, not by insertion order or id', { skip: 
 
 test('cursor pagination covers every event exactly once across pages', { skip: SKIP && skipReason }, async () => {
   const [customer] = await db`
-    insert into customers (pharmacy_id, wa_phone, wa_jid, display_name)
-    values (${ctx.a.id}, '2349070000003', '2349070000003@s.whatsapp.net', 'Pagination Test')
+    insert into customers (pharmacy_id, identity_key, wa_phone, wa_jid, display_name)
+    values (${ctx.a.id}, '2349070000003', '2349070000003', '2349070000003@s.whatsapp.net', 'Pagination Test')
     returning id
   `;
 
@@ -201,8 +201,8 @@ test('cursor pagination covers every event exactly once across pages', { skip: S
 
 test('a filtered category only returns events in that category', { skip: SKIP && skipReason }, async () => {
   const [customer] = await db`
-    insert into customers (pharmacy_id, wa_phone, wa_jid, display_name)
-    values (${ctx.a.id}, '2349070000004', '2349070000004@s.whatsapp.net', 'Filter Test')
+    insert into customers (pharmacy_id, identity_key, wa_phone, wa_jid, display_name)
+    values (${ctx.a.id}, '2349070000004', '2349070000004', '2349070000004@s.whatsapp.net', 'Filter Test')
     returning id
   `;
   await recordEvent(db, {

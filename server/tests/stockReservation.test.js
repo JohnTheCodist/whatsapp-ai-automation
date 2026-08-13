@@ -63,8 +63,8 @@ before(async () => {
   const p = await pharmacies.createPharmacy(userId, { name: `${TAG} Alpha` });
 
   const [customer] = await db`
-    insert into customers (pharmacy_id, wa_phone, wa_jid, display_name)
-    values (${p.id}, '2349011111111', '2349011111111@s.whatsapp.net', 'Res Tester')
+    insert into customers (pharmacy_id, identity_key, wa_phone, wa_jid, display_name)
+    values (${p.id}, '2349011111111', '2349011111111', '2349011111111@s.whatsapp.net', 'Res Tester')
     returning id
   `;
   ctx = { userId, pharmacyId: p.id, customerId: customer.id };

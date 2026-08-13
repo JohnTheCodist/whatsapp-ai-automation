@@ -50,8 +50,8 @@ before(async () => {
   const b = await pharmacies.createPharmacy(userB, { name: `${TAG} Beta` });
 
   const [customer] = await db`
-    insert into customers (pharmacy_id, wa_phone, wa_jid, display_name)
-    values (${a.id}, '2349080000001', '2349080000001@s.whatsapp.net', 'Profile Tester')
+    insert into customers (pharmacy_id, identity_key, wa_phone, wa_jid, display_name)
+    values (${a.id}, '2349080000001', '2349080000001', '2349080000001@s.whatsapp.net', 'Profile Tester')
     returning id, first_seen_at
   `;
 
@@ -188,8 +188,8 @@ test('medicationJourneys is an honest empty array, not a fabricated placeholder'
 
 test('a customer with no orders or conversations still returns a complete, non-throwing shape', { skip: SKIP && skipReason }, async () => {
   const [bare] = await db`
-    insert into customers (pharmacy_id, wa_phone, wa_jid, display_name, first_seen_at)
-    values (${ctx.a.id}, '2349080000099', '2349080000099@s.whatsapp.net', null, now())
+    insert into customers (pharmacy_id, identity_key, wa_phone, wa_jid, display_name, first_seen_at)
+    values (${ctx.a.id}, '2349080000099', '2349080000099', '2349080000099@s.whatsapp.net', null, now())
     returning id, first_seen_at
   `;
   // Raw insert bypasses inboundIngest.js's xmax-detected PATIENT_CREATED

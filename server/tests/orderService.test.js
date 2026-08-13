@@ -63,8 +63,8 @@ before(async () => {
   };
 
   const [customer] = await db`
-    insert into customers (pharmacy_id, wa_phone, wa_jid, display_name)
-    values (${a.id}, '2349013993683', '2349013993683@s.whatsapp.net', 'Test Customer')
+    insert into customers (pharmacy_id, identity_key, wa_phone, wa_jid, display_name)
+    values (${a.id}, '2349013993683', '2349013993683', '2349013993683@s.whatsapp.net', 'Test Customer')
     returning id
   `;
 

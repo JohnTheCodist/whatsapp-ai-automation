@@ -54,12 +54,12 @@ before(async () => {
   // One customer in each tenant, so cross-tenant attempts are realistic
   // rather than using an id that simply does not exist.
   const [custA] = await db`
-    insert into customers (pharmacy_id, wa_phone, wa_jid, display_name)
-    values (${a.id}, '2349080000001', '2349080000001@s.whatsapp.net', 'Alpha Customer')
+    insert into customers (pharmacy_id, identity_key, wa_phone, wa_jid, display_name)
+    values (${a.id}, '2349080000001', '2349080000001', '2349080000001@s.whatsapp.net', 'Alpha Customer')
     returning id`;
   const [custB] = await db`
-    insert into customers (pharmacy_id, wa_phone, wa_jid, display_name)
-    values (${b.id}, '2349080000002', '2349080000002@s.whatsapp.net', 'Beta Customer')
+    insert into customers (pharmacy_id, identity_key, wa_phone, wa_jid, display_name)
+    values (${b.id}, '2349080000002', '2349080000002', '2349080000002@s.whatsapp.net', 'Beta Customer')
     returning id`;
 
   // A product in B, used to prove an entity from another tenant is refused.

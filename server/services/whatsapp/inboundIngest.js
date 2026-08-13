@@ -23,6 +23,7 @@ const { getSql, assertPharmacyId } = require('../db');
 const { shouldIngest } = require('./ingestionPolicy');
 const { recordEvent } = require('../customers/customerEvents');
 const { PATIENT_EVENTS } = require('../customers/patientEventTypes');
+const { resolveCustomer } = require('../customers/customerIdentity');
 const { env } = require('../../config/env');
 
 /** How long a customer-initiated reply window stays open. */
@@ -109,49 +110,42 @@ async function ingest(msg) {
 
   try {
     const result = await db.begin(async (tx) => {
-      // 2. The customer. Atomic find-or-create: a single statement guarded by
-      //    the (pharmacy_id, wa_jid) unique index, not a SELECT-then-INSERT.
-      //    Two inbound messages from a brand-new sender arriving on
-      //    overlapping connections cannot produce two customer rows — the
-      //    second insert blocks on the index, sees the first one committed,
-      //    and updates it instead. This is what makes patient identity safe
-      //    under real concurrency rather than merely safe in the common case.
+      // 2. Who is this? Identity resolution lives in customerIdentity.js
+      //    rather than inline here, because it is now called from more than
+      //    one place and a second copy of "find the customer by phone" is
+      //    how two call sites end up disagreeing about who someone is.
       //
-      //    wa_jid is the identity key (0016) and is never in the SET clause:
-      //    it is the conflict target, so by definition it already equals
-      //    what is stored. A message that genuinely carries a DIFFERENT jid
-      //    is a different customer and inserts a new row — it does not, and
-      //    must not, silently take over an existing one.
-      //
-      //    wa_phone and wa_lid are best-effort and DO get refreshed: a later
-      //    message can resolve a real phone number where an earlier one
-      //    could not, and there is no reason to keep the worse value once a
-      //    better one arrives. last_seen_at moves; first_seen_at does not.
-      // xmax = 0 is the standard way to tell an upsert's INSERT branch from
-      // its UPDATE branch in one statement: a row this same command just
-      // inserted has never been touched by another transaction, so its xmax
-      // is unset. Needed here because PATIENT_CREATED must fire exactly
-      // once — on the message that actually created the row — not on every
-      // message from an existing customer.
-      const [customer] = await tx`
-        insert into customers (pharmacy_id, wa_phone, wa_lid, wa_jid, display_name, last_seen_at)
-        values (${pharmacyId}, ${phoneNumber}, ${lid || null}, ${replyJid},
-                ${displayName || null}, now())
-        on conflict (pharmacy_id, wa_jid) do update
-          set last_seen_at  = now(),
-              wa_phone      = coalesce(excluded.wa_phone, customers.wa_phone),
-              wa_lid        = coalesce(excluded.wa_lid, customers.wa_lid),
-              display_name  = coalesce(excluded.display_name, customers.display_name)
-        returning id, first_seen_at, (xmax = 0) as is_new
-      `;
+      //    It is atomic by constraint — one INSERT ... ON CONFLICT against
+      //    the unique index — so two first messages arriving on overlapping
+      //    connections cannot create two customers.
+      const { customerId, created } = await resolveCustomer(tx, {
+        pharmacyId,
+        phone: phoneNumber,
+        lid,
+        jid: replyJid,
+        displayName,
+        defaultCountry: env.defaultCountry,
+      });
 
-      if (customer.is_new) {
+      if (created) {
+        // Exactly once in a customer's lifetime — resolveCustomer reports
+        // whether this call was the INSERT branch of the upsert, which is
+        // the only way to tell a genuinely new person from a returning one
+        // in a single statement.
+        const [{ first_seen_at: firstSeenAt }] = await tx`
+          select first_seen_at from customers where id = ${customerId}
+        `;
         await recordEvent(tx, {
-          pharmacyId, customerId: customer.id, eventType: PATIENT_EVENTS.PATIENT_CREATED,
-          occurredAt: customer.first_seen_at, actorType: 'system',
-          entityType: 'customer', entityId: customer.id,
+          pharmacyId, customerId, eventType: PATIENT_EVENTS.PATIENT_CREATED,
+          occurredAt: firstSeenAt, actorType: 'system',
+          entityType: 'customer', entityId: customerId,
+          // The row was created microseconds ago inside this same
+          // transaction; a separate verification query would only re-read it.
+          verifyEntity: false,
         });
       }
+
+      const customer = { id: customerId };
 
       // 3. The conversation. One open thread per customer — a 'closed' one
       //    is history and must not be reopened silently, because reopening

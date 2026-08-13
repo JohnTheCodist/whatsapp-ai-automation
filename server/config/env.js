@@ -72,6 +72,12 @@ const env = {
   // value rather than a constant so the allowlist does not quietly stop
   // matching the first time this is sold elsewhere.
   defaultCountryCode: process.env.DEFAULT_COUNTRY_CODE || '234',
+  // ISO 3166-1 alpha-2, NOT the dialing code above. libphonenumber-js needs
+  // the country to interpret a locally-written number ("08012345678"), and
+  // passing '234' where it expects 'NG' fails by returning null for every
+  // local number rather than by raising — so the two are kept as separate,
+  // obviously-different values instead of one being derived from the other.
+  defaultCountry: process.env.DEFAULT_COUNTRY || 'NG',
 
   // Local testing only. Never true in production — assertRequiredEnv()
   // refuses to boot rather than allowing it.
