@@ -28,6 +28,8 @@ const { evaluateWarmup } = require('./whatsapp/warmupPolicy');
 const { normalizeMsisdn } = require('./whatsapp/senderIdentity');
 const { expireStaleHolds } = require('./orders/orderService');
 const { escalationMessage, readEscalationAnswer } = require('./safety/escalationMessage');
+const { sendAndRecordOutbound, insertOutboundMessage } = require('./whatsapp/outboundMessage');
+const { recordEvent } = require('./customers/customerEvents');
 const { respond } = require('./ai/assistant');
 const { buildMenu, isMenuRequest, parseSelection, intentBriefing } = require('./ai/menu');
 const { env } = require('../config/env');
@@ -214,13 +216,10 @@ async function processInbound(db, job) {
         `;
       });
       const body = "I've passed you to our pharmacist. They'll reply here.";
-      const sent = await sessionManager.sendText(row.account_id, row.wa_jid, body);
-      await db`
-        insert into messages (pharmacy_id, conversation_id, direction, author, body,
-                              provider_message_id, delivery_status)
-        values (${job.pharmacy_id}, ${row.conversation_id}, 'outbound', 'system', ${body},
-                ${sent.providerMessageId}, 'sent')
-      `;
+      await sendAndRecordOutbound(db, {
+        pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
+        accountId: row.account_id, to: row.wa_jid, body, author: 'system',
+      });
       return { sent: true, reason: 'escalation_accepted' };
     }
 
@@ -240,13 +239,10 @@ async function processInbound(db, job) {
         `;
       });
       const body = "No problem. I'm still here for prices, what we have in stock, and placing an order.";
-      const sent = await sessionManager.sendText(row.account_id, row.wa_jid, body);
-      await db`
-        insert into messages (pharmacy_id, conversation_id, direction, author, body,
-                              provider_message_id, delivery_status)
-        values (${job.pharmacy_id}, ${row.conversation_id}, 'outbound', 'system', ${body},
-                ${sent.providerMessageId}, 'sent')
-      `;
+      await sendAndRecordOutbound(db, {
+        pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
+        accountId: row.account_id, to: row.wa_jid, body, author: 'system',
+      });
       return { sent: true, reason: 'escalation_declined' };
     }
 
@@ -267,11 +263,16 @@ async function processInbound(db, job) {
   // someone who asked you to stop is the clearest signal of a system worth
   // banning, and is wrong regardless of whether anyone is watching.
   if (isOptOutRequest(row.body)) {
-    await db`
+    // `do update set opted_out_at = opt_outs.opted_out_at` is a no-op write
+    // that still RETURNs the row either way — a plain `do nothing` would
+    // return nothing on a repeat opt-out, and the event below needs this
+    // row's own id as its idempotency key regardless of which branch fired.
+    const [optOut] = await db`
       insert into opt_outs (pharmacy_id, wa_phone, source_text)
       values (${job.pharmacy_id}, ${normalizeMsisdn(row.wa_phone, env.defaultCountryCode) || row.wa_phone},
               ${String(row.body).slice(0, 300)})
-      on conflict (pharmacy_id, wa_phone) do nothing
+      on conflict (pharmacy_id, wa_phone) do update set opted_out_at = opt_outs.opted_out_at
+      returning id, opted_out_at
     `;
     // Cache write-through, by id rather than by phone match — opt_outs
     // above stays the source of truth conductPolicy actually enforces;
@@ -281,6 +282,11 @@ async function processInbound(db, job) {
     await db`
       update customers set communication_status = 'opted_out' where id = ${row.customer_id}
     `;
+    await recordEvent(db, {
+      pharmacyId: job.pharmacy_id, customerId: row.customer_id,
+      eventType: 'COMMUNICATION_OPTED_OUT', occurredAt: optOut.opted_out_at, actorType: 'customer',
+      entityType: 'opt_out', entityId: optOut.id,
+    });
     console.log(JSON.stringify({ level: 'info', msg: 'opt-out recorded', to: row.wa_phone }));
     return { sent: false, reason: 'opt_out_request' };
   }
@@ -421,13 +427,10 @@ async function processInbound(db, job) {
 
     const sent = await sessionManager.sendText(row.account_id, row.wa_jid, text);
     await db.begin(async (tx) => {
-      await tx`
-        insert into messages
-          (pharmacy_id, conversation_id, direction, author, body, provider_message_id, delivery_status)
-        values
-          (${job.pharmacy_id}, ${row.conversation_id}, 'outbound', 'assistant',
-           ${text}, ${sent.providerMessageId}, 'sent')
-      `;
+      await insertOutboundMessage(tx, {
+        pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
+        providerMessageId: sent.providerMessageId, body: text, author: 'assistant',
+      });
       await tx`
         update conversations set greeted_at = now(), last_message_at = now()
         where id = ${row.conversation_id}
@@ -451,25 +454,28 @@ async function processInbound(db, job) {
   // straight to a person rather than through a model that must decline.
   if (choice?.intent === 'pharmacist') {
     await db.begin(async (tx) => {
-      await tx`
+      const [handoff] = await tx`
         insert into handoffs (pharmacy_id, conversation_id, reason, category, detail, triggered_by)
         values (${job.pharmacy_id}, ${row.conversation_id}, 'customer_request', 'human_requested',
                 'Chose "Speak to the pharmacist" from the menu.', 'customer')
+        returning id, requested_at
       `;
+      await recordEvent(tx, {
+        pharmacyId: job.pharmacy_id, customerId: row.customer_id,
+        eventType: 'PHARMACIST_HANDOFF', occurredAt: handoff.requested_at, actorType: 'customer',
+        entityType: 'handoff', entityId: handoff.id,
+        metadata: { reason: 'customer_request', category: 'human_requested' },
+      });
       await tx`update conversations set mode = 'human', last_menu_choice = ${choice.intent} where id = ${row.conversation_id}`;
     });
 
     // Unlike a silent escalation, this one WAS asked for, so saying it is
     // happening is a promise the staff inbox can now actually keep.
     const ack = 'A pharmacist will reply here shortly. Please tell us what you need in the meantime.';
-    const sent = await sessionManager.sendText(row.account_id, row.wa_jid, ack);
-    await db`
-      insert into messages
-        (pharmacy_id, conversation_id, direction, author, body, provider_message_id, delivery_status)
-      values
-        (${job.pharmacy_id}, ${row.conversation_id}, 'outbound', 'system',
-         ${ack}, ${sent.providerMessageId}, 'sent')
-    `;
+    await sendAndRecordOutbound(db, {
+      pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
+      accountId: row.account_id, to: row.wa_jid, body: ack, author: 'system',
+    });
     await markWarmupStarted(db, job.pharmacy_id);
     return { sent: true, reason: 'menu:pharmacist' };
   }
@@ -529,13 +535,20 @@ async function processInbound(db, job) {
     const escalation = escalationMessage(outcome.category, { pharmacyPhone: row.pharmacy_phone });
 
     await db.begin(async (tx) => {
-      await tx`
+      const [handoff] = await tx`
         insert into handoffs (pharmacy_id, conversation_id, reason, category, detail, triggered_by)
         values (${job.pharmacy_id}, ${row.conversation_id},
                 ${HANDOFF_REASON[outcome.category] || 'unsupported'},
                 ${outcome.category},
                 ${`${outcome.category}: ${outcome.reason}`}, 'assistant')
+        returning id, requested_at
       `;
+      await recordEvent(tx, {
+        pharmacyId: job.pharmacy_id, customerId: row.customer_id,
+        eventType: 'PHARMACIST_HANDOFF', occurredAt: handoff.requested_at, actorType: 'ai',
+        entityType: 'handoff', entityId: handoff.id,
+        metadata: { reason: HANDOFF_REASON[outcome.category] || 'unsupported', category: outcome.category },
+      });
 
       // Muting the assistant is the handoff — without it the assistant answers
       // the customer's NEXT message and talks over the pharmacist now dealing
@@ -617,13 +630,10 @@ async function processInbound(db, job) {
       // child reading a deliberate professional boundary as a broken bot.
       const ack = escalation.text;
       if (!ack) return { sent: false, reason: `handoff:${outcome.category}` };
-      const sent = await sessionManager.sendText(row.account_id, row.wa_jid, ack);
-      await db`
-        insert into messages (pharmacy_id, conversation_id, direction, author, body,
-                              provider_message_id, delivery_status)
-        values (${job.pharmacy_id}, ${row.conversation_id}, 'outbound', 'system', ${ack},
-                ${sent.providerMessageId}, 'sent')
-      `;
+      await sendAndRecordOutbound(db, {
+        pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
+        accountId: row.account_id, to: row.wa_jid, body: ack, author: 'system',
+      });
       await markWarmupStarted(db, job.pharmacy_id);
     } catch (err) {
       // The handoff itself already succeeded and is what matters. A failed
@@ -641,13 +651,10 @@ async function processInbound(db, job) {
   const sent = await sessionManager.sendText(row.account_id, row.wa_jid, outcome.text);
 
   await db.begin(async (tx) => {
-    await tx`
-      insert into messages
-        (pharmacy_id, conversation_id, direction, author, body, provider_message_id, delivery_status)
-      values
-        (${job.pharmacy_id}, ${row.conversation_id}, 'outbound', 'assistant',
-         ${outcome.text}, ${sent.providerMessageId}, 'sent')
-    `;
+    await insertOutboundMessage(tx, {
+      pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
+      providerMessageId: sent.providerMessageId, body: outcome.text, author: 'assistant',
+    });
     if (outcome.contextUpdate) {
       // Merged, not replaced, so remembering a product does not forget
       // whatever else the conversation was carrying.
@@ -804,19 +811,19 @@ async function sweepExpiredHolds(db) {
       const body = `Order ${order.reference} has expired because the pharmacy did not confirm it in time. `
         + 'Nothing has been charged. Please message us again if you still need it.';
 
-      const sent = await sessionManager.sendText(
-        target.account_id,
-        target.wa_jid || `${target.wa_phone}@s.whatsapp.net`,
-        body,
-        { delay: false },
-      );
       if (order.conversation_id) {
-        await db`
-          insert into messages (pharmacy_id, conversation_id, direction, author, body,
-                                provider_message_id, delivery_status)
-          values (${order.pharmacy_id}, ${order.conversation_id}, 'outbound', 'system', ${body},
-                  ${sent.providerMessageId}, 'sent')
-        `;
+        await sendAndRecordOutbound(db, {
+          pharmacyId: order.pharmacy_id, customerId: order.customer_id, conversationId: order.conversation_id,
+          accountId: target.account_id, to: target.wa_jid || `${target.wa_phone}@s.whatsapp.net`,
+          body, author: 'system', delay: false,
+        });
+      } else {
+        // No conversation to attach an outbound row to — still send, just
+        // without a stored message or a timeline event. Matches the
+        // original behaviour: the conditional was already load-bearing here.
+        await sessionManager.sendText(
+          target.account_id, target.wa_jid || `${target.wa_phone}@s.whatsapp.net`, body, { delay: false },
+        );
       }
     } catch (err) {
       console.error(JSON.stringify({

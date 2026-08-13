@@ -27,6 +27,7 @@
 
 const crypto = require('node:crypto');
 const { getSql, assertPharmacyId } = require('../db');
+const { recordEvent, orderEventType } = require('../customers/customerEvents');
 
 /**
  * Reference alphabet, minus everything that is ambiguous out loud or in
@@ -219,10 +220,17 @@ async function createOrder(pharmacyId, { customerId, conversationId = null, item
           )}
         `;
 
-        await tx`
+        const [history] = await tx`
           insert into order_status_history (order_id, pharmacy_id, from_status, to_status, actor_type, note)
           values (${created.id}, ${pharmacyId}, null, 'pending', 'assistant', 'Created from a WhatsApp conversation.')
+          returning id, changed_at
         `;
+        await recordEvent(tx, {
+          pharmacyId, customerId, eventType: 'ORDER_CREATED',
+          occurredAt: history.changed_at, actorType: 'ai',
+          entityType: 'order_status_history', entityId: history.id,
+          metadata: { orderId: created.id, reference, totalKobo, itemCount: lines.length },
+        });
 
         return created;
       });
@@ -332,10 +340,24 @@ async function updateStatus(pharmacyId, orderId, toStatus, { changedBy = null, n
       where id = ${orderId} and pharmacy_id = ${pharmacyId}
       returning *
     `;
-    await tx`
+    const [history] = await tx`
       insert into order_status_history (order_id, pharmacy_id, from_status, to_status, changed_by, actor_type, note)
       values (${orderId}, ${pharmacyId}, ${order.status}, ${toStatus}, ${changedBy}, ${actorType}, ${note})
+      returning id, changed_at
     `;
+    // actorType here is exactly what the caller passed to updateStatus
+    // (defaults to 'staff') — not upgraded to 'pharmacist', since orderService
+    // itself does not distinguish a pharmacist from any other staff member
+    // making the change. Claiming that distinction here would assert
+    // something the calling code never actually knew.
+    await recordEvent(tx, {
+      pharmacyId, customerId: row.customer_id,
+      eventType: orderEventType(order.status, toStatus, actorType),
+      occurredAt: history.changed_at,
+      actorType, actorId: changedBy,
+      entityType: 'order_status_history', entityId: history.id,
+      metadata: { orderId, reference: row.reference, fromStatus: order.status, toStatus },
+    });
     return row;
   });
 
@@ -421,11 +443,22 @@ async function expireStaleHolds({ limit = 50 } = {}) {
               updated_at = now()
           where id = ${order.id} and status = 'pending'
         `;
-        await tx`
+        const [history] = await tx`
           insert into order_status_history (order_id, pharmacy_id, from_status, to_status, actor_type, note)
           values (${order.id}, ${order.pharmacy_id}, 'pending', 'cancelled', 'system',
                   'Hold expired before anyone confirmed it.')
+          returning id, changed_at
         `;
+        // actor_type='system' here is what makes orderEventType read this as
+        // ORDER_HOLD_EXPIRED rather than a generic ORDER_CANCELLED — nobody
+        // decided to cancel this, the clock ran out.
+        await recordEvent(tx, {
+          pharmacyId: order.pharmacy_id, customerId: order.customer_id,
+          eventType: orderEventType('pending', 'cancelled', 'system'),
+          occurredAt: history.changed_at, actorType: 'system',
+          entityType: 'order_status_history', entityId: history.id,
+          metadata: { orderId: order.id, reference: order.reference },
+        });
       });
       expired.push(order);
     } catch (err) {

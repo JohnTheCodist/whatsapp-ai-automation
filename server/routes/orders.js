@@ -14,6 +14,7 @@ const express = require('express');
 const { requireAuth } = require('../middleware/auth');
 const { getSql, assertPharmacyId } = require('../services/db');
 const { listOrders, updateStatus } = require('../services/orders/orderService');
+const { sendAndRecordOutbound } = require('../services/whatsapp/outboundMessage');
 const { sessionManager } = require('../services/whatsapp/sessionManager');
 
 const router = express.Router();
@@ -138,7 +139,7 @@ router.post('/:id/status', requireAuth, async (req, res, next) => {
       try {
         const db = getSql();
         const [target] = await db`
-          select c.wa_jid, c.wa_phone, o.conversation_id
+          select c.id as customer_id, c.wa_jid, c.wa_phone, o.conversation_id
           from orders o join customers c on c.id = o.customer_id
           where o.id = ${req.params.id} and o.pharmacy_id = ${req.pharmacyId}
         `;
@@ -149,19 +150,20 @@ router.post('/:id/status', requireAuth, async (req, res, next) => {
         `;
 
         if (account && target) {
-          const sent = await sessionManager.sendText(
-            account.id,
-            target.wa_jid || `${target.wa_phone}@s.whatsapp.net`,
-            body,
-            { delay: false },
-          );
           if (target.conversation_id) {
-            await db`
-              insert into messages (pharmacy_id, conversation_id, direction, author, body,
-                                    provider_message_id, delivery_status)
-              values (${req.pharmacyId}, ${target.conversation_id}, 'outbound', 'system', ${body},
-                      ${sent.providerMessageId}, 'sent')
-            `;
+            await sendAndRecordOutbound(db, {
+              pharmacyId: req.pharmacyId, customerId: target.customer_id, conversationId: target.conversation_id,
+              accountId: account.id, to: target.wa_jid || `${target.wa_phone}@s.whatsapp.net`,
+              body, author: 'system', delay: false,
+            });
+          } else {
+            // No conversation to attach an outbound row to — genuinely rare,
+            // since every order in this system originates from one. Still
+            // send, just without a stored message or timeline event, same
+            // shape as the equivalent branch in worker.js's hold-expiry sweep.
+            await sessionManager.sendText(
+              account.id, target.wa_jid || `${target.wa_phone}@s.whatsapp.net`, body, { delay: false },
+            );
           }
           notified = true;
         } else {

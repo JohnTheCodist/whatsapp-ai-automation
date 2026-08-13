@@ -19,6 +19,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import CustomerTimeline from './CustomerTimeline.jsx';
 
 const STATUS_TONE = {
   active: 'bg-teal-50 text-teal-700',
@@ -34,21 +35,6 @@ const ORDER_STATUS_TONE = {
   completed: 'bg-slate-100 text-slate-600',
   cancelled: 'bg-slate-100 text-slate-400',
   rejected: 'bg-red-50 text-red-700',
-};
-
-const TIMELINE_LABEL = {
-  PATIENT_CREATED: 'Became a customer',
-  MESSAGE_RECEIVED: 'Customer asked',
-  ORDER_CREATED: 'Order sent to pharmacy',
-  ORDER_CONFIRMED: 'Order confirmed',
-  ORDER_REJECTED: 'Order rejected',
-  ORDER_COMPLETED: 'Order completed',
-  ORDER_CANCELLED: 'Order cancelled',
-  ORDER_READY: 'Order ready for collection',
-  ORDER_PROCESSING: 'Order being prepared',
-  PHARMACIST_HANDOFF: 'Passed to pharmacist',
-  PHARMACIST_RESPONDED: 'Pharmacist responded',
-  COMMUNICATION_OPTED_OUT: 'Opted out of WhatsApp messages',
 };
 
 function fmtDate(iso) {
@@ -93,7 +79,7 @@ export default function CustomerProfile({ customerId, onBack, onOpenConversation
   }
   if (!data) return <p className="text-sm text-slate-500">Loading…</p>;
 
-  const { customer, orders, medicationJourneys, conversations, communication, timeline } = data;
+  const { customer, orders, medicationJourneys, conversations, communication } = data;
   const name = customer.displayName || customer.waPhone;
   const optedOut = communication.status === 'opted_out';
 
@@ -257,27 +243,8 @@ export default function CustomerProfile({ customerId, onBack, onOpenConversation
         </section>
       </div>
 
-      {/* ---- timeline ---- */}
-      <section className="rounded-lg border border-slate-200 bg-white p-5">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Activity</h3>
-        {timeline.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-400">No activity yet.</p>
-        ) : (
-          <ol className="mt-4 space-y-3 border-l border-slate-200 pl-4">
-            {timeline.map((e, i) => (
-              <li key={i} className="relative">
-                <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-slate-300" />
-                <p className="text-xs text-slate-400">{fmtDateTime(e.at)}</p>
-                <p className="text-sm text-slate-700">
-                  {TIMELINE_LABEL[e.type] || e.type}
-                  {e.text && <span className="text-slate-500"> — "{e.text}"</span>}
-                  {e.note && !e.text && <span className="text-slate-500"> — {e.note}</span>}
-                </p>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+      {/* ---- timeline: owns its own filters and pagination ---- */}
+      <CustomerTimeline customerId={customerId} onOpenConversation={onOpenConversation} />
     </div>
   );
 }

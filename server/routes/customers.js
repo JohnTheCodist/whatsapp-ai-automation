@@ -17,6 +17,7 @@ const { requireAuth } = require('../middleware/auth');
 const { getSql, assertPharmacyId } = require('../services/db');
 const { classifyActivity } = require('../services/customers/customerActivity');
 const { getCustomerProfile } = require('../services/customers/customerProfile');
+const { listTimeline } = require('../services/customers/customerTimeline');
 
 const router = express.Router();
 
@@ -77,6 +78,32 @@ router.get('/:id', requireAuth, async (req, res, next) => {
     const profile = await getCustomerProfile(req.pharmacyId, req.params.id);
     if (!profile) return res.status(404).json({ error: 'Customer not found.', code: 'NOT_FOUND' });
     res.json(profile);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/customers/:id/timeline — paginated activity stream.
+ *
+ * Same tenant-isolation shape as the profile route: listTimeline scopes by
+ * pharmacy_id itself and returns null for a customer that does not belong
+ * to this pharmacy, so there is nothing here for a later edit to forget.
+ *
+ * Query params: limit (default 30, max 100), cursor (opaque, from a
+ * previous response's nextCursor), event_type (a category name — orders,
+ * messages, pharmacist, system — or all, or one exact event type).
+ */
+router.get('/:id/timeline', requireAuth, async (req, res, next) => {
+  try {
+    assertPharmacyId(req.pharmacyId);
+    const result = await listTimeline(req.pharmacyId, req.params.id, {
+      limit: req.query.limit,
+      cursor: req.query.cursor || null,
+      eventType: req.query.event_type || null,
+    });
+    if (!result) return res.status(404).json({ error: 'Customer not found.', code: 'NOT_FOUND' });
+    res.json(result);
   } catch (err) {
     next(err);
   }

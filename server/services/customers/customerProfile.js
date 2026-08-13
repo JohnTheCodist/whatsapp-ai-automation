@@ -13,10 +13,11 @@
  * — bounding each source independently means the total work stays flat
  * regardless of how long the relationship has been.
  *
- * TIMELINE: assembled from real persisted rows only — order_status_history,
- * the customer's own inbound messages, handoffs, opt_outs, and
- * first_seen_at. Nothing here is AI-generated or inferred; a message
- * preview is the customer's own words, verbatim.
+ * TIMELINE: this used to be built here by re-querying order_status_history,
+ * messages, handoffs and opt_outs and merging them in JS. That logic now
+ * lives in one place — customerTimeline.js, reading the normalized
+ * customer_events stream (0017) — and this file just calls it, the same
+ * "do not duplicate business logic" rule the rest of this segment follows.
  *
  * NOT AN EHR: no diagnosis, clinical notes, or medical history anywhere in
  * this shape. medicationJourneys is an honest empty array — no such table
@@ -25,23 +26,9 @@
  */
 
 const { getSql, assertPharmacyId } = require('../db');
+const { listTimeline } = require('./customerTimeline');
 
-const HISTORY_LIMIT = 15;
 const naira = (kobo) => Number(kobo || 0) / 100;
-
-/**
- * Order status -> timeline event type.
- *
- * Named explicitly for the statuses called out in the product spec
- * (created/confirmed/rejected/completed); anything else gets a consistent
- * ORDER_<STATUS> pattern rather than being dropped, so a status added later
- * still shows up instead of silently vanishing from a customer's history.
- */
-function orderEventType(fromStatus, toStatus) {
-  if (fromStatus === null && toStatus === 'pending') return 'ORDER_CREATED';
-  const named = { confirmed: 'ORDER_CONFIRMED', rejected: 'ORDER_REJECTED', completed: 'ORDER_COMPLETED' };
-  return named[toStatus] || `ORDER_${String(toStatus).toUpperCase()}`;
-}
 
 /**
  * @param {string} pharmacyId  from the authenticated session, never the client
@@ -62,11 +49,7 @@ async function getCustomerProfile(pharmacyId, customerId) {
   `;
   if (!customer) return null;
 
-  const [
-    orderAgg, recentOrders, orderHistory,
-    convAgg, recentConversations,
-    recentHandoffs, optOut, recentMessages,
-  ] = await Promise.all([
+  const [orderAgg, recentOrders, convAgg, recentConversations, page] = await Promise.all([
     // Total spend counts only orders that reached a real commitment — the
     // same status set overview.js already uses for "confirmed value", so
     // this number means the same thing everywhere it appears in the product.
@@ -83,13 +66,6 @@ async function getCustomerProfile(pharmacyId, customerId) {
       order by created_at desc limit 5
     `,
     db`
-      select h.order_id, h.from_status, h.to_status, h.changed_at, h.note
-      from order_status_history h
-      join orders o on o.id = h.order_id
-      where o.pharmacy_id = ${pharmacyId} and o.customer_id = ${customer.id}
-      order by h.changed_at desc limit ${HISTORY_LIMIT}
-    `,
-    db`
       select count(*)::int as count, max(last_message_at) as last_conversation_at
       from conversations where pharmacy_id = ${pharmacyId} and customer_id = ${customer.id}
     `,
@@ -104,54 +80,12 @@ async function getCustomerProfile(pharmacyId, customerId) {
       where c.pharmacy_id = ${pharmacyId} and c.customer_id = ${customer.id}
       order by c.last_message_at desc limit 5
     `,
-    db`
-      select id, category, reason, requested_at, resolved_at
-      from handoffs
-      where pharmacy_id = ${pharmacyId} and conversation_id in (
-        select id from conversations where pharmacy_id = ${pharmacyId} and customer_id = ${customer.id}
-      )
-      order by requested_at desc limit ${HISTORY_LIMIT}
-    `,
-    db`
-      select opted_out_at, source_text from opt_outs
-      where pharmacy_id = ${pharmacyId} and wa_phone = ${customer.wa_phone}
-    `,
-    // Recent inbound messages, for the timeline's MESSAGE_RECEIVED events —
-    // bounded, and deliberately not the customer's full history.
-    db`
-      select body, created_at from messages
-      where pharmacy_id = ${pharmacyId} and direction = 'inbound' and conversation_id in (
-        select id from conversations where pharmacy_id = ${pharmacyId} and customer_id = ${customer.id}
-      )
-      order by created_at desc limit ${HISTORY_LIMIT}
-    `,
+    // First page only — the profile shows a taste of the timeline; the
+    // dedicated /timeline endpoint is where a pharmacist pages through the
+    // rest. customer.id already proven to belong to pharmacyId above, so no
+    // second existence check here.
+    listTimeline(pharmacyId, customer.id, { limit: 25 }),
   ]);
-
-  // ---- timeline: merge, real events only, newest first, bounded ----
-  const timeline = [{ type: 'PATIENT_CREATED', at: customer.first_seen_at }];
-
-  for (const h of orderHistory) {
-    timeline.push({
-      type: orderEventType(h.from_status, h.to_status),
-      at: h.changed_at,
-      orderId: h.order_id,
-      note: h.note,
-    });
-  }
-  for (const m of recentMessages) {
-    timeline.push({ type: 'MESSAGE_RECEIVED', at: m.created_at, text: m.body });
-  }
-  for (const h of recentHandoffs) {
-    timeline.push({ type: 'PHARMACIST_HANDOFF', at: h.requested_at, category: h.category, reason: h.reason });
-    if (h.resolved_at) {
-      timeline.push({ type: 'PHARMACIST_RESPONDED', at: h.resolved_at, category: h.category });
-    }
-  }
-  if (optOut.length) {
-    timeline.push({ type: 'COMMUNICATION_OPTED_OUT', at: optOut[0].opted_out_at, text: optOut[0].source_text });
-  }
-
-  timeline.sort((a, b) => new Date(b.at) - new Date(a.at));
 
   return {
     customer: {
@@ -189,8 +123,9 @@ async function getCustomerProfile(pharmacyId, customerId) {
       // states nobody has actually granted.
       status: customer.communication_status,
     },
-    timeline: timeline.slice(0, 25),
+    timeline: page.events,
+    timelineNextCursor: page.nextCursor,
   };
 }
 
-module.exports = { getCustomerProfile, orderEventType };
+module.exports = { getCustomerProfile };

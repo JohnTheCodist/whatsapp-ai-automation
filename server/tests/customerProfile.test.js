@@ -83,8 +83,25 @@ before(async () => {
   const [handoff] = await db`
     insert into handoffs (pharmacy_id, conversation_id, reason, category, requested_at, resolved_at)
     values (${a.id}, ${conversation.id}, 'clinical', 'dosage', now() - interval '1 hour', now() - interval '50 minutes')
-    returning id
+    returning id, requested_at, resolved_at
   `;
+  // This fixture raw-inserts the handoff, bypassing worker.js and
+  // conversations.js entirely — which means, correctly under 0017, it
+  // produces no timeline events on its own. Recording them here mirrors
+  // exactly what those real code paths do at the same two moments, so the
+  // fixture stays honest about what actually happened rather than the
+  // timeline showing something no code path actually recorded.
+  const { recordEvent } = require('../services/customers/customerEvents');
+  await recordEvent(db, {
+    pharmacyId: a.id, customerId: customer.id, eventType: 'PHARMACIST_HANDOFF',
+    occurredAt: handoff.requested_at, actorType: 'ai',
+    entityType: 'handoff', entityId: handoff.id,
+  });
+  await recordEvent(db, {
+    pharmacyId: a.id, customerId: customer.id, eventType: 'PHARMACIST_RESPONDED',
+    occurredAt: handoff.resolved_at, actorType: 'pharmacist',
+    entityType: 'handoff', entityId: handoff.id,
+  });
 
   ctx = { userA, userB, a, b, customer, conversation, order: created.order, handoff, product };
 });
@@ -144,14 +161,14 @@ test('the conversation preview is the customer\'s own words, verbatim', { skip: 
 
 test('an unresolved-then-resolved handoff produces both timeline events', { skip: SKIP && skipReason }, async () => {
   const profile = await getCustomerProfile(ctx.a.id, ctx.customer.id);
-  const types = profile.timeline.map((e) => e.type);
+  const types = profile.timeline.map((e) => e.eventType);
   assert.ok(types.includes('PHARMACIST_HANDOFF'));
   assert.ok(types.includes('PHARMACIST_RESPONDED'), 'a resolved_at must produce its own event, not be silently dropped');
 });
 
 test('the timeline is sorted newest first', { skip: SKIP && skipReason }, async () => {
   const profile = await getCustomerProfile(ctx.a.id, ctx.customer.id);
-  const times = profile.timeline.map((e) => new Date(e.at).getTime());
+  const times = profile.timeline.map((e) => new Date(e.occurredAt).getTime());
   const sorted = [...times].sort((x, y) => y - x);
   assert.deepEqual(times, sorted);
 });
@@ -171,10 +188,19 @@ test('medicationJourneys is an honest empty array, not a fabricated placeholder'
 
 test('a customer with no orders or conversations still returns a complete, non-throwing shape', { skip: SKIP && skipReason }, async () => {
   const [bare] = await db`
-    insert into customers (pharmacy_id, wa_phone, wa_jid, display_name)
-    values (${ctx.a.id}, '2349080000099', '2349080000099@s.whatsapp.net', null)
-    returning id
+    insert into customers (pharmacy_id, wa_phone, wa_jid, display_name, first_seen_at)
+    values (${ctx.a.id}, '2349080000099', '2349080000099@s.whatsapp.net', null, now())
+    returning id, first_seen_at
   `;
+  // Raw insert bypasses inboundIngest.js's xmax-detected PATIENT_CREATED
+  // recording, same reasoning as the handoff fixture above — recorded here
+  // to mirror what the real path does, not to test around it.
+  const { recordEvent } = require('../services/customers/customerEvents');
+  await recordEvent(db, {
+    pharmacyId: ctx.a.id, customerId: bare.id, eventType: 'PATIENT_CREATED',
+    occurredAt: bare.first_seen_at, actorType: 'system', entityType: 'customer', entityId: bare.id,
+  });
+
   const profile = await getCustomerProfile(ctx.a.id, bare.id);
   assert.equal(profile.orders.count, 0);
   assert.equal(profile.orders.totalSpend, 0);
@@ -184,5 +210,5 @@ test('a customer with no orders or conversations still returns a complete, non-t
   // Still has PATIENT_CREATED even with nothing else — that event comes
   // from first_seen_at, not from any activity.
   assert.equal(profile.timeline.length, 1);
-  assert.equal(profile.timeline[0].type, 'PATIENT_CREATED');
+  assert.equal(profile.timeline[0].eventType, 'PATIENT_CREATED');
 });

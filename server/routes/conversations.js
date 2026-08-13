@@ -18,7 +18,8 @@
 const express = require('express');
 const { requireAuth } = require('../middleware/auth');
 const { getSql, assertPharmacyId } = require('../services/db');
-const { sessionManager } = require('../services/whatsapp/sessionManager');
+const { sendAndRecordOutbound } = require('../services/whatsapp/outboundMessage');
+const { recordEvent } = require('../services/customers/customerEvents');
 const { buildBriefing } = require('../services/safety/consultationBriefing');
 
 const router = express.Router();
@@ -241,7 +242,7 @@ router.post('/:id/reply', requireAuth, async (req, res, next) => {
 
     const db = getSql();
     const [conversation] = await db`
-      select c.id, cust.wa_jid, cust.wa_phone
+      select c.id, cust.id as customer_id, cust.wa_jid, cust.wa_phone
       from conversations c join customers cust on cust.id = c.customer_id
       where c.id = ${req.params.id} and c.pharmacy_id = ${req.pharmacyId}
     `;
@@ -260,20 +261,11 @@ router.post('/:id/reply', requireAuth, async (req, res, next) => {
     // AUTOMATED system behaving like spam. A person choosing to answer a
     // customer who wrote to them is the behaviour the rules are protecting;
     // quiet hours should not stop staff replying to someone waiting.
-    const sent = await sessionManager.sendText(
-      account.id,
-      conversation.wa_jid || `${conversation.wa_phone}@s.whatsapp.net`,
-      text,
-      { delay: false },
-    );
-
-    const [message] = await db`
-      insert into messages (pharmacy_id, conversation_id, direction, author, body,
-                            provider_message_id, delivery_status)
-      values (${req.pharmacyId}, ${conversation.id}, 'outbound', 'staff', ${text},
-              ${sent.providerMessageId}, 'sent')
-      returning id, direction, author, body, created_at
-    `;
+    const { message } = await sendAndRecordOutbound(db, {
+      pharmacyId: req.pharmacyId, customerId: conversation.customer_id, conversationId: conversation.id,
+      accountId: account.id, to: conversation.wa_jid || `${conversation.wa_phone}@s.whatsapp.net`,
+      body: text, author: 'staff', delay: false,
+    });
     await db`update conversations set last_message_at = now() where id = ${conversation.id}`;
 
     res.json({ ok: true, message });
@@ -312,10 +304,25 @@ router.post('/:id/resolve', requireAuth, async (req, res, next) => {
     assertPharmacyId(req.pharmacyId);
     const db = getSql();
     const rows = await db`
-      update handoffs set resolved_at = now()
-      where conversation_id = ${req.params.id} and pharmacy_id = ${req.pharmacyId} and resolved_at is null
-      returning id
+      update handoffs h set resolved_at = now()
+      from conversations c
+      where h.conversation_id = c.id
+        and h.conversation_id = ${req.params.id} and h.pharmacy_id = ${req.pharmacyId} and h.resolved_at is null
+      returning h.id, h.resolved_at, h.category, c.customer_id
     `;
+    // This is the one genuine "a pharmacist dealt with it" moment in the
+    // codebase — worker.js also sets resolved_at, but only when the
+    // CUSTOMER declines an offered handoff, which is the opposite fact and
+    // must never produce this event.
+    for (const h of rows) {
+      await recordEvent(db, {
+        pharmacyId: req.pharmacyId, customerId: h.customer_id,
+        eventType: 'PHARMACIST_RESPONDED', occurredAt: h.resolved_at, actorType: 'pharmacist',
+        actorId: req.user?.id || null,
+        entityType: 'handoff', entityId: h.id,
+        metadata: { category: h.category },
+      });
+    }
     res.json({ ok: true, resolved: rows.length });
   } catch (err) {
     next(err);

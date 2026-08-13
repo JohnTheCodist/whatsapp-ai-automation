@@ -21,6 +21,7 @@
 
 const { getSql, assertPharmacyId } = require('../db');
 const { shouldIngest } = require('./ingestionPolicy');
+const { recordEvent } = require('../customers/customerEvents');
 const { env } = require('../../config/env');
 
 /** How long a customer-initiated reply window stays open. */
@@ -125,6 +126,12 @@ async function ingest(msg) {
       //    message can resolve a real phone number where an earlier one
       //    could not, and there is no reason to keep the worse value once a
       //    better one arrives. last_seen_at moves; first_seen_at does not.
+      // xmax = 0 is the standard way to tell an upsert's INSERT branch from
+      // its UPDATE branch in one statement: a row this same command just
+      // inserted has never been touched by another transaction, so its xmax
+      // is unset. Needed here because PATIENT_CREATED must fire exactly
+      // once — on the message that actually created the row — not on every
+      // message from an existing customer.
       const [customer] = await tx`
         insert into customers (pharmacy_id, wa_phone, wa_lid, wa_jid, display_name, last_seen_at)
         values (${pharmacyId}, ${phoneNumber}, ${lid || null}, ${replyJid},
@@ -134,8 +141,16 @@ async function ingest(msg) {
               wa_phone      = coalesce(excluded.wa_phone, customers.wa_phone),
               wa_lid        = coalesce(excluded.wa_lid, customers.wa_lid),
               display_name  = coalesce(excluded.display_name, customers.display_name)
-        returning id
+        returning id, first_seen_at, (xmax = 0) as is_new
       `;
+
+      if (customer.is_new) {
+        await recordEvent(tx, {
+          pharmacyId, customerId: customer.id, eventType: 'PATIENT_CREATED',
+          occurredAt: customer.first_seen_at, actorType: 'system',
+          entityType: 'customer', entityId: customer.id,
+        });
+      }
 
       // 3. The conversation. One open thread per customer — a 'closed' one
       //    is history and must not be reopened silently, because reopening
@@ -155,6 +170,10 @@ async function ingest(msg) {
                   now() + interval '${tx.unsafe(String(REPLY_WINDOW_HOURS))} hours')
           returning id
         `;
+        await recordEvent(tx, {
+          pharmacyId, customerId: customer.id, eventType: 'CONVERSATION_STARTED',
+          actorType: 'customer', entityType: 'conversation', entityId: conversation.id,
+        });
       } else {
         // An inbound message reopens the reply window.
         await tx`
@@ -166,15 +185,27 @@ async function ingest(msg) {
       }
 
       // 4. The message itself.
+      const messageAt = timestamp ? new Date(timestamp) : new Date();
       const [stored] = await tx`
         insert into messages
           (pharmacy_id, conversation_id, direction, author, body, provider_message_id, created_at)
         values
           (${pharmacyId}, ${conversation.id}, 'inbound', 'customer',
-           ${text || null}, ${providerMessageId},
-           ${timestamp ? new Date(timestamp) : new Date()})
+           ${text || null}, ${providerMessageId}, ${messageAt})
         returning id
       `;
+
+      // entity_id is this message's own row, not providerMessageId — the
+      // uuid/bigint each entity_type actually uses, consistently, is the
+      // thing 0017's idempotency constraint keys on.
+      await recordEvent(tx, {
+        pharmacyId, customerId: customer.id, eventType: 'MESSAGE_RECEIVED',
+        occurredAt: messageAt, actorType: 'customer',
+        entityType: 'message', entityId: stored.id,
+        // A preview only — the message row is the source of truth, never
+        // duplicated in full here. See customerEvents.js.
+        metadata: { preview: (text || '').slice(0, 200), conversationId: conversation.id },
+      });
 
       // 5. Queue the work. Nothing consumes this yet — the assistant lands in
       //    Phase 4 — but the row is what makes that phase a consumer rather

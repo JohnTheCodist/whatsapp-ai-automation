@@ -16,7 +16,7 @@
 const express = require('express');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { getSql, assertPharmacyId } = require('../services/db');
-const { sessionManager } = require('../services/whatsapp/sessionManager');
+const { sendAndRecordOutbound } = require('../services/whatsapp/outboundMessage');
 const {
   listOpen, suggestAlternative, declineRequest, unmetDemand,
 } = require('../services/orders/requestService');
@@ -34,7 +34,7 @@ const money = (kobo) => `₦${Number(kobo / 100).toLocaleString('en-NG')}`;
  */
 async function messageCustomer(db, pharmacyId, conversationId, body) {
   const [target] = await db`
-    select c.wa_jid, c.wa_phone, wa.id as account_id
+    select c.id as customer_id, c.wa_jid, c.wa_phone, wa.id as account_id
     from conversations conv
     join customers c on c.id = conv.customer_id
     left join whatsapp_accounts wa
@@ -44,17 +44,11 @@ async function messageCustomer(db, pharmacyId, conversationId, body) {
   if (!target?.account_id) return { sent: false, reason: 'not_connected' };
 
   try {
-    const sent = await sessionManager.sendText(
-      target.account_id,
-      target.wa_jid || `${target.wa_phone}@s.whatsapp.net`,
-      body,
-    );
-    await db`
-      insert into messages (pharmacy_id, conversation_id, direction, author, body,
-                            provider_message_id, delivery_status)
-      values (${pharmacyId}, ${conversationId}, 'outbound', 'staff', ${body},
-              ${sent.providerMessageId}, 'sent')
-    `;
+    await sendAndRecordOutbound(db, {
+      pharmacyId, customerId: target.customer_id, conversationId,
+      accountId: target.account_id, to: target.wa_jid || `${target.wa_phone}@s.whatsapp.net`,
+      body, author: 'staff',
+    });
     return { sent: true };
   } catch (err) {
     return { sent: false, reason: err.message };
