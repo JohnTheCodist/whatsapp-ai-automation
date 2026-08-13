@@ -23,24 +23,40 @@ let sql = null;
 function getSql() {
   if (!sql) {
     sql = postgres(env.databaseUrl, {
-      // Small pool on purpose: Supabase's pooler and shared-tier Postgres
-      // both cap connections well below what a default pool would grab, and
-      // an exhausted pool fails as mysterious timeouts rather than a clear
-      // error. Raise this only alongside a measured need.
-      // Under `node --test` this drops to 2. The runner forks one process
-      // per file in parallel, each building its own pool, so five DB-touching
-      // test files on a 4-core machine reached for up to 40 connections
-      // against a 15-client session pooler — with the dev server holding
-      // more. It surfaced as ENOTFOUND and ECONNRESET in whichever files
-      // happened to run together, which reads like a network fault and sent
-      // me looking at DNS twice.
+      // Still bounded, but no longer starved. The old value here was 2 under
+      // the test runner — a workaround for the session-mode cap fixed below,
+      // not a real constraint. The runner forks a process per file, each with
+      // its own pool, so the lower number is still the safer one; it just no
+      // longer has to be pathologically small.
       //
       // Keyed off TEST_DATABASE_URL rather than NODE_ENV: the test files set
       // it themselves, so it is present exactly when the runner is active and
       // needs nothing added to the npm script (which would have to work on
       // both cmd.exe and sh).
-      max: parseInt(process.env.PG_POOL_MAX || (process.env.TEST_DATABASE_URL ? '2' : '10'), 10),
+      max: parseInt(process.env.PG_POOL_MAX || (process.env.TEST_DATABASE_URL ? '5' : '15'), 10),
       idle_timeout: 30,
+      // REQUIRED by Supabase's transaction-mode pooler (port 6543), and the
+      // reason the whole `max: 2` contortion above exists in the first place.
+      //
+      // The connection string pointed at port 5432 — SESSION mode — which
+      // pins one real Postgres backend per client for the life of the
+      // connection and is hard-capped at 15. Every symptom that cost time
+      // this build traces to that cap: EMAXCONNSESSION under the test
+      // runner, ECONNRESET mid-request, and ENOTFOUND, which looks exactly
+      // like a DNS failure and is not one. Transaction mode hands a backend
+      // back after each transaction instead, so the same 15 backends serve
+      // far more clients.
+      //
+      // prepare:false is not optional there. A prepared statement is session
+      // state, and in transaction mode the next statement may land on a
+      // different backend that has never seen it — postgres.js prepares by
+      // default, so leaving this out produces "prepared statement does not
+      // exist" under concurrency only, which is the worst way to find out.
+      //
+      // Verified before switching: no LISTEN/NOTIFY, no advisory locks, no
+      // session-level SET anywhere in this codebase. The worker's
+      // `for update skip locked` is inside a transaction and unaffected.
+      prepare: false,
       // 30s, not 10. Two things stack against a short timeout here: the
       // Supabase pooler is a transatlantic hop (measured 1.3-2.1s just to
       // connect), and Baileys generates Curve25519 pre-keys synchronously
