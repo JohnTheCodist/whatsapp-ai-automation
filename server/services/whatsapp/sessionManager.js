@@ -622,15 +622,50 @@ class SessionManager extends EventEmitter {
       ...detail,
     });
 
+    // Announce EVERY batch as it arrives, before any filtering.
+    //
+    // "The customer's message was dropped by a filter" and "the socket never
+    // received it" look identical from the outside and need completely
+    // different fixes. Without a log at the point of arrival there is no way
+    // to tell them apart, and two debugging rounds were spent on the wrong
+    // one of the two.
+    this.emit('message-arrived', {
+      accountId: session.accountId,
+      type,
+      count: messages?.length ?? 0,
+      jids: (messages || []).map((m) => m.key?.remoteJid).filter(Boolean),
+    });
+
     for (const msg of messages || []) {
       if (msg.key?.fromMe) {
-        ignore('from_me', { jid: msg.key?.remoteJid });
+        // Full key, not just the jid. A message wrongly flagged fromMe is
+        // indistinguishable from a genuine own-message without seeing what
+        // WhatsApp actually sent, and that distinction decides whether this
+        // check is protecting us or silently eating customer traffic.
+        ignore('from_me', {
+          jid: msg.key?.remoteJid,
+          altJid: msg.key?.remoteJidAlt,
+          participant: msg.key?.participant,
+          addressingMode: msg.key?.addressingMode,
+          ourId: session.sock?.user?.id,
+          ourLid: session.sock?.user?.lid,
+          preview: (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').slice(0, 40),
+        });
         continue;
       }
 
       const live = isLiveMessage(type, msg.messageTimestamp);
       if (!live.isLive) {
-        ignore('stale_backfill', { type, ageMs: live.ageMs });
+        // jid and age are the whole diagnostic value here. Without them every
+        // drop logs identically and there is no way to tell "the customer's
+        // message was wrongly discarded" from "someone's status update was
+        // correctly discarded" — which cost a debugging round already.
+        ignore('stale_backfill', {
+          type,
+          ageMs: live.ageMs,
+          jid: msg.key?.remoteJid,
+          ageMinutes: live.ageMs === null ? null : Math.round(live.ageMs / 60000),
+        });
         continue;
       }
 

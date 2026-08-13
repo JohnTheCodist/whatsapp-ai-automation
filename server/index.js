@@ -184,6 +184,14 @@ async function start() {
   // leaves no trace is indistinguishable from a message that never arrived,
   // and that ambiguity is what makes "the assistant never answered me"
   // impossible to investigate.
+  // Logged before any filtering runs, so "never arrived" is distinguishable
+  // from "arrived and was dropped".
+  sessionManager.on('message-arrived', (e) => {
+    console.log(JSON.stringify({
+      level: 'info', msg: 'upsert arrived', type: e.type, count: e.count, jids: e.jids,
+    }));
+  });
+
   sessionManager.on('message-ignored', (e) => {
     console.log(JSON.stringify({
       level: 'info',
@@ -194,6 +202,17 @@ async function start() {
       type: e.type,
       messageType: e.messageType,
       count: e.count,
+      // How old the message claimed to be. The difference between a
+      // wrongly-dropped live message and a correctly-dropped old one is
+      // entirely in this number, so omitting it made the log useless for the
+      // one question anybody asks it.
+      ageMinutes: e.ageMinutes,
+      altJid: e.altJid,
+      participant: e.participant,
+      addressingMode: e.addressingMode,
+      ourId: e.ourId,
+      ourLid: e.ourLid,
+      preview: e.preview,
     }));
   });
 
