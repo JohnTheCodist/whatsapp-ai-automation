@@ -79,8 +79,41 @@ function groupByDay(events) {
   return groups;
 }
 
+/**
+ * A readable label for an event type nothing has written a renderer for yet.
+ *
+ * MEDICATION_STARTED -> "Medication started". The event registry is
+ * deliberately extensible, so a future module can start recording a new type
+ * before this file knows about it — and on that day the timeline should show
+ * the event rather than a raw constant or, worse, nothing.
+ *
+ * Derived from the name rather than guessed at: no prose is invented, the
+ * words are the ones the event type already contains.
+ */
+function humanizeEventType(type) {
+  const words = String(type).toLowerCase().split('_').filter(Boolean);
+  if (words.length === 0) return 'Activity';
+  return words[0].charAt(0).toUpperCase() + words[0].slice(1) + (words.length > 1 ? ' ' + words.slice(1).join(' ') : '');
+}
+
+/** Warn once per unknown type, so a missing renderer is noticed but not spammed. */
+const warnedTypes = new Set();
+
 function EventLine({ event, onOpenConversation }) {
-  const meta = EVENT_META[event.eventType] || { icon: '•', label: event.eventType, tone: 'slate' };
+  let meta = EVENT_META[event.eventType];
+  if (!meta) {
+    // Visible to developers, invisible to the pharmacist — the event still
+    // renders. A crash or a blank row here would make adding an event type a
+    // breaking change for the dashboard, which is the opposite of the point.
+    if (!warnedTypes.has(event.eventType)) {
+      warnedTypes.add(event.eventType);
+      console.warn(
+        `[timeline] no renderer for event type "${event.eventType}" — showing a derived label. `
+        + 'Add it to EVENT_META in CustomerTimeline.jsx to give it an icon and wording.'
+      );
+    }
+    meta = { icon: '•', label: humanizeEventType(event.eventType), tone: 'slate' };
+  }
   const m = event.metadata || {};
 
   let detail = null;

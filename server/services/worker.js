@@ -30,6 +30,7 @@ const { expireStaleHolds } = require('./orders/orderService');
 const { escalationMessage, readEscalationAnswer } = require('./safety/escalationMessage');
 const { sendAndRecordOutbound, insertOutboundMessage } = require('./whatsapp/outboundMessage');
 const { recordEvent } = require('./customers/customerEvents');
+const { PATIENT_EVENTS } = require('./customers/patientEventTypes');
 const { respond } = require('./ai/assistant');
 const { buildMenu, isMenuRequest, parseSelection, intentBriefing } = require('./ai/menu');
 const { env } = require('../config/env');
@@ -284,7 +285,7 @@ async function processInbound(db, job) {
     `;
     await recordEvent(db, {
       pharmacyId: job.pharmacy_id, customerId: row.customer_id,
-      eventType: 'COMMUNICATION_OPTED_OUT', occurredAt: optOut.opted_out_at, actorType: 'customer',
+      eventType: PATIENT_EVENTS.COMMUNICATION_OPTED_OUT, occurredAt: optOut.opted_out_at, actorType: 'customer',
       entityType: 'opt_out', entityId: optOut.id,
     });
     console.log(JSON.stringify({ level: 'info', msg: 'opt-out recorded', to: row.wa_phone }));
@@ -462,7 +463,7 @@ async function processInbound(db, job) {
       `;
       await recordEvent(tx, {
         pharmacyId: job.pharmacy_id, customerId: row.customer_id,
-        eventType: 'PHARMACIST_HANDOFF', occurredAt: handoff.requested_at, actorType: 'customer',
+        eventType: PATIENT_EVENTS.PHARMACIST_HANDOFF, occurredAt: handoff.requested_at, actorType: 'customer',
         entityType: 'handoff', entityId: handoff.id,
         metadata: { reason: 'customer_request', category: 'human_requested' },
       });
@@ -545,7 +546,7 @@ async function processInbound(db, job) {
       `;
       await recordEvent(tx, {
         pharmacyId: job.pharmacy_id, customerId: row.customer_id,
-        eventType: 'PHARMACIST_HANDOFF', occurredAt: handoff.requested_at, actorType: 'ai',
+        eventType: PATIENT_EVENTS.PHARMACIST_HANDOFF, occurredAt: handoff.requested_at, actorType: 'ai',
         entityType: 'handoff', entityId: handoff.id,
         metadata: { reason: HANDOFF_REASON[outcome.category] || 'unsupported', category: outcome.category },
       });

@@ -68,7 +68,7 @@ after(async () => {
 test('recording the identical event twice produces exactly one row', { skip: SKIP && skipReason }, async () => {
   const args = {
     pharmacyId: ctx.a.id, customerId: ctx.customer.id, eventType: 'ORDER_CONFIRMED',
-    actorType: 'pharmacist', entityType: 'order_status_history', entityId: 999001,
+    actorType: 'pharmacist', entityType: 'order_status_history', entityId: 999001, verifyEntity: false,
     metadata: { orderId: 'x' },
   };
   const id1 = await recordEvent(db, args);
@@ -89,7 +89,7 @@ test('ten concurrent attempts at the same event still produce exactly one row', 
   // replays, duplicate webhooks — all landing at roughly the same time.
   const args = {
     pharmacyId: ctx.a.id, customerId: ctx.customer.id, eventType: 'MESSAGE_SENT',
-    actorType: 'ai', entityType: 'message', entityId: 999002,
+    actorType: 'ai', entityType: 'message', entityId: 999002, verifyEntity: false,
   };
   const results = await Promise.all(Array.from({ length: 10 }, () => recordEvent(db, args)));
   const successes = results.filter((r) => r !== null);
@@ -106,7 +106,7 @@ test('the same entity_id under a DIFFERENT event_type is a separate, allowed eve
   // A handoff genuinely produces two events against the same entity_id —
   // PHARMACIST_HANDOFF then PHARMACIST_RESPONDED. The unique constraint
   // includes event_type specifically so this is not mistaken for a duplicate.
-  const base = { pharmacyId: ctx.a.id, customerId: ctx.customer.id, entityType: 'handoff', entityId: 999003 };
+  const base = { pharmacyId: ctx.a.id, customerId: ctx.customer.id, entityType: 'handoff', entityId: 999003, verifyEntity: false };
   const id1 = await recordEvent(db, { ...base, eventType: 'PHARMACIST_HANDOFF', actorType: 'ai' });
   const id2 = await recordEvent(db, { ...base, eventType: 'PHARMACIST_RESPONDED', actorType: 'pharmacist' });
   assert.ok(id1);
@@ -149,11 +149,11 @@ test('events are ordered by occurred_at, not by insertion order or id', { skip: 
   // in the order written, not the order it happened.
   await recordEvent(db, {
     pharmacyId: ctx.a.id, customerId: customer.id, eventType: 'MESSAGE_RECEIVED',
-    occurredAt: now, actorType: 'customer', entityType: 'message', entityId: 998001,
+    occurredAt: now, actorType: 'customer', entityType: 'message', entityId: 998001, verifyEntity: false,
   });
   await recordEvent(db, {
     pharmacyId: ctx.a.id, customerId: customer.id, eventType: 'ORDER_CREATED',
-    occurredAt: evenEarlier, actorType: 'ai', entityType: 'order_status_history', entityId: 998002,
+    occurredAt: evenEarlier, actorType: 'ai', entityType: 'order_status_history', entityId: 998002, verifyEntity: false,
   });
   await recordEvent(db, {
     pharmacyId: ctx.a.id, customerId: customer.id, eventType: 'PATIENT_CREATED',
@@ -180,7 +180,7 @@ test('cursor pagination covers every event exactly once across pages', { skip: S
     await recordEvent(db, {
       pharmacyId: ctx.a.id, customerId: customer.id, eventType: 'MESSAGE_RECEIVED',
       occurredAt: new Date(base + i * 1000), actorType: 'customer',
-      entityType: 'message', entityId: 900000 + i,
+      entityType: 'message', entityId: 900000 + i, verifyEntity: false,
     });
   }
 
@@ -207,11 +207,11 @@ test('a filtered category only returns events in that category', { skip: SKIP &&
   `;
   await recordEvent(db, {
     pharmacyId: ctx.a.id, customerId: customer.id, eventType: 'MESSAGE_RECEIVED',
-    actorType: 'customer', entityType: 'message', entityId: 900100,
+    actorType: 'customer', entityType: 'message', entityId: 900100, verifyEntity: false,
   });
   await recordEvent(db, {
     pharmacyId: ctx.a.id, customerId: customer.id, eventType: 'ORDER_CREATED',
-    actorType: 'ai', entityType: 'order_status_history', entityId: 900101,
+    actorType: 'ai', entityType: 'order_status_history', entityId: 900101, verifyEntity: false,
   });
 
   const orders = await listTimeline(ctx.a.id, customer.id, { eventType: 'orders' });

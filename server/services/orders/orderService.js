@@ -28,6 +28,7 @@
 const crypto = require('node:crypto');
 const { getSql, assertPharmacyId } = require('../db');
 const { recordEvent, orderEventType } = require('../customers/customerEvents');
+const { PATIENT_EVENTS } = require('../customers/patientEventTypes');
 
 /**
  * Reference alphabet, minus everything that is ambiguous out loud or in
@@ -226,7 +227,7 @@ async function createOrder(pharmacyId, { customerId, conversationId = null, item
           returning id, changed_at
         `;
         await recordEvent(tx, {
-          pharmacyId, customerId, eventType: 'ORDER_CREATED',
+          pharmacyId, customerId, eventType: PATIENT_EVENTS.ORDER_CREATED,
           occurredAt: history.changed_at, actorType: 'ai',
           entityType: 'order_status_history', entityId: history.id,
           metadata: { orderId: created.id, reference, totalKobo, itemCount: lines.length },

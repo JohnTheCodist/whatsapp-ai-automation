@@ -29,6 +29,7 @@
 
 const { sessionManager } = require('./sessionManager');
 const { recordEvent } = require('../customers/customerEvents');
+const { PATIENT_EVENTS } = require('../customers/patientEventTypes');
 
 const ACTOR_BY_AUTHOR = { assistant: 'ai', staff: 'staff', system: 'system' };
 
@@ -67,7 +68,7 @@ async function insertOutboundMessage(sql, {
 
   if (customerId) {
     await recordEvent(sql, {
-      pharmacyId, customerId, eventType: 'MESSAGE_SENT',
+      pharmacyId, customerId, eventType: PATIENT_EVENTS.MESSAGE_SENT,
       occurredAt: message.created_at,
       actorType: ACTOR_BY_AUTHOR[author] || 'system',
       entityType: 'message', entityId: message.id,

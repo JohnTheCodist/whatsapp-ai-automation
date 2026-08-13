@@ -22,6 +22,7 @@
 const { getSql, assertPharmacyId } = require('../db');
 const { shouldIngest } = require('./ingestionPolicy');
 const { recordEvent } = require('../customers/customerEvents');
+const { PATIENT_EVENTS } = require('../customers/patientEventTypes');
 const { env } = require('../../config/env');
 
 /** How long a customer-initiated reply window stays open. */
@@ -146,7 +147,7 @@ async function ingest(msg) {
 
       if (customer.is_new) {
         await recordEvent(tx, {
-          pharmacyId, customerId: customer.id, eventType: 'PATIENT_CREATED',
+          pharmacyId, customerId: customer.id, eventType: PATIENT_EVENTS.PATIENT_CREATED,
           occurredAt: customer.first_seen_at, actorType: 'system',
           entityType: 'customer', entityId: customer.id,
         });
@@ -171,7 +172,7 @@ async function ingest(msg) {
           returning id
         `;
         await recordEvent(tx, {
-          pharmacyId, customerId: customer.id, eventType: 'CONVERSATION_STARTED',
+          pharmacyId, customerId: customer.id, eventType: PATIENT_EVENTS.CONVERSATION_STARTED,
           actorType: 'customer', entityType: 'conversation', entityId: conversation.id,
         });
       } else {
@@ -199,7 +200,7 @@ async function ingest(msg) {
       // uuid/bigint each entity_type actually uses, consistently, is the
       // thing 0017's idempotency constraint keys on.
       await recordEvent(tx, {
-        pharmacyId, customerId: customer.id, eventType: 'MESSAGE_RECEIVED',
+        pharmacyId, customerId: customer.id, eventType: PATIENT_EVENTS.MESSAGE_RECEIVED,
         occurredAt: messageAt, actorType: 'customer',
         entityType: 'message', entityId: stored.id,
         // A preview only — the message row is the source of truth, never

@@ -26,6 +26,10 @@
  * retry finding its own event already recorded is success, not failure.
  */
 
+const {
+  isKnownEventType, isKnownActorType, isKnownEntityType, tableForEntity,
+} = require('./patientEventTypes');
+
 function toEntityId(id) {
   // entity_id is text (0017) because it spans both bigint (messages,
   // order_status_history) and uuid (orders, handoffs, opt_outs, customers)
@@ -35,26 +39,47 @@ function toEntityId(id) {
 }
 
 /**
+ * Default uniqueness when a caller does not supply one.
+ *
+ * Reproduces exactly what 0017's composite constraint enforced, which is
+ * right for the events that exist today — all of them are about a single-use
+ * entity (this message, this order's confirmation). It is WRONG for anything
+ * that can legitimately recur about the same entity, which is why the
+ * parameter exists at all: a second PRODUCT_VIEWED for the same product, or
+ * next month's REFILL_REQUESTED for the same journey, must pass a key that
+ * says what makes it distinct. Nothing here can infer that.
+ */
+function defaultIdempotencyKey({ eventType, entityType, entityId }) {
+  return `${eventType}:${entityType}:${toEntityId(entityId)}`;
+}
+
+/**
  * @param {object} sql               a postgres.js sql instance OR an open tx
  * @param {object} event
  * @param {string} event.pharmacyId
  * @param {string} event.customerId
- * @param {string} event.eventType   must match the check constraint in 0017
+ * @param {string} event.eventType   must be in the PATIENT_EVENTS registry
  * @param {string} event.actorType   'customer'|'ai'|'pharmacist'|'staff'|'system'
  * @param {string} [event.actorId]   only when it adds information beyond actorType
  * @param {string} event.entityType
  * @param {string|number} event.entityId
+ * @param {string} [event.idempotencyKey]  what makes THIS event unique. Omit
+ *   only when the entity itself is the uniqueness — see defaultIdempotencyKey.
  * @param {Date|string} [event.occurredAt]  defaults to now — pass the real
  *   timestamp of the underlying row (created_at, changed_at, requested_at)
  *   when recording an event after the fact, so ordering stays true even
  *   when this call runs later than the thing it is describing.
  * @param {object} [event.metadata]  structured facts only, never prose
+ * @param {boolean} [event.verifyEntity=true]  set false only when the caller
+ *   is inside the same transaction that just created the entity and can see
+ *   it, but a separate verification query would deadlock or double-read.
  * @returns {Promise<number|null>} the new event id, or null if this exact
  *   event was already recorded (idempotent no-op, not an error)
  */
 async function recordEvent(sql, {
   pharmacyId, customerId, eventType, actorType, actorId = null,
   entityType, entityId, occurredAt = new Date(), metadata = {},
+  idempotencyKey = null, verifyEntity = true,
 }) {
   if (!pharmacyId || !customerId) {
     throw new Error('recordEvent requires pharmacyId and customerId — both are server-controlled, never optional.');
@@ -63,13 +88,64 @@ async function recordEvent(sql, {
     throw new Error(`recordEvent missing a required field for ${eventType || '(no event type)'}`);
   }
 
+  // ---- vocabulary, now that the database no longer checks it (0018) -------
+  if (!isKnownEventType(eventType)) {
+    throw new Error(
+      `Unknown event type "${eventType}". Add it to patientEventTypes.js — that registry is the vocabulary, `
+      + 'and a typo silently becoming a new event type is exactly what it exists to prevent.'
+    );
+  }
+  if (!isKnownActorType(actorType)) {
+    throw new Error(`Unknown actor type "${actorType}" for ${eventType}.`);
+  }
+  if (!isKnownEntityType(entityType)) {
+    throw new Error(`Unknown entity type "${entityType}" for ${eventType}.`);
+  }
+
+  // ---- tenancy -----------------------------------------------------------
+  //
+  // The customer must belong to the pharmacy the event is being filed under.
+  // Without this, a caller that mixes up two ids writes one tenant's history
+  // onto another tenant's timeline — the one failure this whole layer must
+  // not have, and one no downstream read query could detect afterwards.
+  const [customer] = await sql`
+    select 1 from customers where id = ${customerId} and pharmacy_id = ${pharmacyId}
+  `;
+  if (!customer) {
+    throw new Error(`Customer ${customerId} does not belong to pharmacy ${pharmacyId} — refusing to record ${eventType}.`);
+  }
+
+  // ---- the referenced entity --------------------------------------------
+  //
+  // Same argument, one level out: an event pointing at another pharmacy's
+  // order would let the timeline link to it. Skipped when the table does not
+  // exist yet (a reserved entity type) or when the caller is inside the
+  // transaction that created the row and can vouch for it.
+  const table = tableForEntity(entityType);
+  if (verifyEntity && table) {
+    const [entity] = await sql`
+      select 1 from ${sql(table)}
+      where id = ${entityType === 'message' || entityType === 'order_status_history'
+        ? Number(entityId) : entityId}
+        and pharmacy_id = ${pharmacyId}
+    `;
+    if (!entity) {
+      throw new Error(
+        `${entityType} ${entityId} was not found in pharmacy ${pharmacyId} — refusing to record ${eventType} against it.`
+      );
+    }
+  }
+
+  const key = idempotencyKey || defaultIdempotencyKey({ eventType, entityType, entityId });
+
   const [row] = await sql`
     insert into customer_events
-      (pharmacy_id, customer_id, event_type, occurred_at, actor_type, actor_id, entity_type, entity_id, metadata)
+      (pharmacy_id, customer_id, event_type, occurred_at, actor_type, actor_id,
+       entity_type, entity_id, metadata, idempotency_key)
     values
       (${pharmacyId}, ${customerId}, ${eventType}, ${occurredAt}, ${actorType}, ${actorId},
-       ${entityType}, ${toEntityId(entityId)}, ${sql.json(metadata)})
-    on conflict (pharmacy_id, event_type, entity_type, entity_id) do nothing
+       ${entityType}, ${toEntityId(entityId)}, ${sql.json(metadata)}, ${key})
+    on conflict (pharmacy_id, idempotency_key) do nothing
     returning id
   `;
   return row ? row.id : null;

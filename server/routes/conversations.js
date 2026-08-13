@@ -20,6 +20,7 @@ const { requireAuth } = require('../middleware/auth');
 const { getSql, assertPharmacyId } = require('../services/db');
 const { sendAndRecordOutbound } = require('../services/whatsapp/outboundMessage');
 const { recordEvent } = require('../services/customers/customerEvents');
+const { PATIENT_EVENTS } = require('../services/customers/patientEventTypes');
 const { buildBriefing } = require('../services/safety/consultationBriefing');
 
 const router = express.Router();
@@ -317,7 +318,7 @@ router.post('/:id/resolve', requireAuth, async (req, res, next) => {
     for (const h of rows) {
       await recordEvent(db, {
         pharmacyId: req.pharmacyId, customerId: h.customer_id,
-        eventType: 'PHARMACIST_RESPONDED', occurredAt: h.resolved_at, actorType: 'pharmacist',
+        eventType: PATIENT_EVENTS.PHARMACIST_RESPONDED, occurredAt: h.resolved_at, actorType: 'pharmacist',
         actorId: req.user?.id || null,
         entityType: 'handoff', entityId: h.id,
         metadata: { category: h.category },
