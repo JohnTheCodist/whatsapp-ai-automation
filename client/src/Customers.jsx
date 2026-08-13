@@ -99,10 +99,25 @@ export default function Customers({ onOpenConversation, onNavigate }) {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {data.customers.map((c) => (
+              // A clickable <tr> is invisible to the keyboard and to screen
+              // readers unless it is given a role, a tab stop and a key
+              // handler — without these the only way to open a customer is a
+              // mouse, which is not a choice anyone made deliberately.
               <tr
                 key={c.id}
                 onClick={() => setSelectedId(c.id)}
-                className="cursor-pointer hover:bg-slate-50"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    // Space scrolls the page by default; opening a row is
+                    // what the key means here.
+                    e.preventDefault();
+                    setSelectedId(c.id);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label={`Open ${c.display_name || c.wa_phone}`}
+                className="cursor-pointer hover:bg-slate-50 focus:bg-slate-100 focus:outline-2 focus:outline-offset-[-2px] focus:outline-teal-600"
               >
                 <td className="px-3 py-2 font-medium text-slate-800">{c.display_name || '—'}</td>
                 <td className="px-3 py-2 text-slate-600">{c.wa_phone}</td>
