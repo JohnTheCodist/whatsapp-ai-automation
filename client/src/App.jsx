@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import Overview from './Overview.jsx';
 import ConnectWhatsApp from './ConnectWhatsApp.jsx';
 import UploadCatalogue from './UploadCatalogue.jsx';
+import Consultations from './Consultations.jsx';
 import Inbox from './Inbox.jsx';
 import Orders from './Orders.jsx';
 import Requests from './Requests.jsx';
@@ -18,6 +19,11 @@ import { playOrderChime, unlockChime, isUnlocked } from './orderChime.js';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
+  // Ahead of Inbox deliberately. The Inbox is every conversation; this is
+  // only people waiting on a pharmacist, and a clinical question left sitting
+  // behind a general list is the one thing here that can actually harm
+  // someone.
+  { id: 'consultations', label: 'Consultations' },
   { id: 'inbox', label: 'Inbox' },
   { id: 'orders', label: 'Orders' },
   { id: 'requests', label: 'Requests' },
@@ -30,8 +36,11 @@ export default function App() {
   // Badge counts live in the shell so a staff member on the Orders tab still
   // sees that someone is waiting in the Inbox. A count only visible from
   // inside the tab it describes is useless.
-  const [badges, setBadges] = useState({ inbox: 0, orders: 0, requests: 0 });
+  const [badges, setBadges] = useState({ consultations: 0, orders: 0, requests: 0 });
   const [soundOn, setSoundOn] = useState(false);
+  // Set when a pharmacist opens a consultation, so the Inbox lands on that
+  // conversation instead of making them find it again in a list.
+  const [openConversationId, setOpenConversationId] = useState(null);
   // The previous pending count, so the chime fires on an INCREASE rather than
   // on every poll. Without this it would ring every 30 seconds for as long as
   // an order sat unconfirmed, which is how an alert gets muted forever.
@@ -56,7 +65,11 @@ export default function App() {
           const pending = s?.pending_orders || 0;
           setBadges((b) => ({
             ...b,
-            inbox: s?.open_handoffs || 0,
+            // open_handoffs counts people waiting on a pharmacist, so it
+            // belongs on Consultations. It sat on Inbox until that tab
+            // existed, where it read as "unread messages" and understated
+            // what it actually was.
+            consultations: s?.open_handoffs || 0,
             orders: pending,
             requests: s?.open_requests ?? b.requests,
           }));
@@ -132,7 +145,7 @@ export default function App() {
             {t.label}
             {badges[t.id] > 0 && (
               <span className={`rounded-full px-1.5 text-[11px] font-medium ${
-                t.id === 'inbox' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'
+                t.id === 'consultations' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'
               }`}>
                 {badges[t.id]}
               </span>
@@ -146,7 +159,12 @@ export default function App() {
             work, rather than a wall of numbers you then have to act on by
             hunting for the right tab. */}
         {tab === 'overview' && <Overview onNavigate={setTab} />}
-        {tab === 'inbox' && <Inbox />}
+        {tab === 'consultations' && (
+          <Consultations
+            onOpenConversation={(id) => { setOpenConversationId(id); setTab('inbox'); }}
+          />
+        )}
+        {tab === 'inbox' && <Inbox openConversationId={openConversationId} />}
         {tab === 'orders' && <Orders />}
         {tab === 'requests' && (
           <Requests onCount={(n) => setBadges((b) => (b.requests === n ? b : { ...b, requests: n }))} />

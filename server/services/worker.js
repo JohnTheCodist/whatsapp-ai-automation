@@ -444,8 +444,8 @@ async function processInbound(db, job) {
   if (choice?.intent === 'pharmacist') {
     await db.begin(async (tx) => {
       await tx`
-        insert into handoffs (pharmacy_id, conversation_id, reason, detail, triggered_by)
-        values (${job.pharmacy_id}, ${row.conversation_id}, 'customer_request',
+        insert into handoffs (pharmacy_id, conversation_id, reason, category, detail, triggered_by)
+        values (${job.pharmacy_id}, ${row.conversation_id}, 'customer_request', 'human_requested',
                 'Chose "Speak to the pharmacist" from the menu.', 'customer')
       `;
       await tx`update conversations set mode = 'human', last_menu_choice = ${choice.intent} where id = ${row.conversation_id}`;
@@ -522,9 +522,10 @@ async function processInbound(db, job) {
 
     await db.begin(async (tx) => {
       await tx`
-        insert into handoffs (pharmacy_id, conversation_id, reason, detail, triggered_by)
+        insert into handoffs (pharmacy_id, conversation_id, reason, category, detail, triggered_by)
         values (${job.pharmacy_id}, ${row.conversation_id},
                 ${HANDOFF_REASON[outcome.category] || 'unsupported'},
+                ${outcome.category},
                 ${`${outcome.category}: ${outcome.reason}`}, 'assistant')
       `;
 

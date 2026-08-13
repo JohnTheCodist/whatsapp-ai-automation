@@ -43,15 +43,29 @@ function timeAgo(iso) {
   return `${Math.floor(secs / 86400)}d ago`;
 }
 
-export default function Inbox() {
+/**
+ * @param {object} props
+ * @param {string} [props.openConversationId] a conversation to open on mount,
+ *   set when a pharmacist clicks through from the Consultations queue. Without
+ *   it they arrive at an undifferentiated list and have to find, in a list of
+ *   everyone, the person they just decided to help.
+ */
+export default function Inbox({ openConversationId = null }) {
   const [list, setList] = useState(null);
   const [counts, setCounts] = useState({ open_handoffs: 0 });
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, setSelectedId] = useState(openConversationId);
   const [thread, setThread] = useState(null);
   const [reply, setReply] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const endRef = useRef(null);
+
+  // The tab stays mounted between switches, so the initial state above only
+  // applies the first time. Arriving from Consultations a second time would
+  // otherwise leave the previous conversation open.
+  useEffect(() => {
+    if (openConversationId) setSelectedId(openConversationId);
+  }, [openConversationId]);
 
   const loadList = useCallback(async () => {
     try {

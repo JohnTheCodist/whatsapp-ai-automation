@@ -19,8 +19,103 @@ const express = require('express');
 const { requireAuth } = require('../middleware/auth');
 const { getSql, assertPharmacyId } = require('../services/db');
 const { sessionManager } = require('../services/whatsapp/sessionManager');
+const { buildBriefing } = require('../services/safety/consultationBriefing');
 
 const router = express.Router();
+
+/**
+ * GET /waiting — the pharmacist's consultation queue.
+ *
+ * Separate from the Inbox on purpose. The Inbox is every conversation; this
+ * is only the people who need a pharmacist, with enough of the situation
+ * visible on the card that they can triage without opening anything.
+ *
+ * The briefing is assembled from data, never paraphrased by a model — see
+ * consultationBriefing.js. A pharmacist acts clinically on what they read
+ * here, and a summary that turns three months old into three years old reads
+ * perfectly and causes harm.
+ *
+ * Ordered urgent first, then longest wait. Not newest: the person ignored
+ * longest is the most urgent, which is the opposite of a message list.
+ */
+router.get('/waiting', requireAuth, async (req, res, next) => {
+  try {
+    assertPharmacyId(req.pharmacyId);
+    const db = getSql();
+
+    const rows = await db`
+      select
+        c.id as conversation_id, c.mode, c.context,
+        cust.wa_phone, cust.display_name,
+        h.id as handoff_id, h.category, h.reason, h.detail, h.requested_at
+      from handoffs h
+      join conversations c on c.id = h.conversation_id
+      join customers cust on cust.id = c.customer_id
+      where h.pharmacy_id = ${req.pharmacyId} and h.resolved_at is null
+      order by h.requested_at
+      limit 50
+    `;
+
+    // One query for every conversation's recent messages rather than one per
+    // card. Fifty cards would otherwise be fifty round trips to a pooler that
+    // has already been exhausted once in this project.
+    const ids = rows.map((r) => r.conversation_id);
+    const messages = ids.length
+      ? await db`
+          select conversation_id, direction, body, created_at
+          from (
+            select conversation_id, direction, body, created_at,
+                   row_number() over (partition by conversation_id order by id desc) as rn
+            from messages
+            -- ::uuid[] is required. postgres.js sends a JS string array as
+            -- text[], and Postgres will not compare a uuid against a text
+            -- array — it fails with 22P02 rather than quietly returning
+            -- nothing, which at least surfaces immediately.
+            where conversation_id = any(${ids}::uuid[])
+          ) ranked
+          where rn <= 12
+          order by conversation_id, created_at
+        `
+      : [];
+
+    const byConversation = new Map();
+    for (const m of messages) {
+      if (!byConversation.has(m.conversation_id)) byConversation.set(m.conversation_id, []);
+      byConversation.get(m.conversation_id).push(m);
+    }
+
+    const waiting = rows.map((r) => ({
+      handoffId: r.handoff_id,
+      conversationId: r.conversation_id,
+      customer: r.display_name || r.wa_phone,
+      phone: r.wa_phone,
+      mode: r.mode,
+      requestedAt: r.requested_at,
+      ...buildBriefing({
+        category: r.category,
+        requestedAt: r.requested_at,
+        messages: byConversation.get(r.conversation_id) || [],
+        context: r.context || {},
+      }),
+    }));
+
+    // Urgent to the top regardless of age — a two-minute-old possible
+    // overdose outranks an hour-old question about which painkiller is best.
+    waiting.sort((a, b) => (b.urgent - a.urgent) || (b.waitingMinutes - a.waitingMinutes));
+
+    res.json({
+      counts: {
+        total: waiting.length,
+        urgent: waiting.filter((w) => w.urgent).length,
+        clinical: waiting.filter((w) => !w.technical).length,
+        technical: waiting.filter((w) => w.technical).length,
+      },
+      waiting,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 /**
  * Inbox ordering is the product decision in this file.
