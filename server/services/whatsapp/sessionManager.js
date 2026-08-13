@@ -46,6 +46,55 @@ const { resolveSender } = require('./senderIdentity');
 // how they get missed.
 const baileysLogger = pino({ level: process.env.BAILEYS_LOG_LEVEL || 'warn' });
 
+// A message this fresh is treated as live even if Baileys labelled it
+// 'append' instead of 'notify' — see isLiveMessage() for why the label alone
+// was found to be unreliable. 3 minutes is generous slack for clock skew and
+// delivery lag while still refusing anything that is genuinely old history.
+const LIVE_MESSAGE_WINDOW_MS = 3 * 60 * 1000;
+
+/**
+ * Should this inbound message be treated as live (worth acting on), or as
+ * history backfill (ignore — it was already handled, possibly days ago)?
+ *
+ * 'notify' is Baileys' label for "a genuinely new message". 'append' and
+ * 'prepend' are supposed to mean backfill. In production that label was not
+ * trustworthy: after a session restore, real messages sent minutes ago kept
+ * arriving tagged 'append', and a batch-level `type !== 'notify'` check that
+ * never looked at the message itself discarded every one of them. The
+ * customer's message was correctly recent; only Baileys' label was wrong.
+ *
+ * The label is not the only signal available — the message carries its own
+ * timestamp, and genuine backfill is old by construction. So a message
+ * counts as live if EITHER Baileys says 'notify', OR it is younger than
+ * LIVE_MESSAGE_WINDOW_MS regardless of what it was labelled. That recovers
+ * the mislabelled live messages while still refusing to resurrect and reply
+ * to real old history, which is the failure this filter existed to prevent.
+ *
+ * Pure, and exported for that reason: the two ways to get this wrong (miss a
+ * live customer, or answer three-day-old history) are both expensive, and
+ * neither should depend on a live socket to verify.
+ *
+ * @param {string} type              Baileys' messages.upsert type
+ * @param {number|string|undefined} messageTimestamp  seconds since epoch, as Baileys sends it
+ * @param {number} [now]             injectable for tests
+ * @returns {{isLive: boolean, ageMs: number|null}}
+ */
+function isLiveMessage(type, messageTimestamp, now = Date.now()) {
+  if (type === 'notify') return { isLive: true, ageMs: 0 };
+
+  if (messageTimestamp === undefined || messageTimestamp === null || messageTimestamp === '') {
+    // No timestamp at all is never treated as live — there is nothing to
+    // check it against, and the safe failure here is to withhold a reply,
+    // not to risk resurrecting unknown-aged history.
+    return { isLive: false, ageMs: null };
+  }
+
+  const ageMs = now - Number(messageTimestamp) * 1000;
+  if (!Number.isFinite(ageMs)) return { isLive: false, ageMs: null };
+
+  return { isLive: ageMs <= LIVE_MESSAGE_WINDOW_MS, ageMs: Math.round(ageMs) };
+}
+
 /**
  * Builds proxy agents if configured. TWO are needed and they are separate
  * (ARCHITECTURE.md §6.8): `agent` covers the WebSocket, `fetchAgent` covers
@@ -573,17 +622,15 @@ class SessionManager extends EventEmitter {
       ...detail,
     });
 
-    // 'notify' is a genuinely new message. 'append' and 'prepend' are history
-    // backfill — replying to those would mean answering questions the
-    // pharmacy already handled, possibly days ago.
-    if (type !== 'notify') {
-      ignore('not_notify', { type, count: messages?.length ?? 0 });
-      return;
-    }
-
     for (const msg of messages || []) {
       if (msg.key?.fromMe) {
         ignore('from_me', { jid: msg.key?.remoteJid });
+        continue;
+      }
+
+      const live = isLiveMessage(type, msg.messageTimestamp);
+      if (!live.isLive) {
+        ignore('stale_backfill', { type, ageMs: live.ageMs });
         continue;
       }
 
@@ -665,4 +712,4 @@ class SessionManager extends EventEmitter {
 // One manager per process, matching the one-socket-per-session reality.
 const sessionManager = new SessionManager();
 
-module.exports = { sessionManager, SessionManager, needsNewSocket };
+module.exports = { sessionManager, SessionManager, needsNewSocket, isLiveMessage };
