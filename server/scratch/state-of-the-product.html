@@ -1,0 +1,559 @@
+<title>WhatsApp AI Automation — State of the Product</title>
+<style>
+:root{
+  --ink:#12201c;
+  --ink-soft:#4b5a54;
+  --paper:#f1f4f2;
+  --paper-raised:#ffffff;
+  --rule:#dbe3de;
+  --accent:#0e6b52;
+  --accent-soft:#dceee7;
+  --amber:#b8790f;
+  --amber-soft:#f5e9d3;
+  --red:#b23a3a;
+  --red-soft:#f5dede;
+  --blue:#2b5fa8;
+  --blue-soft:#dde7f3;
+  --font-display:"Iowan Old Style","Palatino Linotype","Book Antiqua",Georgia,serif;
+  --font-body:-apple-system,BlinkMacSystemFont,"Segoe UI","Helvetica Neue",Arial,sans-serif;
+  --font-mono:"Cascadia Code","SF Mono",Consolas,"Liberation Mono",monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --ink:#e8efec; --ink-soft:#9db0a8;
+    --paper:#0e1613; --paper-raised:#16211d;
+    --rule:#2a3733;
+    --accent:#3bc191; --accent-soft:#153126;
+    --amber:#d99a3d; --amber-soft:#332512;
+    --red:#e07575; --red-soft:#3a1f1f;
+    --blue:#7ea6e0; --blue-soft:#1c2a3d;
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#e8efec; --ink-soft:#9db0a8;
+  --paper:#0e1613; --paper-raised:#16211d;
+  --rule:#2a3733;
+  --accent:#3bc191; --accent-soft:#153126;
+  --amber:#d99a3d; --amber-soft:#332512;
+  --red:#e07575; --red-soft:#3a1f1f;
+  --blue:#7ea6e0; --blue-soft:#1c2a3d;
+}
+:root[data-theme="light"]{
+  --ink:#12201c; --ink-soft:#4b5a54;
+  --paper:#f1f4f2; --paper-raised:#ffffff;
+  --rule:#dbe3de;
+  --accent:#0e6b52; --accent-soft:#dceee7;
+  --amber:#b8790f; --amber-soft:#f5e9d3;
+  --red:#b23a3a; --red-soft:#f5dede;
+  --blue:#2b5fa8; --blue-soft:#dde7f3;
+}
+
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--paper); color:var(--ink); font-family:var(--font-body);
+  font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased;
+}
+a{color:var(--accent);}
+::selection{background:var(--accent-soft);}
+
+.shell{display:grid; grid-template-columns:236px minmax(0,1fr); max-width:1280px; margin:0 auto;}
+@media (max-width:920px){ .shell{grid-template-columns:1fr;} .toc{display:none;} }
+
+.toc{
+  position:sticky; top:0; align-self:start; height:100vh; overflow-y:auto;
+  padding:2.25rem 1.1rem 2rem 1.5rem; border-right:1px solid var(--rule);
+}
+.toc-label{
+  font-family:var(--font-mono); font-size:0.66rem; letter-spacing:0.12em; text-transform:uppercase;
+  color:var(--ink-soft); margin:0 0 0.9rem;
+}
+.toc ol{list-style:none; margin:0; padding:0; counter-reset:toc;}
+.toc li{counter-increment:toc; margin-bottom:0.5rem;}
+.toc a{
+  display:block; text-decoration:none; color:var(--ink-soft); font-size:0.84rem; line-height:1.35;
+  border-left:2px solid transparent; padding-left:0.65rem; transition:color .15s, border-color .15s;
+}
+.toc a::before{ content:counter(toc,decimal-leading-zero) "  "; font-family:var(--font-mono); color:var(--rule); }
+.toc a:hover{color:var(--accent);}
+.toc a.active{color:var(--accent); border-left-color:var(--accent); font-weight:600;}
+
+main{padding:2.75rem clamp(1.25rem,4vw,3.75rem) 6rem; min-width:0;}
+
+.masthead{border-bottom:1px solid var(--rule); padding-bottom:1.75rem; margin-bottom:1.75rem;}
+.eyebrow{
+  font-family:var(--font-mono); font-size:0.7rem; letter-spacing:0.13em; text-transform:uppercase;
+  color:var(--accent); margin:0 0 0.85rem; display:flex; align-items:center; gap:0.55rem;
+}
+.eyebrow::before{ content:""; width:7px; height:7px; border-radius:50%; background:var(--accent); }
+h1{
+  font-family:var(--font-display); font-weight:700; font-size:clamp(1.9rem,3.6vw,2.7rem);
+  line-height:1.1; margin:0 0 0.75rem; text-wrap:balance; letter-spacing:-0.01em;
+}
+.subhead{ font-size:1.02rem; color:var(--ink-soft); max-width:64ch; margin:0 0 1.4rem; }
+
+.statstrip{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:1px;
+  background:var(--rule); border:1px solid var(--rule); border-radius:8px; overflow:hidden;
+}
+.stat{ background:var(--paper-raised); padding:0.9rem 1rem; }
+.stat .n{ font-family:var(--font-mono); font-size:1.5rem; font-weight:600; font-variant-numeric:tabular-nums; color:var(--accent); }
+.stat .l{ font-size:0.72rem; color:var(--ink-soft); margin-top:0.15rem; }
+
+section{margin-bottom:3.1rem; scroll-margin-top:1.5rem;}
+.section-num{ font-family:var(--font-mono); font-size:0.72rem; color:var(--ink-soft); letter-spacing:0.08em; }
+h2{
+  font-family:var(--font-display); font-size:1.42rem; font-weight:700; margin:0.2rem 0 0.85rem; text-wrap:balance;
+}
+h3{ font-family:var(--font-display); font-size:1.08rem; font-weight:700; margin:1.6rem 0 0.6rem; }
+p{ max-width:70ch; margin:0 0 1rem; }
+.lede{ font-size:1.01rem; color:var(--ink-soft); max-width:68ch; }
+ul.clean{ padding-left:1.15rem; margin:0.6rem 0 1.2rem; }
+ul.clean li{ margin-bottom:0.5rem; max-width:65ch; font-size:0.94rem; }
+ul.clean li b{ color:var(--ink); }
+code{
+  font-family:var(--font-mono); font-size:0.85em; background:var(--accent-soft); color:var(--accent);
+  padding:0.08rem 0.35rem; border-radius:3px; white-space:nowrap;
+}
+
+/* golden path */
+.path{ counter-reset:step; margin:1.4rem 0; }
+.step{ position:relative; padding:0 0 1.35rem 2.1rem; border-left:1px solid var(--rule); margin-left:0.5rem; }
+.step:last-child{ border-left-color:transparent; padding-bottom:0; }
+.step::before{
+  counter-increment:step; content:counter(step);
+  position:absolute; left:-0.72rem; top:0; width:1.4rem; height:1.4rem; border-radius:50%;
+  background:var(--accent); color:#fff; font-family:var(--font-mono); font-size:0.72rem; font-weight:700;
+  display:flex; align-items:center; justify-content:center;
+}
+.step h4{ font-size:0.95rem; font-weight:700; margin:0 0 0.3rem; }
+.step p{ font-size:0.9rem; color:var(--ink-soft); margin:0; }
+.step .quote{
+  font-family:var(--font-mono); font-size:0.8rem; background:var(--paper-raised); border:1px solid var(--rule);
+  border-radius:6px; padding:0.5rem 0.7rem; margin-top:0.5rem; color:var(--ink);
+}
+
+/* tables */
+.table-wrap{ overflow-x:auto; margin:1.1rem 0 1.6rem; border:1px solid var(--rule); border-radius:8px; }
+table{ border-collapse:collapse; width:100%; min-width:600px; background:var(--paper-raised); }
+th{
+  text-align:left; font-family:var(--font-mono); font-size:0.68rem; letter-spacing:0.07em; text-transform:uppercase;
+  color:var(--ink-soft); padding:0.65rem 0.85rem; border-bottom:1px solid var(--rule); background:var(--paper); white-space:nowrap;
+}
+td{ padding:0.7rem 0.85rem; border-bottom:1px solid var(--rule); font-size:0.87rem; vertical-align:top; }
+tr:last-child td{ border-bottom:none; }
+td.mono{ font-family:var(--font-mono); font-size:0.82em; color:var(--ink-soft); }
+
+.pill{
+  display:inline-flex; align-items:center; gap:0.35rem; font-family:var(--font-mono); font-size:0.68rem;
+  padding:0.22rem 0.55rem; border-radius:100px; font-weight:600; letter-spacing:0.02em; white-space:nowrap;
+}
+.pill.live{ background:var(--accent-soft); color:var(--accent); }
+.pill.partial{ background:var(--amber-soft); color:var(--amber); }
+.pill.gap{ background:var(--red-soft); color:var(--red); }
+.pill.info{ background:var(--blue-soft); color:var(--blue); }
+
+/* layer diagram for safety */
+.layers{ display:flex; flex-direction:column; gap:0.55rem; margin:1.2rem 0 1.6rem; }
+.layer{
+  display:grid; grid-template-columns:2.4rem 1fr; gap:0.9rem; align-items:start;
+  background:var(--paper-raised); border:1px solid var(--rule); border-left:3px solid var(--accent);
+  border-radius:0 8px 8px 0; padding:0.85rem 1rem;
+}
+.layer .num{ font-family:var(--font-mono); font-size:1.1rem; font-weight:700; color:var(--accent); }
+.layer h4{ margin:0 0 0.2rem; font-size:0.92rem; font-weight:700; }
+.layer p{ margin:0; font-size:0.86rem; color:var(--ink-soft); max-width:none; }
+
+/* MVP boundary columns */
+.boundary{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:8px; overflow:hidden; margin:1.2rem 0; }
+.bcol{ background:var(--paper-raised); padding:1.1rem 1.2rem; }
+.bcol h4{ margin:0 0 0.7rem; font-size:0.78rem; font-family:var(--font-mono); letter-spacing:0.06em; text-transform:uppercase; }
+.bcol.live h4{ color:var(--accent); }
+.bcol.next h4{ color:var(--amber); }
+.bcol.hold h4{ color:var(--red); }
+.bcol ul{ list-style:none; margin:0; padding:0; }
+.bcol li{ font-size:0.86rem; margin-bottom:0.55rem; padding-left:1rem; position:relative; color:var(--ink); }
+.bcol li::before{ content:"–"; position:absolute; left:0; color:var(--ink-soft); }
+
+.callout{
+  border-left:3px solid var(--blue); background:var(--blue-soft); padding:0.95rem 1.2rem;
+  border-radius:0 8px 8px 0; margin:1.2rem 0;
+}
+.callout p{ margin:0; max-width:none; font-size:0.9rem; }
+.callout .ct{ font-family:var(--font-mono); font-size:0.7rem; letter-spacing:0.07em; text-transform:uppercase; color:var(--blue); margin-bottom:0.35rem; font-weight:700; }
+
+footer{ border-top:1px solid var(--rule); margin-top:3.5rem; padding-top:1.4rem; font-family:var(--font-mono); font-size:0.74rem; color:var(--ink-soft); }
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto !important;} }
+html{scroll-behavior:smooth;}
+</style>
+
+<div class="shell">
+  <nav class="toc" id="toc">
+    <p class="toc-label">Contents</p>
+    <ol>
+      <li><a href="#golden-path">The golden path today</a></li>
+      <li><a href="#features">Feature inventory</a></li>
+      <li><a href="#safety">Safety &amp; grounding design</a></li>
+      <li><a href="#conduct">Anti-ban / conduct design</a></li>
+      <li><a href="#architecture">Architecture, for developers</a></li>
+      <li><a href="#gaps">What's not built yet</a></li>
+      <li><a href="#next">Recommended next</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="masthead">
+      <p class="eyebrow">Internal status — WhatsApp AI Automation</p>
+      <h1>State of the product</h1>
+      <p class="subhead">
+        A pharmacy-facing WhatsApp assistant, built on an unofficial channel (Baileys) with a
+        Postgres-backed multi-tenant server. This is what the code can actually do today — verified
+        against the running system, not the plan.
+      </p>
+      <div class="statstrip">
+        <div class="stat"><div class="n">460</div><div class="l">tests passing</div></div>
+        <div class="stat"><div class="n">14</div><div class="l">schema migrations</div></div>
+        <div class="stat"><div class="n">5</div><div class="l">AI tools (grounded)</div></div>
+        <div class="stat"><div class="n">6</div><div class="l">dashboard screens</div></div>
+        <div class="stat"><div class="n">42</div><div class="l">commits, 5 days</div></div>
+        <div class="stat"><div class="n">14</div><div class="l">safety categories</div></div>
+      </div>
+    </header>
+
+    <section id="golden-path">
+      <span class="section-num">01</span>
+      <h2>The golden path today</h2>
+      <p class="lede">This full sequence works, end to end, against a real WhatsApp number and a real
+        catalogue — verified live, not just in tests. It is the single strongest evidence of where the
+        product stands.</p>
+
+      <div class="path">
+        <div class="step">
+          <h4>Pharmacy connects WhatsApp</h4>
+          <p>Owner enters a phone number, gets a pairing code, enters it on their phone. No QR, no Meta
+            developer account, no App Review — Baileys links as a companion device in under a minute.</p>
+        </div>
+        <div class="step">
+          <h4>Owner uploads a catalogue spreadsheet</h4>
+          <p>Messy real-world Excel is parsed, columns are auto-detected against a proven mapping engine
+            ported from a sibling analytics product, and the owner reviews and confirms the mapping before
+            a single product row is written.</p>
+        </div>
+        <div class="step">
+          <h4>Customer messages the shop</h4>
+          <div class="quote">"I want the best antimalarial drug u have"</div>
+        </div>
+        <div class="step">
+          <h4>Assistant answers like a counter attendant, not a database</h4>
+          <p>Narrows to the pharmacy's top picks, states real prices, and defers on anything clinical.</p>
+          <div class="quote">"They're all good ones we stock — here are my top picks: • Coartem — ₦1,970. Our pharmacist's pick... Which would you like?"</div>
+        </div>
+        <div class="step">
+          <h4>Customer orders; stock is held, not promised</h4>
+          <p>Price and stock come only from the catalogue. Placing an order decrements stock immediately
+            (a real hold, with a race-condition guard) — but the customer is told only that the order was
+            <em>sent</em>. "Reserved" is never said until a human confirms.</p>
+        </div>
+        <div class="step">
+          <h4>Staff are alerted, on WhatsApp, and confirm</h4>
+          <p>A configured staff number gets pinged with the order. Confirming in the dashboard is the one
+            moment the customer is told anything is reserved for them — and only then.</p>
+        </div>
+        <div class="step">
+          <h4>A clinical question routes to a person, correctly</h4>
+          <div class="quote">"Which one is good?" → "That's our pharmacist's judgement — would you like me to pass you to them?"</div>
+          <p>The pharmacist sees the customer's own words, quoted, on a triage queue — not a paraphrase — and
+            gets a WhatsApp alert with a distinct alarm tone from the order chime.</p>
+        </div>
+      </div>
+
+      <div class="callout">
+        <p class="ct">Also fixed this build</p>
+        <p>The assistant used to echo the customer's own word for a unit — "paracetamol tablets at ₦460
+          <b>per sachet</b>" for a product that isn't sold in sachets. It now states the catalogue's own
+          unit and corrects the customer explicitly: <em>"That comes as tablets on a card, not a sachet —
+          a card is ₦460."</em> Grounded in data, not vocabulary borrowed from whoever's asking.</p>
+      </div>
+    </section>
+
+    <section id="features">
+      <span class="section-num">02</span>
+      <h2>Feature inventory</h2>
+      <p class="lede">Grouped by area. <span class="pill live">live</span> means built, tested, and
+        exercised against real traffic. <span class="pill partial">partial</span> works but has a known
+        limitation worth planning around. <span class="pill gap">gap</span> does not exist yet.</p>
+
+      <h3>Onboarding &amp; connection</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Capability</th><th>Status</th><th>Detail</th></tr></thead>
+        <tbody>
+          <tr><td>Pairing-code connect</td><td><span class="pill live">live</span></td><td class="mono">POST /api/whatsapp/connect</td></tr>
+          <tr><td>Live connection status (SSE)</td><td><span class="pill live">live</span></td><td class="mono">GET /api/whatsapp/events</td></tr>
+          <tr><td>Self-test round trip before "connected"</td><td><span class="pill live">live</span></td><td>Won't claim connected until a message provably lands</td></tr>
+          <tr><td>Warm-up ramp for a fresh number</td><td><span class="pill live">live</span></td><td>Volume ramps over the number's first week</td></tr>
+          <tr><td>Multi-number / multi-pharmacy per install</td><td><span class="pill live">live</span></td><td>One socket per tenant, tenant-scoped throughout</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Catalogue</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Capability</th><th>Status</th><th>Detail</th></tr></thead>
+        <tbody>
+          <tr><td>Spreadsheet upload &amp; column auto-mapping</td><td><span class="pill live">live</span></td><td>Ported, proven detection engine — confidence-scored</td></tr>
+          <tr><td>Owner reviews mapping before import</td><td><span class="pill live">live</span></td><td>Nothing writes to <code>products</code> until confirmed</td></tr>
+          <tr><td>Selling points: descriptions, "pharmacy pick"</td><td><span class="pill live">live</span></td><td>Owner-authored only — never AI-invented</td></tr>
+          <tr><td>Unit-of-sale grounding (card/bottle/tube/vial)</td><td><span class="pill live">live</span></td><td>Derived from catalogue <code>form</code>, not customer wording</td></tr>
+          <tr><td>Re-import / price &amp; stock refresh</td><td><span class="pill live">live</span></td><td>Upsert on natural key, not a destructive replace</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Conversational assistant</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Capability</th><th>Status</th><th>Detail</th></tr></thead>
+        <tbody>
+          <tr><td>Product lookup &amp; pricing</td><td><span class="pill live">live</span></td><td class="mono">find_products</td></tr>
+          <tr><td>Broad "what do you have for X" browsing</td><td><span class="pill live">live</span></td><td class="mono">browse_category — max 3 options, sales-rep tone</td></tr>
+          <tr><td>Pharmacy info (hours, address, delivery)</td><td><span class="pill live">live</span></td><td class="mono">get_pharmacy_info</td></tr>
+          <tr><td>Order creation with stock hold</td><td><span class="pill live">live</span></td><td class="mono">create_order</td></tr>
+          <tr><td>Ask-the-pharmacist for unstocked items</td><td><span class="pill live">live</span></td><td class="mono">ask_pharmacist — never invents a substitute</td></tr>
+          <tr><td>Multi-turn memory (prices, last product, orders)</td><td><span class="pill live">live</span></td><td>Carried in conversation context, not re-guessed</td></tr>
+          <tr><td>Greeting + tappable-style menu on first contact</td><td><span class="pill live">live</span></td><td>Configurable bot name and welcome note, AI-draftable</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Orders &amp; reservations</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Capability</th><th>Status</th><th>Detail</th></tr></thead>
+        <tbody>
+          <tr><td>Real stock hold on order creation</td><td><span class="pill live">live</span></td><td>Race-safe decrement, not a read-then-write</td></tr>
+          <tr><td>Two-stage promise (hold → pharmacist confirms → customer told)</td><td><span class="pill live">live</span></td><td>"Reserved" is only ever true after a human agrees</td></tr>
+          <tr><td>Automatic hold expiry</td><td><span class="pill live">live</span></td><td>Unconfirmed holds release stock and notify the customer</td></tr>
+          <tr><td>Staff WhatsApp alert on new order</td><td><span class="pill live">live</span></td><td>Configured number, opt-in</td></tr>
+          <tr><td>Order dashboard (confirm / reject / ready / complete)</td><td><span class="pill live">live</span></td><td /></tr>
+          <tr><td>In-app payment / checkout</td><td><span class="pill gap">gap</span></td><td>Cash/pay-on-pickup model only</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Pharmacist tools</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Capability</th><th>Status</th><th>Detail</th></tr></thead>
+        <tbody>
+          <tr><td>Triage queue for clinical handoffs</td><td><span class="pill live">live</span></td><td>Customer's own words, quoted — never summarised by AI</td></tr>
+          <tr><td>Staff WhatsApp alert with escalating reminder</td><td><span class="pill live">live</span></td><td>Distinct alarm tone from the order chime</td></tr>
+          <tr><td>Auto-expiry of stale low-confidence handoffs</td><td><span class="pill live">live</span></td><td>Prevents the queue silently accumulating dead items</td></tr>
+          <tr><td>Suggest a real alternative when out of stock</td><td><span class="pill live">live</span></td><td>Pharmacist picks from catalogue — AI never substitutes on its own</td></tr>
+          <tr><td>Demand signal (what's asked for but not stocked)</td><td><span class="pill live">live</span></td><td>Aggregated from <code>ask_pharmacist</code> events</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Dashboard</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Screen</th><th>Status</th><th>Shows</th></tr></thead>
+        <tbody>
+          <tr><td>Overview</td><td><span class="pill live">live</span></td><td>Connection health, 24h activity, 7d sales, catalogue gaps, conduct limits</td></tr>
+          <tr><td>Consultations</td><td><span class="pill live">live</span></td><td>Pharmacist triage queue</td></tr>
+          <tr><td>Inbox</td><td><span class="pill live">live</span></td><td>Full conversation history, per customer</td></tr>
+          <tr><td>Orders</td><td><span class="pill live">live</span></td><td>Pending / confirmed / ready / completed</td></tr>
+          <tr><td>Requests</td><td><span class="pill live">live</span></td><td>Unstocked-item queue and demand report</td></tr>
+          <tr><td>Setup</td><td><span class="pill live">live</span></td><td>Connection, catalogue upload, bot identity, staff alert number</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="safety">
+      <span class="section-num">03</span>
+      <h2>Safety &amp; grounding design</h2>
+      <p class="lede">The single biggest engineering bet in this codebase: the assistant is
+        structurally unable to state a fact it cannot trace to the pharmacy's own data, and
+        structurally unable to answer a clinical question. Four independent layers, not one prompt.</p>
+
+      <div class="layers">
+        <div class="layer">
+          <div class="num">1</div>
+          <div><h4>Deterministic filter, before the model sees anything</h4>
+            <p>Regex-based clinical detection — dosage, symptoms, drug interaction, paediatric, pregnancy,
+              overdose, prescription, clinical comparison ("which is better") — runs before the LLM is
+              ever called. A model cannot be asked to police the exact input that would compromise its
+              own judgement.</p></div>
+        </div>
+        <div class="layer">
+          <div class="num">2</div>
+          <div><h4>No catalogue knowledge to hallucinate from</h4>
+            <p>The model holds no product data of its own. Every price, stock level, and description
+              arrives as a tool result in that conversation or does not exist. Tenant id is bound
+              server-side, never a model-visible parameter — a prompt injection can make the model
+              <em>ask</em> for another pharmacy's data; it cannot make the SQL return it.</p></div>
+        </div>
+        <div class="layer">
+          <div class="num">3</div>
+          <div><h4>Reply validation after generation</h4>
+            <p>Every number in a draft reply is checked against what a tool actually returned this
+              conversation. Action claims ("I've reserved this", "I've notified the pharmacy") are checked
+              against whether that action genuinely happened — catches the model's instinct to narrate the
+              reassuring version rather than the true one.</p></div>
+        </div>
+        <div class="layer">
+          <div class="num">4</div>
+          <div><h4>Escalation is the default failure mode</h4>
+            <p>No LLM key, a timeout, an unverifiable claim, a clinical trigger, too many tool iterations —
+              every one of these hands the conversation to a person. There is no code path that ends in
+              the assistant guessing.</p></div>
+        </div>
+      </div>
+
+      <h3>What this caught, in real traffic</h3>
+      <ul class="clean">
+        <li><b>"Done, I've set aside 3 packs for you"</b> — nothing was set aside. Fixed by building real
+          stock reservation rather than just correcting the sentence.</li>
+        <li><b>"Which one is good?" between two antibiotics</b> — a clinical comparison the original
+          filter missed; caught in review and added as its own category.</li>
+        <li><b>Invented product descriptions</b> — asked broadly about pain relief, the model wrote
+          "Good for everyday pain relief" for a product with no description on file. Fixed by giving it a
+          true fact to use instead (catalogue-derived <code>factual_summary</code>) rather than only
+          telling it not to invent one.</li>
+        <li><b>Unit-of-sale drift</b> — described above; the newest of these fixes.</li>
+      </ul>
+      <div class="callout">
+        <p class="ct">Read honestly</p>
+        <p>Every one of these was found by generating real traffic and reading it, not by anticipating it
+          in advance. That is the actual shape of hallucination prevention on a live product: layers that
+          catch most things, plus a habit of reading transcripts.</p>
+      </div>
+    </section>
+
+    <section id="conduct">
+      <span class="section-num">04</span>
+      <h2>Anti-ban / conduct design</h2>
+      <p class="lede">Baileys is an unofficial channel. A banned number is the pharmacy's number, not
+        ours — so the system is built to be structurally incapable of the behaviour that gets numbers
+        banned, rather than merely instructed not to do it.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Control</th><th>What it prevents</th></tr></thead>
+        <tbody>
+          <tr><td>Reactive-only — never initiates contact</td><td>The single load-bearing rule; every message is a reply to someone who wrote first</td></tr>
+          <tr><td>Daily reply cap, per-conversation rate limit</td><td>Bulk-sending pattern</td></tr>
+          <tr><td>Opt-out honoured permanently</td><td>Continuing to message someone who said stop</td></tr>
+          <tr><td>Sending-paused circuit breaker</td><td>Trips automatically on repeated identical replies (a stuck loop)</td></tr>
+          <tr><td>Quiet hours (configurable, off by default)</td><td>Round-the-clock instant replies reading as mechanical</td></tr>
+          <tr><td>Warm-up ramp on a new number</td><td>A brand-new number suddenly sending at full volume</td></tr>
+          <tr><td>Ingest scope (allowlist mode)</td><td>Pulling a pharmacy owner's personal chats into the product's database</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="architecture">
+      <span class="section-num">05</span>
+      <h2>Architecture, for developers</h2>
+      <p class="lede">Modular monolith: one Node process, one Postgres database, clear internal
+        boundaries. No message queue service, no microservices — the volume does not justify the
+        operational cost yet.</p>
+
+      <h3>Stack</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Layer</th><th>Choice</th></tr></thead>
+        <tbody>
+          <tr><td>WhatsApp channel</td><td class="mono">Baileys (unofficial, WebSocket-based)</td></tr>
+          <tr><td>Server</td><td class="mono">Node.js, Express</td></tr>
+          <tr><td>Database</td><td class="mono">PostgreSQL (Supabase-hosted), <code>postgres</code> driver</td></tr>
+          <tr><td>Background jobs</td><td class="mono">Postgres-backed queue, in-process worker (no Redis)</td></tr>
+          <tr><td>LLM</td><td class="mono">OpenAI-compatible chat API, tool-calling loop</td></tr>
+          <tr><td>Client</td><td class="mono">React, Vite</td></tr>
+          <tr><td>Auth</td><td class="mono">Supabase; dev bypass flag for local testing only</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Patterns worth knowing before extending this</h3>
+      <ul class="clean">
+        <li><b>Decision logic lives in pure functions.</b> <code>disconnectPolicy</code>,
+          <code>conductPolicy</code>, <code>ingestionPolicy</code>, <code>replyValidator</code>,
+          <code>saleUnit</code> — no database, no network, exhaustively unit-tested. The parts most likely
+          to be got wrong are isolated from I/O specifically so they can be tested that way.</li>
+        <li><b>Tenant isolation is structural, not conventional.</b> Every tool and query takes
+          <code>pharmacyId</code> server-side; it is never a value the model or the client can set.</li>
+        <li><b>Persist before you process.</b> Under Baileys nothing retries a dropped message on the
+          product's behalf — the socket is not Meta's infrastructure. Inbound events are written durably
+          before any interpretation happens.</li>
+        <li><b>Every drop is logged with a reason and enough context to debug it later</b> — jid, age,
+          message type — after two rounds of "the assistant isn't answering" that turned out to be
+          silent, unexplained drops.</li>
+      </ul>
+
+      <h3>Test posture</h3>
+      <p>460 tests, 0 failures at last run. The pure-function policy modules carry the heaviest coverage
+        deliberately — that's where a wrong answer is expensive and silent. Live-traffic testing against
+        the real assistant and a real WhatsApp number has been the primary way bugs in the AI layer were
+        actually found; unit tests then lock the fix in.</p>
+    </section>
+
+    <section id="gaps">
+      <span class="section-num">06</span>
+      <h2>What's not built yet</h2>
+      <div class="boundary">
+        <div class="bcol live">
+          <h4>Live today</h4>
+          <ul>
+            <li>Full golden path above</li>
+            <li>Grounded conversational assistant</li>
+            <li>Real stock reservation</li>
+            <li>Pharmacist triage &amp; alternatives</li>
+            <li>Anti-ban conduct controls</li>
+          </ul>
+        </div>
+        <div class="bcol next">
+          <h4>Known limitation</h4>
+          <ul>
+            <li>Baileys is unofficial — no Meta SLA, ban risk mitigated but not zero</li>
+            <li>One process per deployment — scaling model for many pharmacies not yet load-tested</li>
+            <li>No media (image/voice) handling in the conversation flow</li>
+            <li>No payment integration — cash/pickup only</li>
+          </ul>
+        </div>
+        <div class="bcol hold">
+          <h4>Not started</h4>
+          <ul>
+            <li>Proactive/outbound messaging (deliberately out of scope on this channel)</li>
+            <li>Multi-language support</li>
+            <li>Analytics/reporting beyond the Overview screen</li>
+            <li>Automated regression testing of live AI replies (currently manual transcript review)</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="next">
+      <span class="section-num">07</span>
+      <h2>Recommended next</h2>
+      <ul class="clean">
+        <li><b>Run a real pharmacy on it, end to end, for a week.</b> Every AI-layer bug found so far
+          came from reading real transcripts, not from anticipating cases — that pattern should continue
+          deliberately rather than by accident.</li>
+        <li><b>Decide the media-handling gap now, not when a customer sends a photo of a prescription.</b>
+          It's a real question with clinical-safety implications, worth designing rather than patching.</li>
+        <li><b>Load-test the single-process assumption</b> before a second pharmacy signs up, so the
+          scaling model is a plan rather than a surprise.</li>
+      </ul>
+    </section>
+
+    <footer>WhatsApp AI Automation — internal status, generated from the running codebase.</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  var sections = links.map(function(l){ return document.querySelector(l.getAttribute('href')); }).filter(Boolean);
+  if (!sections.length) return;
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      var id = '#' + entry.target.id;
+      var link = links.find(function(l){ return l.getAttribute('href') === id; });
+      if (!link) return;
+      if (entry.isIntersecting) {
+        links.forEach(function(l){ l.classList.remove('active'); });
+        link.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-15% 0px -70% 0px', threshold: 0 });
+  sections.forEach(function(s){ io.observe(s); });
+})();
+</script>

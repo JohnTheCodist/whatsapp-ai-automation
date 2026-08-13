@@ -273,6 +273,14 @@ async function processInbound(db, job) {
               ${String(row.body).slice(0, 300)})
       on conflict (pharmacy_id, wa_phone) do nothing
     `;
+    // Cache write-through, by id rather than by phone match — opt_outs
+    // above stays the source of truth conductPolicy actually enforces;
+    // this column only exists so a dashboard list can filter/display
+    // without a join. Keeping both in the same statement's neighbourhood
+    // means there is exactly one place "someone opted out" happens.
+    await db`
+      update customers set communication_status = 'opted_out' where id = ${row.customer_id}
+    `;
     console.log(JSON.stringify({ level: 'info', msg: 'opt-out recorded', to: row.wa_phone }));
     return { sent: false, reason: 'opt_out_request' };
   }
