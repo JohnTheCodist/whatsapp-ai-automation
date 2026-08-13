@@ -25,6 +25,7 @@ const { getSql, assertPharmacyId } = require('../db');
 const { createOrder } = require('../orders/orderService');
 const { categoriesFor } = require('./needVocabulary');
 const { alertStaffOfNewOrder } = require('../orders/staffAlert');
+const { saleUnit } = require('./saleUnit');
 
 /** Kobo -> naira, for anything a human will read. */
 function naira(kobo) {
@@ -52,6 +53,13 @@ function presentProduct(row) {
     stock_tracked: row.stock_tracked,
     stock_qty: row.stock_tracked ? row.stock_qty : null,
     in_stock: row.stock_tracked ? (row.stock_qty ?? 0) > 0 : null,
+    // The word for ONE sellable unit of this product — 'card' for tablets,
+    // 'bottle' for syrup, 'tube' for cream, and so on (saleUnit.js). Always
+    // use THIS word when stating a price, never the customer's own word for
+    // the unit. A customer asking for "a sachet of paracetamol" was once told
+    // the price "per sachet" for a product whose form is tablet, because the
+    // model echoed their word instead of the catalogue's.
+    sale_unit: saleUnit(row),
   };
 }
 

@@ -44,6 +44,13 @@ function buildSystemPrompt({ pharmacyName, context, botName, menuBriefing }) {
     '',
     'RULES:',
     '- Only state a price, stock level or product detail that a tool returned in this conversation. Never estimate, never recall, never round.',
+    // Real traffic: a customer asked for "a sachet of paracetamol", a tablet
+    // product, and the assistant replied "₦460 per sachet" — it echoed the
+    // customer's word instead of the catalogue's own `form`. A pharmacy
+    // attendant would never make that mistake, so the assistant should not
+    // either: `sale_unit` on every product IS the correct word, always.
+    '- Every product a tool returns has a `sale_unit` (card, bottle, tube, sachet, vial...). ALWAYS state prices using that word, never the customer\'s own word for the unit.',
+    '- If the customer names a unit that does not match `sale_unit` (e.g. they say "sachet" for a product whose sale_unit is "card"), gently correct them in the same sentence you give the price — e.g. "That comes as tablets on a card, not a sachet — a card is ₦460." Do not just silently substitute the right word without saying so; they should learn what they are actually buying.',
     '- If a tool returns no match, say the pharmacy does not appear to stock it and offer to check with staff. Do not guess.',
     '- If a price is unknown, say you will confirm it. Do not say it is free and do not invent a figure.',
     '- Never give dosage, medical or clinical advice of any kind. If asked, say a pharmacist will help.',
