@@ -16,6 +16,7 @@ const express = require('express');
 const { requireAuth } = require('../middleware/auth');
 const { getSql, assertPharmacyId } = require('../services/db');
 const { classifyActivity } = require('../services/customers/customerActivity');
+const { getCustomerProfile } = require('../services/customers/customerProfile');
 
 const router = express.Router();
 
@@ -59,6 +60,23 @@ router.get('/', requireAuth, async (req, res, next) => {
         activity: classifyActivity(c.last_seen_at),
       })),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/customers/:id — Customer 360. Logic lives in
+ * services/customers/customerProfile.js, tested directly against real
+ * Postgres — see server/tests/customerProfile.test.js, in particular the
+ * tenant-isolation case.
+ */
+router.get('/:id', requireAuth, async (req, res, next) => {
+  try {
+    assertPharmacyId(req.pharmacyId);
+    const profile = await getCustomerProfile(req.pharmacyId, req.params.id);
+    if (!profile) return res.status(404).json({ error: 'Customer not found.', code: 'NOT_FOUND' });
+    res.json(profile);
   } catch (err) {
     next(err);
   }

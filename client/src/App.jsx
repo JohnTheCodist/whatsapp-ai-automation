@@ -230,7 +230,12 @@ export default function App() {
         {tab === 'requests' && (
           <Requests onCount={(n) => setBadges((b) => (b.requests === n ? b : { ...b, requests: n }))} />
         )}
-        {tab === 'customers' && <Customers />}
+        {tab === 'customers' && (
+          <Customers
+            onOpenConversation={(id) => { setOpenConversationId(id); setTab('inbox'); }}
+            onNavigate={setTab}
+          />
+        )}
         {tab === 'setup' && (
           <div className="space-y-4">
             <AssistantSettings />

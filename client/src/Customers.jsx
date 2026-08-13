@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import CustomerProfile from './CustomerProfile.jsx';
 
 const TIER_LABEL = { active: 'Active', quiet: 'Quiet', dormant: 'Dormant', unknown: '—' };
 const TIER_TONE = {
@@ -27,10 +28,11 @@ function relTime(iso) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-export default function Customers() {
+export default function Customers({ onOpenConversation, onNavigate }) {
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [error, setError] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
 
   const load = useCallback(async (query) => {
     try {
@@ -50,6 +52,17 @@ export default function Customers() {
     const t = setTimeout(() => load(q), 300);
     return () => clearTimeout(t);
   }, [q, load]);
+
+  if (selectedId) {
+    return (
+      <CustomerProfile
+        customerId={selectedId}
+        onBack={() => setSelectedId(null)}
+        onOpenConversation={onOpenConversation}
+        onNavigate={onNavigate}
+      />
+    );
+  }
 
   if (error) {
     return <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>;
@@ -86,7 +99,11 @@ export default function Customers() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {data.customers.map((c) => (
-              <tr key={c.id}>
+              <tr
+                key={c.id}
+                onClick={() => setSelectedId(c.id)}
+                className="cursor-pointer hover:bg-slate-50"
+              >
                 <td className="px-3 py-2 font-medium text-slate-800">{c.display_name || '—'}</td>
                 <td className="px-3 py-2 text-slate-600">{c.wa_phone}</td>
                 <td className="px-3 py-2">
