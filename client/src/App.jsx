@@ -15,7 +15,7 @@ import Inbox from './Inbox.jsx';
 import Orders from './Orders.jsx';
 import Requests from './Requests.jsx';
 import AssistantSettings from './AssistantSettings.jsx';
-import { playOrderChime, unlockChime, isUnlocked } from './orderChime.js';
+import { playOrderChime, playConsultationAlarm, unlockChime, isUnlocked } from './orderChime.js';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -41,6 +41,12 @@ export default function App() {
   // Set when a pharmacist opens a consultation, so the Inbox lands on that
   // conversation instead of making them find it again in a list.
   const [openConversationId, setOpenConversationId] = useState(null);
+  const [consultationsWaiting, setConsultationsWaiting] = useState(0);
+  // Silences the repeating alarm without pretending the queue is empty. The
+  // badge and the card stay; only the sound stops. Reset whenever the queue
+  // empties, so the next escalation is audible again without anyone having to
+  // remember to un-mute.
+  const [alarmSilenced, setAlarmSilenced] = useState(false);
   // The previous pending count, so the chime fires on an INCREASE rather than
   // on every poll. Without this it would ring every 30 seconds for as long as
   // an order sat unconfirmed, which is how an alert gets muted forever.
@@ -81,6 +87,12 @@ export default function App() {
             playOrderChime();
           }
           prevPending.current = pending;
+
+          // A waiting consultation keeps sounding, unlike an order, which
+          // rings once. Someone with a symptom waiting is not a notification
+          // you acknowledge by noticing it — it repeats until a pharmacist
+          // has actually dealt with them, or until it is silenced on purpose.
+          setConsultationsWaiting(s?.open_handoffs || 0);
         }
       } catch { /* the tabs still work without badges */ }
     };
@@ -88,6 +100,22 @@ export default function App() {
     const t = setInterval(poll, 30000);
     return () => { cancelled = true; clearInterval(t); };
   }, []);
+
+  // The repeating alarm. Every 15s while anyone is waiting on a pharmacist —
+  // often enough to be impossible to ignore, not so often it becomes noise.
+  useEffect(() => {
+    if (consultationsWaiting === 0) {
+      // Queue cleared: re-arm. Otherwise a silence earlier today would mute
+      // tonight's escalation too, and nobody would know it had.
+      if (alarmSilenced) setAlarmSilenced(false);
+      return undefined;
+    }
+    if (alarmSilenced || !soundOn || !isUnlocked()) return undefined;
+
+    playConsultationAlarm();
+    const t = setInterval(playConsultationAlarm, 15000);
+    return () => clearInterval(t);
+  }, [consultationsWaiting, alarmSilenced, soundOn]);
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-12">
@@ -130,6 +158,37 @@ export default function App() {
           </span>
         </div>
       </header>
+
+      {/* Impossible to miss, and it names the action rather than just the
+          number — "1 waiting" invites acknowledgement, "go and reply" does
+          not. Sits above the tabs so it is visible from every screen. */}
+      {consultationsWaiting > 0 && (
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-300 bg-red-50 px-4 py-3">
+          <p className="text-sm font-medium text-red-800">
+            {consultationsWaiting === 1
+              ? 'Someone is waiting to speak to a pharmacist'
+              : `${consultationsWaiting} people are waiting to speak to a pharmacist`}
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setTab('consultations')}
+              className="rounded bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-800"
+            >
+              Open consultations
+            </button>
+            {soundOn && isUnlocked() && (
+              <button
+                type="button"
+                onClick={() => setAlarmSilenced((s) => !s)}
+                className="rounded border border-red-300 px-3 py-1.5 text-xs text-red-800 hover:bg-red-100"
+              >
+                {alarmSilenced ? 'Sound silenced' : 'Silence sound'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <nav className="mt-8 flex gap-1 border-b border-slate-200">
         {TABS.map((t) => (

@@ -45,6 +45,39 @@ export function isUnlocked() {
 }
 
 /**
+ * A more insistent alarm for someone waiting on a pharmacist.
+ *
+ * Distinct from the order chime on purpose: lower, slower and longer, so a
+ * clinical escalation does not sound like a sale. Staff should be able to
+ * tell which one it is from across the shop without looking.
+ */
+export function playConsultationAlarm() {
+  const c = context();
+  if (!c || c.state !== 'running') return false;
+
+  const now = c.currentTime;
+  for (let r = 0; r < 3; r++) {
+    const base = now + r * 0.75;
+    // A falling pair rather than the order chime's rising one — the shape is
+    // what makes them distinguishable, more than the pitch.
+    [660, 494].forEach((freq, i) => {
+      const start = base + i * 0.22;
+      const osc = c.createOscillator();
+      const gain = c.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.3, start + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.26);
+      osc.connect(gain).connect(c.destination);
+      osc.start(start);
+      osc.stop(start + 0.28);
+    });
+  }
+  return true;
+}
+
+/**
  * Two rising notes, repeated — a phone-like ring rather than a single blip.
  * A counter is a noisy place and one short tone gets missed.
  */

@@ -27,6 +27,82 @@ const { env } = require('../../config/env');
 const money = (kobo) => `₦${Number(kobo / 100).toLocaleString('en-NG')}`;
 
 /**
+ * Everything an alert needs before it can be sent: an opted-in number, a
+ * readable one, and a live socket. Shared so a second alert type cannot
+ * quietly skip one of the three checks.
+ *
+ * @returns {Promise<{ok:false, reason:string} | {ok:true, to:string, accountId:string, pharmacy:object}>}
+ */
+async function resolveAlertTarget(pharmacyId, db) {
+  const [pharmacy] = await db`
+    select notify_phone, notify_on_new_order, name
+    from pharmacies where id = ${pharmacyId}
+  `;
+  if (!pharmacy) return { ok: false, reason: 'pharmacy_not_found' };
+  if (!pharmacy.notify_phone) return { ok: false, reason: 'no_notify_phone' };
+
+  const to = normalizeMsisdn(pharmacy.notify_phone, env.defaultCountryCode);
+  if (!to) return { ok: false, reason: 'notify_phone_unreadable' };
+
+  const [account] = await db`
+    select id from whatsapp_accounts
+    where pharmacy_id = ${pharmacyId} and provider = 'baileys' and status = 'connected'
+    limit 1
+  `;
+  if (!account) return { ok: false, reason: 'not_connected' };
+
+  return { ok: true, to, accountId: account.id, pharmacy };
+}
+
+/**
+ * Someone is waiting on a pharmacist.
+ *
+ * Higher stakes than the order alert this file was built for: an unread
+ * order costs a sale, an unread clinical question leaves a person with a
+ * symptom waiting. One went unanswered for 46 hours before there was any
+ * screen showing it, and a badge on a dashboard nobody has open is not a
+ * notification.
+ *
+ * Deliberately NOT gated on notify_on_new_order — that switch is about
+ * orders, and a pharmacy that turned off order pings has not asked to stop
+ * hearing about clinical escalations.
+ */
+async function alertStaffOfConsultation(pharmacyId, { briefing, customer = {}, isReminder = false }) {
+  assertPharmacyId(pharmacyId);
+  const db = getSql();
+
+  const target = await resolveAlertTarget(pharmacyId, db);
+  if (!target.ok) return { sent: false, reason: target.reason };
+
+  const who = customer.display_name || customer.wa_phone || 'A customer';
+  const lines = [
+    isReminder
+      ? `STILL WAITING — ${briefing.headline}`
+      : (briefing.urgent ? `URGENT — ${briefing.headline}` : `Someone needs a pharmacist — ${briefing.headline}`),
+    '',
+    `${who}, waiting ${briefing.waiting}`,
+    // The customer's own words, exactly as on the dashboard card. A
+    // pharmacist reading this on their phone may act on it before opening
+    // anything, so it must not be a summary.
+    briefing.trigger ? `\n"${briefing.trigger}"` : null,
+    briefing.unansweredSince > 0
+      ? `\n${briefing.unansweredSince} further message${briefing.unansweredSince > 1 ? 's' : ''} since, unanswered.`
+      : null,
+    '',
+    'Open the Consultations tab to reply.',
+  ].filter((l) => l !== null);
+
+  try {
+    const sent = await sessionManager.sendText(
+      target.accountId, `${target.to}@s.whatsapp.net`, lines.join('\n'), { delay: false },
+    );
+    return { sent: true, reason: 'ok', providerMessageId: sent.providerMessageId };
+  } catch (err) {
+    return { sent: false, reason: `send_failed:${err.message}` };
+  }
+}
+
+/**
  * @param {string} pharmacyId
  * @param {object} order  as returned by createOrder, including `items`
  * @returns {Promise<{sent: boolean, reason: string}>}
@@ -35,23 +111,12 @@ async function alertStaffOfNewOrder(pharmacyId, order, customer = {}) {
   assertPharmacyId(pharmacyId);
   const db = getSql();
 
-  const [pharmacy] = await db`
-    select notify_phone, notify_on_new_order, name
-    from pharmacies where id = ${pharmacyId}
-  `;
-  if (!pharmacy) return { sent: false, reason: 'pharmacy_not_found' };
-  if (!pharmacy.notify_on_new_order) return { sent: false, reason: 'alerts_disabled' };
-  if (!pharmacy.notify_phone) return { sent: false, reason: 'no_notify_phone' };
+  const target = await resolveAlertTarget(pharmacyId, db);
+  if (!target.ok) return { sent: false, reason: target.reason };
+  if (!target.pharmacy.notify_on_new_order) return { sent: false, reason: 'alerts_disabled' };
 
-  const to = normalizeMsisdn(pharmacy.notify_phone, env.defaultCountryCode);
-  if (!to) return { sent: false, reason: 'notify_phone_unreadable' };
-
-  const [account] = await db`
-    select id from whatsapp_accounts
-    where pharmacy_id = ${pharmacyId} and provider = 'baileys' and status = 'connected'
-    limit 1
-  `;
-  if (!account) return { sent: false, reason: 'not_connected' };
+  const to = target.to;
+  const account = { id: target.accountId };
 
   const lines = [
     `New order ${order.reference}`,
@@ -86,4 +151,4 @@ async function alertStaffOfNewOrder(pharmacyId, order, customer = {}) {
   }
 }
 
-module.exports = { alertStaffOfNewOrder };
+module.exports = { alertStaffOfNewOrder, alertStaffOfConsultation };

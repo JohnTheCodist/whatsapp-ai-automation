@@ -560,6 +560,38 @@ async function processInbound(db, job) {
       reason: outcome.reason,
     }));
 
+    // Tell a human, on their phone. A badge on a dashboard nobody has open is
+    // not a notification — the first clinical escalation sat unread for 46
+    // hours precisely because the only signal for it was on screen.
+    //
+    // Not awaited, and never allowed to throw: the handoff is already
+    // recorded and the conversation already muted. A failed alert must not
+    // undo that, or a send error would leave the customer un-escalated as
+    // well as un-notified.
+    (async () => {
+      const { buildBriefing } = require('./safety/consultationBriefing');
+      const { alertStaffOfConsultation } = require('./orders/staffAlert');
+      const history = await db`
+        select direction, body, created_at from messages
+        where conversation_id = ${row.conversation_id} order by id
+      `;
+      const briefing = buildBriefing({
+        category: outcome.category,
+        requestedAt: new Date(),
+        messages: history,
+        context: row.context,
+      });
+      const r = await alertStaffOfConsultation(job.pharmacy_id, {
+        briefing,
+        customer: { display_name: row.display_name, wa_phone: row.wa_phone },
+      });
+      console.log(JSON.stringify({
+        level: r.sent ? 'info' : 'warn', msg: 'consultation alert', sent: r.sent, reason: r.reason,
+      }));
+    })().catch((err) => console.error(JSON.stringify({
+      level: 'error', msg: 'consultation alert threw', error: err.message,
+    })));
+
     // TELL THE CUSTOMER. This used to be silent, on the grounds that promising
     // "a human will reply" with no staff inbox in existence was a promise the
     // product could not keep. The Inbox exists now, so that reasoning is spent
@@ -666,6 +698,75 @@ async function tick() {
 let lastSweepAt = 0;
 const SWEEP_INTERVAL_MS = 60_000;
 
+/**
+ * Chase consultations nobody has picked up.
+ *
+ * Escalating, then silent: the first reminder after 15 minutes, then roughly
+ * every 30, four in total. Bounded on purpose — an alert that repeats forever
+ * is one staff learn to dismiss, and a dismissed alert is worse than none
+ * because the pharmacy believes it is covered.
+ *
+ * Shares the 60s throttle with the hold sweep rather than adding a second
+ * timer, because both are periodic scans and the pooler has been exhausted
+ * once already by over-eager polling.
+ */
+const REMINDER_SCHEDULE_MINUTES = [15, 45, 75, 105];
+
+async function sweepUnhandledConsultations(db) {
+  const due = await db`
+    select h.id, h.pharmacy_id, h.conversation_id, h.category, h.requested_at,
+           h.reminder_count, cust.display_name, cust.wa_phone, conv.context
+    from handoffs h
+    join conversations conv on conv.id = h.conversation_id
+    join customers cust on cust.id = conv.customer_id
+    where h.resolved_at is null
+      and h.reminder_count < ${REMINDER_SCHEDULE_MINUTES.length}
+      and h.requested_at < now() - make_interval(mins =>
+            (array[${db.unsafe(REMINDER_SCHEDULE_MINUTES.join(','))}])[h.reminder_count + 1])
+    limit 10
+  `;
+
+  for (const h of due) {
+    // Claimed before sending, so a slow send cannot let the next sweep pick
+    // the same one up and double-message the pharmacist.
+    const [claimed] = await db`
+      update handoffs
+      set reminder_count = reminder_count + 1, last_reminded_at = now()
+      where id = ${h.id} and reminder_count = ${h.reminder_count}
+      returning id
+    `;
+    if (!claimed) continue;
+
+    try {
+      const { buildBriefing } = require('./safety/consultationBriefing');
+      const { alertStaffOfConsultation } = require('./orders/staffAlert');
+      const history = await db`
+        select direction, body, created_at from messages
+        where conversation_id = ${h.conversation_id} order by id
+      `;
+      const briefing = buildBriefing({
+        category: h.category,
+        requestedAt: h.requested_at,
+        messages: history,
+        context: h.context,
+      });
+      const r = await alertStaffOfConsultation(h.pharmacy_id, {
+        briefing,
+        customer: { display_name: h.display_name, wa_phone: h.wa_phone },
+        isReminder: true,
+      });
+      console.log(JSON.stringify({
+        level: 'info', msg: 'consultation reminder', sent: r.sent, reason: r.reason,
+        waiting: briefing.waiting, attempt: h.reminder_count + 1,
+      }));
+    } catch (err) {
+      console.error(JSON.stringify({
+        level: 'warn', msg: 'consultation reminder failed', handoffId: h.id, error: err.message,
+      }));
+    }
+  }
+}
+
 async function sweepExpiredHolds(db) {
   if (Date.now() - lastSweepAt < SWEEP_INTERVAL_MS) return;
   lastSweepAt = Date.now();
@@ -726,6 +827,9 @@ function start() {
     if (!running) return;
     try {
       await sweepExpiredHolds(getSql());
+      await sweepUnhandledConsultations(getSql()).catch((err) => console.error(JSON.stringify({
+        level: 'error', msg: 'consultation sweep failed', error: err.message,
+      })));
       // Drain rather than sleeping between each job, so a burst is not
       // served at one message per poll interval.
       let worked = true;
