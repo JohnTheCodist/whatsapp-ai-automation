@@ -124,8 +124,12 @@ async function alertStaffOfNewOrder(pharmacyId, order, customer = {}) {
     ...(order.items || []).map((i) => `${i.quantity} x ${i.name_snapshot}`),
     '',
     `Total ${money(order.total_kobo)}`,
-    customer.display_name || customer.wa_phone
-      ? `From ${customer.display_name || customer.wa_phone}`
+    // full_name is what the customer told the pharmacy when asked;
+    // display_name is whatever they set on their own phone. A reservation
+    // labelled "John's iPhone" helps nobody at the counter, so the confirmed
+    // name wins wherever staff act on it.
+    customer.full_name || customer.display_name || customer.wa_phone
+      ? `For ${customer.full_name || customer.display_name || customer.wa_phone}`
       : null,
     '',
     // Says plainly what has and has not happened. A staff member reading this

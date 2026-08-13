@@ -74,6 +74,34 @@ async function createOrder(pharmacyId, { customerId, conversationId = null, item
     return { ok: false, code: 'TOO_MANY_LINES', error: `An order cannot have more than ${MAX_LINES} different products.` };
   }
 
+  // ---- the pharmacy needs a name before it holds stock for someone --------
+  //
+  // Deterministic and HERE, not in the calling tool. Whether a customer has
+  // given their name is a business rule, and a model deciding it would mean
+  // the rule holds only as often as the prompt is obeyed. Putting it in the
+  // service also means a future caller — a staff-created order, an API — gets
+  // the same gate without having to remember it exists.
+  //
+  // Checked after the item validation above so a customer with no name still
+  // hears "we don't stock that" before being asked who they are: being asked
+  // for your name and THEN told the thing is unavailable is a worse
+  // conversation than the other order.
+  //
+  // display_name (the WhatsApp pushName) deliberately does NOT satisfy this.
+  // It is whatever the customer set on their own phone and is regularly a
+  // device name, a shop name, or an emoji — not something to put on a package.
+  const nameCheck = getSql();
+  const [named] = await nameCheck`
+    select full_name from customers where id = ${customerId} and pharmacy_id = ${pharmacyId}
+  `;
+  if (!named?.full_name) {
+    return {
+      ok: false,
+      code: 'NEEDS_CUSTOMER_NAME',
+      error: 'Before sending this to the pharmacy, ask the customer for their full name, then call save_customer_name.',
+    };
+  }
+
   // Collapse duplicate lines before pricing, so "2 then 1 more of the same"
   // becomes 3 rather than two rows a human has to reconcile.
   const wanted = new Map();

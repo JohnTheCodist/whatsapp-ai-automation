@@ -63,8 +63,13 @@ before(async () => {
   };
 
   const [customer] = await db`
-    insert into customers (pharmacy_id, identity_key, wa_phone, wa_jid, display_name)
-    values (${a.id}, '2349013993683', '2349013993683', '2349013993683@s.whatsapp.net', 'Test Customer')
+    -- full_name is required before an order can be created (0020). These
+    -- tests are about pricing and stock, so the fixture arrives already
+    -- named; the name gate itself is covered in customerNameGate.test.js.
+    insert into customers (pharmacy_id, identity_key, wa_phone, wa_jid, display_name,
+                           full_name, name_verified, name_source)
+    values (${a.id}, '2349013993683', '2349013993683', '2349013993683@s.whatsapp.net', 'Test Customer',
+            'Test Customer', true, 'customer_provided')
     returning id
   `;
 

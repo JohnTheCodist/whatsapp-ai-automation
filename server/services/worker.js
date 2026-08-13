@@ -174,7 +174,7 @@ async function processInbound(db, job) {
   const [row] = await db`
     select m.id, m.body,
            conv.id as conversation_id, conv.mode, conv.context, conv.greeted_at,
-           cust.id as customer_id, cust.wa_phone, cust.wa_jid, cust.display_name,
+           cust.id as customer_id, cust.wa_phone, cust.wa_jid, cust.display_name, cust.full_name,
            ph.name as pharmacy_name, ph.reply_mode, ph.sending_paused,
            (select phone from pharmacy_profile pp where pp.pharmacy_id = ph.id) as pharmacy_phone,
            ph.bot_name, ph.menu_enabled, ph.welcome_note,
@@ -504,7 +504,7 @@ async function processInbound(db, job) {
     customerId: row.customer_id,
     conversationId: row.conversation_id,
     // For the staff alert, so it can say who ordered rather than just a number.
-    customer: { display_name: row.display_name, wa_phone: row.wa_phone },
+    customer: { display_name: row.display_name, full_name: row.full_name, wa_phone: row.wa_phone },
     botName: row.bot_name,
     // A menu choice is a bare digit, which tells the model nothing on its
     // own. Passed as a FACT about what was chosen, not as an instruction —
@@ -605,7 +605,7 @@ async function processInbound(db, job) {
       });
       const r = await alertStaffOfConsultation(job.pharmacy_id, {
         briefing,
-        customer: { display_name: row.display_name, wa_phone: row.wa_phone },
+        customer: { display_name: row.display_name, full_name: row.full_name, wa_phone: row.wa_phone },
       });
       console.log(JSON.stringify({
         level: r.sent ? 'info' : 'warn', msg: 'consultation alert', sent: r.sent, reason: r.reason,
@@ -731,7 +731,7 @@ const REMINDER_SCHEDULE_MINUTES = [15, 45, 75, 105];
 async function sweepUnhandledConsultations(db) {
   const due = await db`
     select h.id, h.pharmacy_id, h.conversation_id, h.category, h.requested_at,
-           h.reminder_count, cust.display_name, cust.wa_phone, conv.context
+           h.reminder_count, cust.display_name, cust.full_name, cust.wa_phone, conv.context
     from handoffs h
     join conversations conv on conv.id = h.conversation_id
     join customers cust on cust.id = conv.customer_id
@@ -768,7 +768,7 @@ async function sweepUnhandledConsultations(db) {
       });
       const r = await alertStaffOfConsultation(h.pharmacy_id, {
         briefing,
-        customer: { display_name: h.display_name, wa_phone: h.wa_phone },
+        customer: { display_name: h.display_name, full_name: h.full_name, wa_phone: h.wa_phone },
         isReminder: true,
       });
       console.log(JSON.stringify({

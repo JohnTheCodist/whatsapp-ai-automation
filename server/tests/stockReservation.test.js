@@ -63,8 +63,12 @@ before(async () => {
   const p = await pharmacies.createPharmacy(userId, { name: `${TAG} Alpha` });
 
   const [customer] = await db`
-    insert into customers (pharmacy_id, identity_key, wa_phone, wa_jid, display_name)
-    values (${p.id}, '2349011111111', '2349011111111', '2349011111111@s.whatsapp.net', 'Res Tester')
+    -- Named up front: these tests exercise stock holds, and the name gate
+    -- (0020) would otherwise refuse every order before stock is touched.
+    insert into customers (pharmacy_id, identity_key, wa_phone, wa_jid, display_name,
+                           full_name, name_verified, name_source)
+    values (${p.id}, '2349011111111', '2349011111111', '2349011111111@s.whatsapp.net', 'Res Tester',
+            'Res Tester', true, 'customer_provided')
     returning id
   `;
   ctx = { userId, pharmacyId: p.id, customerId: customer.id };

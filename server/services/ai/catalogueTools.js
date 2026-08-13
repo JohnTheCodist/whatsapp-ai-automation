@@ -26,6 +26,9 @@ const { createOrder } = require('../orders/orderService');
 const { categoriesFor } = require('./needVocabulary');
 const { alertStaffOfNewOrder } = require('../orders/staffAlert');
 const { saleUnit } = require('./saleUnit');
+const { isGroundedIn, splitName } = require('../customers/customerName');
+const { recordEvent } = require('../customers/customerEvents');
+const { PATIENT_EVENTS } = require('../customers/patientEventTypes');
 
 /** Kobo -> naira, for anything a human will read. */
 function naira(kobo) {
@@ -312,6 +315,80 @@ const TOOLS = [
           'A pharmacist has been asked and will answer shortly. Tell the customer you have checked with '
           + 'the pharmacist and will come back to them. Do NOT suggest a substitute yourself, do not '
           + 'guess what they might offer, and do not promise a timeframe.',
+      };
+    },
+  },
+
+  {
+    name: 'save_customer_name',
+    description:
+      'Save the customer\'s full name, after THEY have told you what it is in their own message. '
+      + 'Call this only when create_order refused with NEEDS_CUSTOMER_NAME and the customer has just '
+      + 'replied with their name. Pass exactly the name they typed — do not add a surname they did not '
+      + 'give, do not use their WhatsApp profile name, and do not guess. After it succeeds, call '
+      + 'create_order again.',
+    parameters: {
+      type: 'object',
+      properties: {
+        full_name: {
+          type: 'string',
+          description: 'The name exactly as the customer just wrote it, e.g. "John Adeyemi" or "John".',
+        },
+      },
+      required: ['full_name'],
+    },
+    async run(ctx, args) {
+      const { pharmacyId, customerId, customerText } = ctx;
+      assertPharmacyId(pharmacyId);
+      if (!customerId) return { saved: false, error: 'No customer on this conversation.' };
+
+      const proposed = String(args?.full_name || '');
+
+      // THE GUARD. A model asked for a name always produces one, and the
+      // plausible wrong answers are the dangerous ones: the WhatsApp display
+      // name, an invented surname that makes "John" look complete, or a name
+      // from an earlier unrelated sentence. Any of those ends up printed on a
+      // package, so a name that does not appear in what the customer actually
+      // typed is refused here regardless of what the model returned.
+      if (!isGroundedIn(proposed, customerText)) {
+        return {
+          saved: false,
+          error: 'That name does not appear in what the customer just wrote. Ask them to type their name, and pass exactly what they type. Never supply a name they did not give.',
+        };
+      }
+
+      const { firstName, lastName, fullName } = splitName(proposed);
+      if (!fullName) return { saved: false, error: 'That is not a usable name. Ask the customer again.' };
+
+      const db = getSql();
+      const [updated] = await db`
+        update customers
+        set first_name = ${firstName}, last_name = ${lastName}, full_name = ${fullName},
+            name_verified = true, name_source = 'customer_provided', name_updated_at = now()
+        where id = ${customerId} and pharmacy_id = ${pharmacyId}
+        returning id, full_name
+      `;
+      if (!updated) return { saved: false, error: 'Could not save that name.' };
+
+      // Timeline event. Non-fatal: the name is saved either way, and a
+      // failed event must not make the assistant re-ask for a name it has.
+      try {
+        await recordEvent(db, {
+          pharmacyId, customerId, eventType: PATIENT_EVENTS.CUSTOMER_NAME_CAPTURED,
+          actorType: 'customer', entityType: 'customer', entityId: customerId,
+          metadata: { fullName },
+          // Keyed on the name itself, so a later correction records a second
+          // event rather than being swallowed as a duplicate of the first.
+          idempotencyKey: `customer_name:${customerId}:${fullName.toLowerCase()}`,
+        });
+      } catch (err) {
+        console.error(JSON.stringify({ level: 'warn', msg: 'name captured but event not recorded', error: err.message }));
+      }
+
+      return {
+        saved: true,
+        full_name: fullName,
+        note: 'Name saved. Now call create_order again to send the order to the pharmacy.',
       };
     },
   },

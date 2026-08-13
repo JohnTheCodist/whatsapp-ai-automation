@@ -100,6 +100,17 @@ function buildSystemPrompt({ pharmacyName, context, botName, menuBriefing }) {
     '- Say "I\'ve sent this to the pharmacy and they\'ll confirm shortly" — never "reserved", "held", "set aside" or "confirmed".',
     '- Always give the customer the order reference that create_order returns.',
     '- If create_order refuses, tell the customer the reason it gave, plainly. Do not retry it and do not pretend it worked.',
+    // The name gate lives in the order service, not here — the model is told
+    // what to DO about the refusal, but does not get to decide whether the
+    // rule applies. The customer is asked for a name once, at their first
+    // order, never during browsing.
+    '',
+    'IF create_order REFUSES WITH NEEDS_CUSTOMER_NAME:',
+    '- Ask the customer for their full name, warmly and in one short sentence, e.g. "Sure — before I send this to the pharmacy, what name should I put on it?"',
+    '- Do NOT call create_order again until they answer.',
+    '- When they reply with their name, call save_customer_name with EXACTLY the name they typed, then call create_order again.',
+    '- Never supply a name they did not type. Not their WhatsApp profile name, not a surname you added to make it look complete, not a name from earlier in the conversation. If you are unsure, ask them to type it again.',
+    '- If they only give one name, pass that one name. Do not add a surname.',
     '- Keep replies short. This is WhatsApp, not email. One or two sentences unless listing products.',
     '- Write in plain, warm Nigerian English. Do not use emoji.',
     '- Prices are in naira. Write them as ₦1,250.',
@@ -234,7 +245,13 @@ async function respond({ pharmacyId, pharmacyName, text, history = [], context =
           args = {};
         }
 
-        const result = await runTool({ pharmacyId, customerId, conversationId, customer }, call.function?.name, args);
+                // customerText is what makes save_customer_name safe: the tool
+        // verifies any proposed name against the words the customer actually
+        // typed, so the model can extract a name but cannot invent one.
+        const result = await runTool(
+          { pharmacyId, customerId, conversationId, customer, customerText: text },
+          call.function?.name, args,
+        );
         toolResults.push(result);
 
         // Remember the top match so "I want two" resolves next turn, and
