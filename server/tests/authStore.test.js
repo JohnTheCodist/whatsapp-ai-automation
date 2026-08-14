@@ -174,16 +174,46 @@ test('key values round-trip binary correctly', { skip: SKIP && skipReason }, asy
   assert.deepEqual(Buffer.from(got.alice.data), secret);
 });
 
-test('a batch of 30 pre-keys writes fast enough for Baileys initialisation', { skip: SKIP && skipReason }, async () => {
-  // Baileys uploads pre-keys in batches of about this size during
-  // initialisation and gives up on its own timeout. An earlier version wrote
-  // one row per round trip, which against a remote pooler took long enough
-  // that a genuinely paired session never reached `open` — the only symptom
-  // was "Pre-key upload timeout" buried in the Baileys logs.
+test('writing pre-keys costs a constant number of round trips, not one per key', { skip: SKIP && skipReason }, async () => {
+  // WHAT THIS PROTECTS
+  // Baileys uploads pre-keys in batches of ~30 during initialisation and gives
+  // up on its own timeout. An earlier version of authStore wrote one row per
+  // round trip; against a remote pooler that ran to tens of seconds and a
+  // genuinely paired session never reached `open`, with "Pre-key upload
+  // timeout" buried in the Baileys logs as the only clue.
+  //
+  // WHY THIS IS NOT A WALL-CLOCK THRESHOLD ANY MORE
+  // It used to assert `elapsed < 10000`. That measures two things at once —
+  // how many round trips the code makes (the thing it cares about) and how
+  // slow the network and machine are right now (which it does not). Under a
+  // parallel test run against a transatlantic pooler the second term
+  // dominated, so the test failed intermittently while the code was correct.
+  // A flaky guard is worse than no guard: it trains people to re-run until
+  // green, which is exactly when a real regression slips through.
+  //
+  // So the cost is expressed in the unit the invariant is actually about.
+  // One trivial query is one round trip; measuring it here, under whatever
+  // conditions this run happens to have, gives a local yardstick. The batch
+  // write is then priced in those units. Latency cancels out: if the network
+  // is slow, both numbers inflate together.
   const { state } = await createAuthStore(ctx.a.id, ctx.accA);
 
+  // Median of several samples — a single baseline can catch one unlucky
+  // hiccup and make the yardstick meaningless.
+  const samples = [];
+  for (let i = 0; i < 5; i++) {
+    const t = Date.now();
+    await db`select 1`;
+    samples.push(Date.now() - t);
+  }
+  samples.sort((a, b) => a - b);
+  // Floor of 1ms: a local database can round-trip in under a millisecond, and
+  // dividing by zero would make every batch look infinitely expensive.
+  const oneRoundTrip = Math.max(1, samples[Math.floor(samples.length / 2)]);
+
+  const KEYS = 60;
   const batch = {};
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < KEYS; i++) {
     batch[`pk${i}`] = { public: crypto.randomBytes(32), private: crypto.randomBytes(32) };
   }
 
@@ -191,15 +221,23 @@ test('a batch of 30 pre-keys writes fast enough for Baileys initialisation', { s
   await state.keys.set({ 'pre-key': batch });
   const elapsed = Date.now() - started;
 
-  // Generous: the point is to catch a return to per-key round trips, which
-  // would be an order of magnitude slower, not to police normal latency.
+  const roundTripsish = elapsed / oneRoundTrip;
+
+  // Batched, this is a transaction wrapping one multi-row insert — begin,
+  // insert, commit, so about 3 round trips plus the cost of encrypting 60
+  // keys. Per-key it would be at least KEYS. The threshold sits far from
+  // both: comfortably above correct behaviour even with encryption overhead,
+  // and far below the 60+ a regression would produce.
+  const LIMIT = 20;
   assert.ok(
-    elapsed < 10000,
-    `writing 30 pre-keys took ${elapsed}ms — that is round-trip-per-key territory and will time out Baileys`,
+    roundTripsish < LIMIT,
+    `writing ${KEYS} pre-keys cost ~${roundTripsish.toFixed(1)} round trips `
+    + `(${elapsed}ms against a ${oneRoundTrip}ms baseline). Over ${LIMIT} means the batched `
+    + 'insert has regressed to one statement per key, which times out Baileys during pairing.',
   );
 
-  const readBack = await state.keys.get('pre-key', ['pk0', 'pk29']);
-  assert.ok(readBack.pk0 && readBack.pk29, 'every key in the batch must actually be stored');
+  const readBack = await state.keys.get('pre-key', ['pk0', `pk${KEYS - 1}`]);
+  assert.ok(readBack.pk0 && readBack[`pk${KEYS - 1}`], 'every key in the batch must actually be stored');
 
   await state.keys.set({ 'pre-key': Object.fromEntries(Object.keys(batch).map((k) => [k, null])) });
 });
