@@ -21,6 +21,7 @@
 
 const { getSql, assertPharmacyId } = require('../db');
 const { shouldIngest } = require('./ingestionPolicy');
+const { resolveConversation } = require('./conversationPolicy');
 const { recordEvent } = require('../customers/customerEvents');
 const { PATIENT_EVENTS } = require('../customers/patientEventTypes');
 const { resolveCustomer } = require('../customers/customerIdentity');
@@ -151,12 +152,27 @@ async function ingest(msg) {
       //    is history and must not be reopened silently, because reopening
       //    would resurrect stale context ("I want two" referring to a
       //    product discussed last month).
-      let [conversation] = await tx`
-        select id from conversations
-        where pharmacy_id = ${pharmacyId} and customer_id = ${customer.id} and mode <> 'closed'
+      // The segmentation rule lives in conversationPolicy, not here. It used
+      // to be the inline clause `mode <> 'closed'` — and because nothing ever
+      // wrote 'closed', it always matched: one patient accumulated a single
+      // conversation of 143 messages across five days. Moving the decision to
+      // a pure function is what makes the boundary testable and tunable
+      // without editing the write path.
+      //
+      // `for update` on the row is what makes this safe under concurrency.
+      // Two messages arriving together would otherwise both read "no active
+      // conversation" and both insert one; the lock makes the second wait and
+      // see the first one's decision.
+      const [latest] = await tx`
+        select id, status, last_message_at from conversations
+        where pharmacy_id = ${pharmacyId} and customer_id = ${customer.id}
         order by last_message_at desc
         limit 1
+        for update
       `;
+
+      const decision = resolveConversation({ latest: latest || null });
+      let conversation = decision.action === 'reuse' ? { id: decision.conversationId } : null;
 
       if (!conversation) {
         [conversation] = await tx`

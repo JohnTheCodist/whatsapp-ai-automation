@@ -24,6 +24,7 @@
 const { getSql } = require('./db');
 const { sessionManager } = require('./whatsapp/sessionManager');
 const { evaluateOutbound, isOptOutRequest } = require('./whatsapp/conductPolicy');
+const { shouldClose, IDLE_HOURS } = require('./whatsapp/conversationPolicy');
 const { evaluateWarmup } = require('./whatsapp/warmupPolicy');
 const { normalizeMsisdn } = require('./whatsapp/senderIdentity');
 const { expireStaleHolds } = require('./orders/orderService');
@@ -620,10 +621,16 @@ async function processInbound(db, job) {
     (async () => {
       const { buildBriefing } = require('./safety/consultationBriefing');
       const { alertStaffOfConsultation } = require('./orders/staffAlert');
-      const history = await db`
+      // Bounded, the same way the AI's own history load is (see
+      // processInbound below). buildBriefing only needs the trigger message
+      // and whatever came after it — before the conversation-close sweep
+      // (0023) this conversation could hold days of unrelated traffic, and
+      // even with sessions now segmented, an unbounded load stays a cost with
+      // no benefit for what this actually renders.
+      const history = (await db`
         select direction, body, created_at from messages
-        where conversation_id = ${row.conversation_id} order by id
-      `;
+        where conversation_id = ${row.conversation_id} order by id desc limit 50
+      `).reverse();
       const briefing = buildBriefing({
         category: outcome.category,
         requestedAt: new Date(),
@@ -750,11 +757,65 @@ const SWEEP_INTERVAL_MS = 60_000;
  * is one staff learn to dismiss, and a dismissed alert is worse than none
  * because the pharmacy believes it is covered.
  *
- * Shares the 60s throttle with the hold sweep rather than adding a second
- * timer, because both are periodic scans and the pooler has been exhausted
- * once already by over-eager polling.
+ * Throttled at the call site, not in here — see the single gate in start()'s
+ * loop. It used to check nothing of its own while a comment claimed it
+ * shared the hold sweep's throttle; because the loop calls it unconditionally
+ * regardless of that sweep's internal early-return, it ran on every poll
+ * tick — every 2s by default, 30x more often than intended. Handoffs is a
+ * small table, so nothing broke, but it is the same class of over-eager
+ * polling that exhausted the pooler once already, just below the threshold
+ * anyone noticed.
  */
 const REMINDER_SCHEDULE_MINUTES = [15, 45, 75, 105];
+
+/**
+ * Close threads nobody has spoken in for a day.
+ *
+ * The closing half of conversationPolicy — resolveConversation decides where
+ * a new INBOUND message lands, but nothing makes an idle thread stop being
+ * "the active one" on its own; a customer's silence produces no event to
+ * react to. This sweep is what actually sets status='closed', which is what
+ * lets the NEXT message from that patient start a genuine new conversation
+ * instead of extending a five-day-old one — the exact failure 0023 measured
+ * in live data before this existed.
+ *
+ * shouldClose refuses on its own for the two cases that matter: a thread
+ * still waiting on a pharmacist, and one a staff member is actively
+ * handling. Both are re-checked here from real rows rather than trusted from
+ * a stale read, since a handoff could resolve or a takeover could end
+ * between one sweep and the next.
+ */
+async function sweepIdleConversations(db) {
+  const candidates = await db`
+    select id, pharmacy_id, customer_id, status, mode, last_message_at,
+           exists(select 1 from handoffs h where h.conversation_id = c.id and h.resolved_at is null) as has_open_handoff
+    from conversations c
+    where status = 'open' and last_message_at < now() - interval '${db.unsafe(String(IDLE_HOURS))} hours'
+    limit 200
+  `;
+
+  for (const c of candidates) {
+    const decision = shouldClose({
+      status: c.status, mode: c.mode, lastMessageAt: c.last_message_at, hasOpenHandoff: c.has_open_handoff,
+    });
+    if (!decision.close) continue;
+
+    await db`
+      update conversations
+      set status = 'closed', closed_at = now(), closed_reason = ${decision.reason}
+      where id = ${c.id} and status = 'open'
+    `;
+
+    // CONVERSATION_RESOLVED exists in the registry precisely for this moment
+    // — see 0017's note that it had no writer yet. This sweep is that writer.
+    await recordEvent(db, {
+      pharmacyId: c.pharmacy_id, customerId: c.customer_id,
+      eventType: PATIENT_EVENTS.CONVERSATION_RESOLVED,
+      actorType: 'system', entityType: 'conversation', entityId: c.id,
+      metadata: { reason: decision.reason },
+    });
+  }
+}
 
 async function sweepUnhandledConsultations(db) {
   const due = await db`
@@ -784,10 +845,10 @@ async function sweepUnhandledConsultations(db) {
     try {
       const { buildBriefing } = require('./safety/consultationBriefing');
       const { alertStaffOfConsultation } = require('./orders/staffAlert');
-      const history = await db`
+      const history = (await db`
         select direction, body, created_at from messages
-        where conversation_id = ${h.conversation_id} order by id
-      `;
+        where conversation_id = ${h.conversation_id} order by id desc limit 50
+      `).reverse();
       const briefing = buildBriefing({
         category: h.category,
         requestedAt: h.requested_at,
@@ -812,9 +873,6 @@ async function sweepUnhandledConsultations(db) {
 }
 
 async function sweepExpiredHolds(db) {
-  if (Date.now() - lastSweepAt < SWEEP_INTERVAL_MS) return;
-  lastSweepAt = Date.now();
-
   const expired = await expireStaleHolds();
   for (const order of expired) {
     console.log(JSON.stringify({
@@ -870,10 +928,22 @@ function start() {
   const loop = async () => {
     if (!running) return;
     try {
-      await sweepExpiredHolds(getSql());
-      await sweepUnhandledConsultations(getSql()).catch((err) => console.error(JSON.stringify({
-        level: 'error', msg: 'consultation sweep failed', error: err.message,
-      })));
+      // ONE gate for all three periodic scans, checked once rather than
+      // (claimed but not actually) per-sweep. Each previously managed its own
+      // timing, or in sweepUnhandledConsultations' case claimed to share one
+      // it never actually checked — it ran on every poll tick, 30x more often
+      // than the 60s the comment promised. A single check here is the only
+      // version of "shared throttle" that is actually shared.
+      if (Date.now() - lastSweepAt >= SWEEP_INTERVAL_MS) {
+        lastSweepAt = Date.now();
+        await sweepExpiredHolds(getSql());
+        await sweepUnhandledConsultations(getSql()).catch((err) => console.error(JSON.stringify({
+          level: 'error', msg: 'consultation sweep failed', error: err.message,
+        })));
+        await sweepIdleConversations(getSql()).catch((err) => console.error(JSON.stringify({
+          level: 'error', msg: 'conversation close sweep failed', error: err.message,
+        })));
+      }
       // Drain rather than sleeping between each job, so a burst is not
       // served at one message per poll interval.
       let worked = true;
