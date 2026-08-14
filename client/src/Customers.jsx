@@ -28,9 +28,9 @@ function relTime(iso) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-export default function Customers({ onOpenConversation, onNavigate }) {
+export default function Customers({ onOpenConversation, onNavigate, initialQuery = '' }) {
   const [data, setData] = useState(null);
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(initialQuery);
   const [error, setError] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
 
@@ -46,7 +46,13 @@ export default function Customers({ onOpenConversation, onNavigate }) {
     }
   }, []);
 
-  useEffect(() => { load(''); }, [load]);
+  // Re-runs when the header search sends a new term, so searching from the
+  // top bar while already on this screen actually filters rather than
+  // silently doing nothing.
+  useEffect(() => {
+    setQ(initialQuery);
+    load(initialQuery);
+  }, [load, initialQuery]);
 
   useEffect(() => {
     const t = setTimeout(() => load(q), 300);
