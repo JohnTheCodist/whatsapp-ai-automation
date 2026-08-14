@@ -80,6 +80,11 @@ async function recordEvent(sql, {
   pharmacyId, customerId, eventType, actorType, actorId = null,
   entityType, entityId, occurredAt = new Date(), metadata = {},
   idempotencyKey = null, verifyEntity = true,
+  // 'internal' marks staff CRM activity — a note written, a tag attached.
+  // Defaults to customer_visible because every event type that existed before
+  // notes and tags describes something the customer actually did, and a
+  // default of 'internal' would have silently reclassified all of them.
+  visibility = 'customer_visible',
 }) {
   if (!pharmacyId || !customerId) {
     throw new Error('recordEvent requires pharmacyId and customerId — both are server-controlled, never optional.');
@@ -141,10 +146,10 @@ async function recordEvent(sql, {
   const [row] = await sql`
     insert into customer_events
       (pharmacy_id, customer_id, event_type, occurred_at, actor_type, actor_id,
-       entity_type, entity_id, metadata, idempotency_key)
+       entity_type, entity_id, metadata, idempotency_key, visibility)
     values
       (${pharmacyId}, ${customerId}, ${eventType}, ${occurredAt}, ${actorType}, ${actorId},
-       ${entityType}, ${toEntityId(entityId)}, ${sql.json(metadata)}, ${key})
+       ${entityType}, ${toEntityId(entityId)}, ${sql.json(metadata)}, ${key}, ${visibility})
     on conflict (pharmacy_id, idempotency_key) do nothing
     returning id
   `;

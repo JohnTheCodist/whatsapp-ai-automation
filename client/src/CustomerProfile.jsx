@@ -20,6 +20,7 @@
 
 import { useEffect, useState } from 'react';
 import CustomerTimeline from './CustomerTimeline.jsx';
+import CustomerCrm from './CustomerCrm.jsx';
 
 const STATUS_TONE = {
   active: 'bg-teal-50 text-teal-700',
@@ -244,6 +245,8 @@ export default function CustomerProfile({ customerId, onBack, onOpenConversation
       </div>
 
       {/* ---- timeline: owns its own filters and pagination ---- */}
+      <CustomerCrm customerId={customerId} />
+
       <CustomerTimeline customerId={customerId} onOpenConversation={onOpenConversation} />
     </div>
   );

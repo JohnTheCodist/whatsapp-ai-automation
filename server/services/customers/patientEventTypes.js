@@ -54,6 +54,19 @@ const PATIENT_EVENTS = Object.freeze({
   // ---- profile ----
   CUSTOMER_NAME_CAPTURED: 'CUSTOMER_NAME_CAPTURED',
 
+  // ---- internal CRM activity (visibility='internal') ----
+  //
+  // Staff acting ON a customer record, not the customer doing anything. These
+  // record THAT a note or tag changed and by whom — never the note's text.
+  // Putting the content in event metadata would copy staff-only prose into a
+  // second table, and then "keep notes out of the model" would depend on
+  // remembering this table too.
+  NOTE_ADDED: 'NOTE_ADDED',
+  NOTE_UPDATED: 'NOTE_UPDATED',
+  NOTE_DELETED: 'NOTE_DELETED',
+  TAG_ADDED: 'TAG_ADDED',
+  TAG_REMOVED: 'TAG_REMOVED',
+
   // ---- communication preferences ----
   COMMUNICATION_OPTED_OUT: 'COMMUNICATION_OPTED_OUT',
 
@@ -113,6 +126,11 @@ const ENTITY_TABLES = Object.freeze({
   handoff: 'handoffs',
   opt_out: 'opt_outs',
   product: 'products',
+  // Internal CRM records. `note` has no table entry on purpose: a NOTE_DELETED
+  // event outlives the row it refers to, so verifying the note still exists
+  // would make it impossible to record the deletion that just happened.
+  note: null,
+  tag: 'tags',
   // reserved, no table yet
   medication_journey: null,
   refill: null,

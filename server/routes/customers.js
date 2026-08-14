@@ -18,6 +18,7 @@ const { getSql, assertPharmacyId } = require('../services/db');
 const { classifyActivity } = require('../services/customers/customerActivity');
 const { getCustomerProfile } = require('../services/customers/customerProfile');
 const { listTimeline } = require('../services/customers/customerTimeline');
+const crm = require('../services/customers/customerCrm');
 
 const router = express.Router();
 
@@ -107,6 +108,88 @@ router.get('/:id/timeline', requireAuth, async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Internal CRM — staff only
+// ---------------------------------------------------------------------------
+//
+// These routes serve data the customer must never see. They sit under
+// requireAuth like everything else here, and every service call scopes on
+// req.pharmacyId — which comes from the verified session, never the URL.
+//
+// There is deliberately no route that returns notes or tags alongside
+// conversation data. Keeping the CRM read path separate from anything the
+// assistant touches is what makes the boundary structural rather than a rule
+// someone has to remember (see crmBoundary.test.js).
+
+/** The user id to attribute an action to, or null under DEV_AUTH_BYPASS. */
+function actorId(req) {
+  const id = req.user?.id;
+  return id && id !== '00000000-0000-0000-0000-000000000000' ? id : null;
+}
+
+router.get('/:id/notes', requireAuth, async (req, res, next) => {
+  try {
+    res.json({ notes: await crm.listNotes(req.pharmacyId, req.params.id) });
+  } catch (err) { next(err); }
+});
+
+router.post('/:id/notes', requireAuth, async (req, res, next) => {
+  try {
+    const note = await crm.addNote(req.pharmacyId, req.params.id, {
+      content: req.body?.content,
+      authorId: actorId(req),
+    });
+    res.status(201).json({ note });
+  } catch (err) { next(err); }
+});
+
+router.patch('/:id/notes/:noteId', requireAuth, async (req, res, next) => {
+  try {
+    const note = await crm.updateNote(req.pharmacyId, req.params.id, req.params.noteId, {
+      content: req.body?.content,
+      authorId: actorId(req),
+    });
+    res.json({ note });
+  } catch (err) { next(err); }
+});
+
+router.delete('/:id/notes/:noteId', requireAuth, async (req, res, next) => {
+  try {
+    res.json(await crm.deleteNote(req.pharmacyId, req.params.id, req.params.noteId, {
+      authorId: actorId(req),
+    }));
+  } catch (err) { next(err); }
+});
+
+/** Every tag this pharmacy can apply — the picker's options. */
+router.get('/tags/all', requireAuth, async (req, res, next) => {
+  try {
+    res.json({ tags: await crm.listTags(req.pharmacyId) });
+  } catch (err) { next(err); }
+});
+
+router.get('/:id/tags', requireAuth, async (req, res, next) => {
+  try {
+    res.json({ tags: await crm.listCustomerTags(req.pharmacyId, req.params.id) });
+  } catch (err) { next(err); }
+});
+
+router.post('/:id/tags', requireAuth, async (req, res, next) => {
+  try {
+    const { tagId } = req.body || {};
+    if (!tagId) return res.status(400).json({ error: 'tagId is required.', code: 'NO_TAG' });
+    res.json(await crm.addTag(req.pharmacyId, req.params.id, tagId, { authorId: actorId(req) }));
+  } catch (err) { next(err); }
+});
+
+router.delete('/:id/tags/:tagId', requireAuth, async (req, res, next) => {
+  try {
+    res.json(await crm.removeTag(req.pharmacyId, req.params.id, req.params.tagId, {
+      authorId: actorId(req),
+    }));
+  } catch (err) { next(err); }
 });
 
 module.exports = router;
