@@ -30,6 +30,7 @@
 const { sessionManager } = require('./sessionManager');
 const { recordEvent } = require('../customers/customerEvents');
 const { PATIENT_EVENTS } = require('../customers/patientEventTypes');
+const { canSendMessage, withRequiredFooter } = require('./communicationPolicy');
 
 const ACTOR_BY_AUTHOR = { assistant: 'ai', staff: 'staff', system: 'system' };
 
@@ -57,12 +58,13 @@ const ACTOR_BY_AUTHOR = { assistant: 'ai', staff: 'staff', system: 'system' };
  */
 async function insertOutboundMessage(sql, {
   pharmacyId, customerId, conversationId, providerMessageId, body, author = 'system',
+  category = null, eligibilityReason = null,
 }) {
   const [message] = await sql`
     insert into messages (pharmacy_id, conversation_id, direction, author, body,
-                          provider_message_id, delivery_status)
+                          provider_message_id, delivery_status, category, eligibility_reason)
     values (${pharmacyId}, ${conversationId}, 'outbound', ${author}, ${body},
-            ${providerMessageId}, 'sent')
+            ${providerMessageId}, 'sent', ${category || null}, ${eligibilityReason || null})
     returning id, created_at
   `;
 
@@ -99,13 +101,53 @@ async function insertOutboundMessage(sql, {
  */
 async function sendAndRecordOutbound(sql, {
   pharmacyId, customerId, conversationId, accountId, to, body, author = 'system', delay,
+  category, footer = null,
 }) {
+  // ---- consent, before the transport ------------------------------------
+  //
+  // The check is HERE rather than at each caller because a caller that
+  // forgets it produces a message that should never have been sent, and
+  // nothing downstream can tell. Putting it in the one function that owns
+  // the send means a new outbound site is covered by construction.
+  //
+  // A send with no category is refused outright. That is what makes
+  // "every outbound message declares what it is" enforceable instead of a
+  // convention — and refusing is safe, because the failure mode of this
+  // check is a message not going out, which is recoverable, while the
+  // failure mode of skipping it is a message that cannot be unsent.
+  const [customer] = customerId
+    ? await sql`
+        select status, communication_status,
+               comm_transactional, comm_order_notifications, comm_medication, comm_marketing
+        from customers where id = ${customerId} and pharmacy_id = ${pharmacyId}
+      `
+    : [null];
+
+  const decision = canSendMessage({ category, customer });
+  if (!decision.allowed) {
+    const err = new Error(`Message not permitted: ${decision.reason}`);
+    err.code = 'NOT_PERMITTED';
+    err.reason = decision.reason;
+    err.blocked = true;
+    throw err;
+  }
+
+  // Marketing carries its unsubscribe line whether or not the campaign
+  // author remembered it. Added after the consent check so a blocked send
+  // never even composes one.
+  const finalBody = withRequiredFooter(body, category, footer);
+
   const sendOpts = delay === undefined ? undefined : { delay };
-  const sent = await sessionManager.sendText(accountId, to, body, sendOpts);
+  const sent = await sessionManager.sendText(accountId, to, finalBody, sendOpts);
   const message = await insertOutboundMessage(sql, {
-    pharmacyId, customerId, conversationId, providerMessageId: sent.providerMessageId, body, author,
+    pharmacyId, customerId, conversationId, providerMessageId: sent.providerMessageId,
+    body: finalBody, author,
+    // The decision is stored as a snapshot, never recomputed. Preferences
+    // change; this has to keep explaining why the message was legitimate when
+    // it went out.
+    category, eligibilityReason: decision.reason,
   });
-  return { message, sent };
+  return { message, sent, decision };
 }
 
 module.exports = { sendAndRecordOutbound, insertOutboundMessage };

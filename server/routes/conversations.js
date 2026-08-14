@@ -19,6 +19,7 @@ const express = require('express');
 const { requireAuth } = require('../middleware/auth');
 const { getSql, assertPharmacyId } = require('../services/db');
 const { sendAndRecordOutbound } = require('../services/whatsapp/outboundMessage');
+const { CATEGORIES } = require('../services/whatsapp/communicationPolicy');
 const { recordEvent } = require('../services/customers/customerEvents');
 const { PATIENT_EVENTS } = require('../services/customers/patientEventTypes');
 const { buildBriefing } = require('../services/safety/consultationBriefing');
@@ -265,7 +266,7 @@ router.post('/:id/reply', requireAuth, async (req, res, next) => {
     const { message } = await sendAndRecordOutbound(db, {
       pharmacyId: req.pharmacyId, customerId: conversation.customer_id, conversationId: conversation.id,
       accountId: account.id, to: conversation.wa_jid || `${conversation.wa_phone}@s.whatsapp.net`,
-      body: text, author: 'staff', delay: false,
+      body: text, author: 'staff', delay: false, category: CATEGORIES.TRANSACTIONAL,
     });
     await db`update conversations set last_message_at = now() where id = ${conversation.id}`;
 

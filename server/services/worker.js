@@ -29,6 +29,7 @@ const { normalizeMsisdn } = require('./whatsapp/senderIdentity');
 const { expireStaleHolds } = require('./orders/orderService');
 const { escalationMessage, readEscalationAnswer } = require('./safety/escalationMessage');
 const { sendAndRecordOutbound, insertOutboundMessage } = require('./whatsapp/outboundMessage');
+const { CATEGORIES } = require('./whatsapp/communicationPolicy');
 const { recordEvent } = require('./customers/customerEvents');
 const { PATIENT_EVENTS } = require('./customers/patientEventTypes');
 const { respond } = require('./ai/assistant');
@@ -219,7 +220,7 @@ async function processInbound(db, job) {
       const body = "I've passed you to our pharmacist. They'll reply here.";
       await sendAndRecordOutbound(db, {
         pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
-        accountId: row.account_id, to: row.wa_jid, body, author: 'system',
+        accountId: row.account_id, to: row.wa_jid, body, author: 'system', category: CATEGORIES.TRANSACTIONAL,
       });
       return { sent: true, reason: 'escalation_accepted' };
     }
@@ -242,7 +243,7 @@ async function processInbound(db, job) {
       const body = "No problem. I'm still here for prices, what we have in stock, and placing an order.";
       await sendAndRecordOutbound(db, {
         pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
-        accountId: row.account_id, to: row.wa_jid, body, author: 'system',
+        accountId: row.account_id, to: row.wa_jid, body, author: 'system', category: CATEGORIES.TRANSACTIONAL,
       });
       return { sent: true, reason: 'escalation_declined' };
     }
@@ -280,9 +281,34 @@ async function processInbound(db, job) {
     // this column only exists so a dashboard list can filter/display
     // without a join. Keeping both in the same statement's neighbourhood
     // means there is exactly one place "someone opted out" happens.
-    await db`
-      update customers set communication_status = 'opted_out' where id = ${row.customer_id}
+    // Marketing is switched off explicitly as well as the channel-level
+    // opt-out. Both matter: communication_status is what blocks sends today,
+    // but leaving comm_marketing true would mean that if the customer ever
+    // re-subscribes to the channel they are silently back on the promotions
+    // list they never re-consented to.
+    //
+    // The other categories are deliberately NOT cleared. The channel-level
+    // opt-out already blocks everything (see communicationPolicy's ordering),
+    // and zeroing them would destroy the customer's actual preferences — so a
+    // later opt-in would resurrect them as someone who wants nothing rather
+    // than someone who wanted order updates.
+    const [prev] = await db`
+      update customers
+      set communication_status = 'opted_out', comm_marketing = false
+      where id = ${row.customer_id}
+      returning (select comm_marketing from customers where id = ${row.customer_id}) as had_marketing
     `;
+
+    // Consent history: what changed, who changed it, and in their own words.
+    // "We never subscribed them to that" needs to be answerable months later.
+    await db`
+      insert into communication_preference_history
+        (pharmacy_id, customer_id, preference, previous_state, new_state, source, reason)
+      values
+        (${job.pharmacy_id}, ${row.customer_id}, 'whatsapp', 'subscribed', 'opted_out',
+         'customer', ${String(row.body).slice(0, 300)})
+    `;
+
     await recordEvent(db, {
       pharmacyId: job.pharmacy_id, customerId: row.customer_id,
       eventType: PATIENT_EVENTS.COMMUNICATION_OPTED_OUT, occurredAt: optOut.opted_out_at, actorType: 'customer',
@@ -431,6 +457,7 @@ async function processInbound(db, job) {
       await insertOutboundMessage(tx, {
         pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
         providerMessageId: sent.providerMessageId, body: text, author: 'assistant',
+        category: CATEGORIES.TRANSACTIONAL, eligibilityReason: 'REPLY_TO_CUSTOMER',
       });
       await tx`
         update conversations set greeted_at = now(), last_message_at = now()
@@ -475,7 +502,7 @@ async function processInbound(db, job) {
     const ack = 'A pharmacist will reply here shortly. Please tell us what you need in the meantime.';
     await sendAndRecordOutbound(db, {
       pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
-      accountId: row.account_id, to: row.wa_jid, body: ack, author: 'system',
+      accountId: row.account_id, to: row.wa_jid, body: ack, author: 'system', category: CATEGORIES.TRANSACTIONAL,
     });
     await markWarmupStarted(db, job.pharmacy_id);
     return { sent: true, reason: 'menu:pharmacist' };
@@ -633,7 +660,7 @@ async function processInbound(db, job) {
       if (!ack) return { sent: false, reason: `handoff:${outcome.category}` };
       await sendAndRecordOutbound(db, {
         pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
-        accountId: row.account_id, to: row.wa_jid, body: ack, author: 'system',
+        accountId: row.account_id, to: row.wa_jid, body: ack, author: 'system', category: CATEGORIES.TRANSACTIONAL,
       });
       await markWarmupStarted(db, job.pharmacy_id);
     } catch (err) {
@@ -655,6 +682,7 @@ async function processInbound(db, job) {
     await insertOutboundMessage(tx, {
       pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
       providerMessageId: sent.providerMessageId, body: outcome.text, author: 'assistant',
+      category: CATEGORIES.TRANSACTIONAL, eligibilityReason: 'REPLY_TO_CUSTOMER',
     });
     if (outcome.contextUpdate) {
       // Merged, not replaced, so remembering a product does not forget
@@ -816,7 +844,7 @@ async function sweepExpiredHolds(db) {
         await sendAndRecordOutbound(db, {
           pharmacyId: order.pharmacy_id, customerId: order.customer_id, conversationId: order.conversation_id,
           accountId: target.account_id, to: target.wa_jid || `${target.wa_phone}@s.whatsapp.net`,
-          body, author: 'system', delay: false,
+          body, author: 'system', delay: false, category: CATEGORIES.ORDER_NOTIFICATION,
         });
       } else {
         // No conversation to attach an outbound row to — still send, just

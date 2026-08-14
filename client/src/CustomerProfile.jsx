@@ -237,10 +237,44 @@ export default function CustomerProfile({ customerId, onBack, onOpenConversation
             </p>
           )}
 
-          {/* Only what the product actually supports today. Granular consent
-              (transactional / medication-journey / marketing) does not exist
-              yet — showing it as toggled ON would be a claim nobody made. */}
-          <p className="mt-2 text-sm text-slate-400">Marketing — not configured</p>
+          {/* Per-category preferences. Shown even when the customer has opted
+              out, greyed rather than hidden: staff need to see WHY a message
+              would be blocked, and "they opted out of the channel" is a
+              different answer from "they never subscribed to marketing". */}
+          <dl className="mt-3 space-y-1.5">
+            {[
+              ['Transactional', data.communication?.preferences?.transactional],
+              ['Order notifications', data.communication?.preferences?.orderNotifications],
+              ['Medication-related', data.communication?.preferences?.medication],
+              ['Marketing & promotions', data.communication?.preferences?.marketing],
+            ].map(([label, on]) => (
+              <div key={label} className="flex items-center justify-between gap-3 text-sm">
+                <dt className={optedOut ? 'text-slate-400' : 'text-slate-700'}>{label}</dt>
+                <dd className={`flex items-center gap-1.5 ${
+                  optedOut ? 'text-slate-400' : on ? 'text-teal-700' : 'text-slate-500'
+                }`}>
+                  {/* Not colour alone — the symbol carries the state too. */}
+                  <span aria-hidden="true">{on ? '✓' : '✗'}</span>
+                  <span>{on ? 'Enabled' : 'Not subscribed'}</span>
+                </dd>
+              </div>
+            ))}
+          </dl>
+
+          {data.communication?.marketingConsent?.at && (
+            <p className="mt-2 text-xs text-slate-500">
+              Marketing consent given by {data.communication.marketingConsent.source || 'unknown'} on{' '}
+              {new Date(data.communication.marketingConsent.at).toLocaleDateString('en-NG', {
+                day: 'numeric', month: 'short', year: 'numeric',
+              })}
+            </p>
+          )}
+
+          {optedOut && (
+            <p className="mt-2 text-xs text-slate-500">
+              These preferences are kept but not in effect — the opt-out above overrides all of them.
+            </p>
+          )}
         </section>
       </div>
 

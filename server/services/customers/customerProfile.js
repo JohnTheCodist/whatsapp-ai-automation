@@ -42,7 +42,9 @@ async function getCustomerProfile(pharmacyId, customerId) {
   const db = getSql();
 
   const [customer] = await db`
-    select id, wa_phone, wa_jid, display_name, status, communication_status,
+    select id, wa_phone, wa_jid, display_name, full_name, status, communication_status,
+           comm_transactional, comm_order_notifications, comm_medication, comm_marketing,
+           marketing_consent_source, marketing_consent_at,
            first_seen_at, last_seen_at
     from customers
     where id = ${customerId} and pharmacy_id = ${pharmacyId}
@@ -118,10 +120,22 @@ async function getCustomerProfile(pharmacyId, customerId) {
       })),
     },
     communication: {
-      // Only what actually exists. The caller shows other categories as
-      // "not configured" rather than this function inventing consent
-      // states nobody has actually granted.
+      // The channel-level answer: has this customer told us to stop. Kept
+      // distinct from the per-category preferences below, because an opt-out
+      // overrides all of them and collapsing the two would hide that.
       status: customer.communication_status,
+      // Real values now (0022), not placeholders. Each is independently
+      // meaningful: declining marketing must not suppress a refill reminder.
+      preferences: {
+        transactional: customer.comm_transactional,
+        orderNotifications: customer.comm_order_notifications,
+        medication: customer.comm_medication,
+        marketing: customer.comm_marketing,
+      },
+      // Evidence for the one category that requires explicit consent.
+      marketingConsent: customer.comm_marketing
+        ? { source: customer.marketing_consent_source, at: customer.marketing_consent_at }
+        : null,
     },
     timeline: page.events,
     timelineNextCursor: page.nextCursor,

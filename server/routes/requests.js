@@ -17,6 +17,7 @@ const express = require('express');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { getSql, assertPharmacyId } = require('../services/db');
 const { sendAndRecordOutbound } = require('../services/whatsapp/outboundMessage');
+const { CATEGORIES } = require('../services/whatsapp/communicationPolicy');
 const {
   listOpen, suggestAlternative, declineRequest, unmetDemand,
 } = require('../services/orders/requestService');
@@ -47,7 +48,7 @@ async function messageCustomer(db, pharmacyId, conversationId, body) {
     await sendAndRecordOutbound(db, {
       pharmacyId, customerId: target.customer_id, conversationId,
       accountId: target.account_id, to: target.wa_jid || `${target.wa_phone}@s.whatsapp.net`,
-      body, author: 'staff',
+      body, author: 'staff', category: CATEGORIES.TRANSACTIONAL,
     });
     return { sent: true };
   } catch (err) {

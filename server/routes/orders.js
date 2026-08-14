@@ -15,6 +15,7 @@ const { requireAuth } = require('../middleware/auth');
 const { getSql, assertPharmacyId } = require('../services/db');
 const { listOrders, updateStatus } = require('../services/orders/orderService');
 const { sendAndRecordOutbound } = require('../services/whatsapp/outboundMessage');
+const { CATEGORIES } = require('../services/whatsapp/communicationPolicy');
 const { sessionManager } = require('../services/whatsapp/sessionManager');
 
 const router = express.Router();
@@ -154,7 +155,7 @@ router.post('/:id/status', requireAuth, async (req, res, next) => {
             await sendAndRecordOutbound(db, {
               pharmacyId: req.pharmacyId, customerId: target.customer_id, conversationId: target.conversation_id,
               accountId: account.id, to: target.wa_jid || `${target.wa_phone}@s.whatsapp.net`,
-              body, author: 'system', delay: false,
+              body, author: 'system', delay: false, category: CATEGORIES.ORDER_NOTIFICATION,
             });
           } else {
             // No conversation to attach an outbound row to — genuinely rare,
