@@ -503,4 +503,168 @@ router.post('/:id/differential', requireAuth, async (req, res, next) => {
   }
 });
 
+/**
+ * Everything a pharmacist needs to decide, for ONE waiting patient.
+ *
+ * WHY THIS ENDPOINT EXISTS
+ * The queue card answered "who is waiting and what did they type". That is
+ * triage, not decision support — a pharmacist reading "they said: I have
+ * fever" still has to open the thread and reconstruct the case by hand.
+ *
+ * Meanwhile the assessment engine had ALREADY collected the age, the
+ * duration, the severity, which red flag fired, and the patient's
+ * purchase-confirmed chronic conditions. All of it sat in tables nothing on
+ * this screen read. This assembles that into one view.
+ *
+ * NOTHING HERE IS SUMMARISED BY A MODEL. Every field is a stored value: the
+ * patient's own words verbatim, structured answers as the normaliser parsed
+ * them, red flags as configured. A paraphrase of a clinical fact that reads
+ * well and is wrong is the specific failure this product is built to avoid,
+ * and the pharmacist is the last person who should receive one.
+ */
+router.get('/:id/clinical-brief', requireAuth, async (req, res, next) => {
+  try {
+    assertPharmacyId(req.pharmacyId);
+    const db = getSql();
+    const P = req.pharmacyId;
+    const id = req.params.id;
+
+    const [conv] = await db`
+      select c.id, c.customer_id, c.context,
+             cust.display_name, cust.full_name, cust.wa_phone
+      from conversations c
+      join customers cust on cust.id = c.customer_id
+      where c.id = ${id} and c.pharmacy_id = ${P}
+    `;
+    if (!conv) return res.status(404).json({ error: 'Conversation not found.', code: 'NOT_FOUND' });
+
+    // The most recent encounter for this thread. A conversation can carry
+    // more than one over its life; the open question is about the latest.
+    const [enc] = await db`
+      select id, patient_profile_id, presenting_complaint, symptom_duration, severity,
+             reported_symptoms, relevant_history, current_medications_reported,
+             allergies_reported, red_flags_detected, protocol_slug, protocol_version,
+             assessment_status, started_at
+      from clinical_encounters
+      where pharmacy_id = ${P} and conversation_id = ${id}
+      order by started_at desc
+      limit 1
+    `;
+
+    const [profile] = conv.customer_id ? await db`
+      select age_years, sex, important_safety_information, clinical_name
+      from patient_profiles
+      where pharmacy_id = ${P} and customer_id = ${conv.customer_id}
+      limit 1
+    ` : [];
+
+    // The assessment, as asked and answered. `raw_response` is kept beside the
+    // parsed value on purpose — when the normaliser could not read an answer,
+    // the pharmacist needs the sentence the patient actually typed rather than
+    // a blank.
+    const answers = enc ? await db`
+      select ea.question_key, ea.raw_response, ea.normalized_value, ea.normalized_number,
+             ea.unit, ea.status, ea.answered_at, pq.text as question_text
+      from encounter_answers ea
+      join protocol_executions pe on pe.id = ea.execution_id
+      left join protocol_questions pq on pq.id = ea.question_id
+      where ea.pharmacy_id = ${P} and pe.encounter_id = ${enc.id}
+      order by ea.answered_at asc nulls last, ea.id asc
+    ` : [];
+
+    // Structured facts, which may come from an answer OR from elsewhere in the
+    // conversation. `source` and `status` travel with them because a
+    // patient-reported temperature and a measured one are not the same claim.
+    const facts = enc ? await db`
+      select concept, value, value_number, unit, source, status, confidence, collected_at
+      from encounter_facts
+      where pharmacy_id = ${P} and encounter_id = ${enc.id}
+      order by collected_at asc
+    ` : [];
+
+    // Chronic conditions this pharmacy has confirmed from purchase history.
+    // Directly decision-relevant: an antihypertensive patient asking about a
+    // decongestant is a different conversation.
+    const conditions = conv.customer_id ? await db`
+      select condition_code, condition_name, status, evidence_strength, last_observed
+      from patient_condition
+      where pharmacy_id = ${P} and customer_id = ${conv.customer_id}
+        and status = 'CONFIRMED_BY_PURCHASE'
+      order by condition_name
+    ` : [];
+
+    // What they have actually bought. The interaction check a pharmacist does
+    // in their head starts here, and it is real data rather than self-report.
+    const medications = conv.customer_id ? await db`
+      select oi.name_snapshot as name, max(o.created_at) as last_bought,
+             count(*)::int as times
+      from orders o
+      join order_items oi on oi.order_id = o.id
+      where o.pharmacy_id = ${P} and o.customer_id = ${conv.customer_id}
+        and o.status in ('confirmed','ready','completed')
+      group by oi.name_snapshot
+      order by max(o.created_at) desc
+      limit 8
+    ` : [];
+
+    res.json({
+      conversationId: conv.id,
+      patient: {
+        name: conv.full_name || profile?.clinical_name || conv.display_name || conv.wa_phone,
+        phone: conv.wa_phone,
+        ageYears: profile?.age_years ?? null,
+        sex: profile?.sex ?? null,
+        safetyNote: profile?.important_safety_information ?? null,
+      },
+      encounter: enc ? {
+        complaint: enc.presenting_complaint,
+        duration: enc.symptom_duration,
+        severity: enc.severity,
+        symptoms: enc.reported_symptoms,
+        history: enc.relevant_history,
+        medicationsReported: enc.current_medications_reported,
+        allergiesReported: enc.allergies_reported,
+        redFlags: enc.red_flags_detected,
+        protocol: enc.protocol_slug ? `${enc.protocol_slug} v${enc.protocol_version}` : null,
+        status: enc.assessment_status,
+        startedAt: enc.started_at,
+      } : null,
+      answers: answers.map((a) => ({
+        question: a.question_text || a.question_key,
+        key: a.question_key,
+        // The parsed value when there is one, else the raw sentence — never
+        // an empty cell, which would read as "not asked" rather than "said
+        // something we could not parse".
+        answer: a.normalized_value ?? (a.normalized_number !== null ? String(a.normalized_number) : null),
+        raw: a.raw_response,
+        unit: a.unit,
+        status: a.status,
+      })),
+      facts: facts.map((f) => ({
+        concept: f.concept,
+        value: f.value ?? (f.value_number !== null ? String(f.value_number) : null),
+        unit: f.unit,
+        source: f.source,
+        status: f.status,
+      })),
+      conditions: conditions.map((c) => ({
+        code: c.condition_code,
+        name: c.condition_name,
+        strength: c.evidence_strength,
+        lastObserved: c.last_observed,
+      })),
+      medications: medications.map((m) => ({
+        name: m.name,
+        lastBought: m.last_bought,
+        times: m.times,
+      })),
+      // Restated on every clinical payload, same as the conditions routes:
+      // a client cannot render this having lost the basis for it.
+      disclaimer: 'Assessment data collected by the assistant. Conditions are derived from purchase history, not diagnoses.',
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

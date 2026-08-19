@@ -27,14 +27,38 @@ const { normalizeMsisdn } = require('./senderIdentity');
 /**
  * Phrases that mean "stop messaging me".
  *
- * Deliberately generous. A false positive costs one customer an automated
- * reply they can undo by messaging again; a false negative means continuing
- * to message someone who asked you not to, which is the clearest signal of a
- * system worth banning and is simply wrong regardless.
+ * THE COST OF A FALSE POSITIVE IS NOT ONE MISSED REPLY.
+ * This list used to be described as "deliberately generous", on the reasoning
+ * that a wrong match costs a customer a single automated reply "they can undo
+ * by messaging again". That was wrong in both halves, and live traffic proved
+ * it: a customer wrote
+ *
+ *   "I have lots of drugs I want to buy so don't send the order unless we are
+ *    done okay?"
+ *
+ * — a shopping instruction — and `don't … send` matched. They were opted out
+ * permanently. Messaging again does NOT undo it; opt-out is checked before
+ * anything else, so their next four messages were silently suppressed and
+ * nobody was told. The pharmacy simply lost the customer mid-order.
+ *
+ * So the objects below are ones that can only mean CONTACT. "send" is gone:
+ * in a pharmacy it is a commerce verb far more often than a communication one
+ * ("don't send it yet", "don't send until I confirm"), and the ambiguity is
+ * not resolvable from the verb alone.
+ *
+ * A false negative is still the worse failure in general — continuing to
+ * message someone who asked you to stop is wrong regardless of who is
+ * watching — so nothing here is narrowed beyond removing genuine ambiguity.
+ * An explicit "stop", "unsubscribe", or "leave me alone" still matches on its
+ * own, and someone who means it will use one of those.
  */
 const OPT_OUT_PATTERNS = [
   /^\s*(stop|unsubscribe|cancel|end|quit|optout|opt out)\s*$/i,
-  /\b(stop|don'?t|do not|no more|never)\b.{0,20}\b(messag|text|contact|disturb|send)/i,
+  // Communication objects only — see above for why "send" is not among them.
+  /\b(stop|don'?t|do not|no more|never)\b.{0,20}\b(messag|text|contact|disturb|whatsapp me|write to me)/i,
+  // "don't send me messages" is still a genuine opt-out: the object here is
+  // the message, not the order, and saying so explicitly costs nothing.
+  /\b(stop|don'?t|do not|no more|never)\b.{0,20}\bsend\b.{0,20}\b(messag|text|sms|anything)/i,
   /\b(unsubscribe|opt me out|remove me|take me off)\b/i,
   /\bleave me alone\b/i,
   /\bno dey disturb me\b/i,
