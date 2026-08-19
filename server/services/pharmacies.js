@@ -14,6 +14,7 @@
  */
 
 const { getSql, assertPharmacyId } = require('./db');
+const { normalizeMsisdn } = require('./whatsapp/senderIdentity');
 
 const DAYS = Object.freeze(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -301,24 +302,40 @@ function normaliseShortText(input, maxLen, label) {
 // Profile — the facts the assistant is allowed to state
 // ---------------------------------------------------------------------
 
+/**
+ * A profile is conceptually 1:1 with a pharmacy — it should always "exist"
+ * from a caller's point of view, just possibly empty. Callers of this
+ * function reach it only through an authenticated route that has already
+ * confirmed the pharmacy itself exists (requireAuth + membership), so the
+ * one case genuinely worth distinguishing — "does this tenant exist at
+ * all" — is already handled upstream. Given that, returning null for a
+ * pharmacy that legitimately has no profile YET is the wrong shape: it
+ * reads as "not found" for something that plainly is, which is exactly
+ * what surfaced live as a 404 on a pharmacy's very first customer-contact
+ * save. Self-heals the same way updateProfile does, for the same reason.
+ */
 async function getProfile(pharmacyId) {
   assertPharmacyId(pharmacyId);
   const db = getSql();
   const [row] = await db`
-    select pharmacy_id, address_line, city, state, landmark, phone,
-           opening_hours, delivers, delivery_note, extra_info, updated_at
-      from pharmacy_profile
-     where pharmacy_id = ${pharmacyId}
+    insert into pharmacy_profile (pharmacy_id) values (${pharmacyId})
+    on conflict (pharmacy_id) do update set pharmacy_id = pharmacy_profile.pharmacy_id
+    returning pharmacy_id, address_line, city, state, landmark, phone,
+              opening_hours, delivers, delivery_note, extra_info, updated_at
   `;
   return row || null;
 }
 
+// `phone` handled separately below — it needs normalisation, not just a
+// length cap. Left in this list, "08012345678" and "+2348012345678" would
+// store as two different literal strings and the assistant tool that reads
+// it back (contact_pharmacy) would have no way to know they are the same
+// number.
 const TEXT_FIELDS = Object.freeze({
   address_line: 200,
   city: 80,
   state: 80,
   landmark: 200,
-  phone: 40,
   delivery_note: 300,
   extra_info: 2000,
 });
@@ -354,6 +371,28 @@ async function updateProfile(pharmacyId, fields = {}) {
     patch[key] = value || null;
   }
 
+  if ('phone' in fields) {
+    const raw = fields.phone;
+    if (raw === null || raw === '') {
+      patch.phone = null;
+    } else {
+      if (typeof raw !== 'string') {
+        throw Object.assign(new Error('phone must be a string'), { status: 400, code: 'INVALID_FIELD' });
+      }
+      // Same normaliser wa_phone and notify_phone already use — the whole
+      // point is "08012345678" and "+2348012345678" collapse to one stored
+      // value rather than being treated as two different numbers.
+      const normalized = normalizeMsisdn(raw);
+      if (!normalized) {
+        throw Object.assign(
+          new Error('phone does not look like a valid Nigerian phone number'),
+          { status: 400, code: 'INVALID_FIELD' }
+        );
+      }
+      patch.phone = normalized;
+    }
+  }
+
   if ('delivers' in fields) {
     if (typeof fields.delivers !== 'boolean') {
       throw Object.assign(new Error('delivers must be true or false'), { status: 400, code: 'INVALID_FIELD' });
@@ -371,12 +410,25 @@ async function updateProfile(pharmacyId, fields = {}) {
 
   if (Object.keys(patch).length === 0) return getProfile(pharmacyId);
 
+  // UPSERT, not UPDATE. createPharmacy() inserts an empty profile row
+  // alongside every new pharmacy, so in the ordinary case this row always
+  // exists — but that is an app-level convention, not something the schema
+  // enforces, and it can drift: a pharmacy created before that insert
+  // existed, or seeded directly, has no profile row at all. A bare UPDATE
+  // against a row that is not there matches zero rows, returns undefined,
+  // and the caller sees "Profile not found" on a pharmacy that unmistakably
+  // exists — exactly what surfaced live when this pharmacy's first-ever
+  // customer-contact save 404'd. ON CONFLICT makes the save work regardless
+  // of whether the row happened to be there already.
+  //
   // updated_at is set in SQL rather than in the patch object: sql(obj)
-  // interpolates values, and now() is a function call, not a value.
+  // interpolates values, and now() is a function call, not a value. The
+  // column defaults to now() too, so a genuine first INSERT is covered
+  // without needing it repeated in insertFields.
+  const insertFields = { pharmacy_id: pharmacyId, ...patch };
   const [row] = await db`
-    update pharmacy_profile
-       set ${db(patch)}, updated_at = now()
-     where pharmacy_id = ${pharmacyId}
+    insert into pharmacy_profile ${db(insertFields)}
+    on conflict (pharmacy_id) do update set ${db(patch)}, updated_at = now()
     returning pharmacy_id, address_line, city, state, landmark, phone,
               opening_hours, delivers, delivery_note, extra_info, updated_at
   `;

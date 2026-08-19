@@ -15,7 +15,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 
 const { env, assertRequiredEnv, isChannelConfigured, isLlmConfigured } = require('./config/env');
-const { ping } = require('./services/db');
+const { ping, warmPool, startKeepAlive, stopKeepAlive } = require('./services/db');
 const { requestId, notFound, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -34,6 +34,31 @@ app.use('/api', express.json({ limit: '2mb' }));
 // Health — unauthenticated on purpose (load balancers can't log in).
 // Reports dependency readiness without leaking configuration values.
 // ---------------------------------------------------------------------
+/**
+ * Liveness — "is this process running and serving?" and nothing else.
+ *
+ * SEPARATE FROM /api/health ON PURPOSE, and the distinction is load-bearing
+ * for the platform health check.
+ *
+ * /api/health is a READINESS and diagnostic endpoint: it pings the database
+ * and answers 503 when the database is down, which is exactly what a human
+ * or a monitor wants to know.
+ *
+ * A platform health check is a different question. Render restarts a service
+ * whose health check fails — so pointing it at /api/health would mean a
+ * transient Postgres blip kills the process, drops the Baileys socket, and
+ * takes the pharmacy off WhatsApp entirely. The database being briefly
+ * unreachable is a bad minute; restarting the app on top of it turns that
+ * into a re-pair and a cold start, and if the blip persists, a restart loop.
+ *
+ * The app can still serve, still hold its WhatsApp connection, and still
+ * recover on its own when the database returns. So liveness must not depend
+ * on the database. No queries, no awaits, no dependencies.
+ */
+app.get('/api/live', (req, res) => {
+  res.json({ status: 'ok', uptime: Math.round(process.uptime()) });
+});
+
 app.get('/api/health', async (req, res) => {
   let database = 'down';
   try {
@@ -96,12 +121,17 @@ app.get('/api/summary', require('./middleware/auth').requireAuth, async (req, re
 });
 
 app.use('/api/overview', require('./routes/overview'));       // dashboard
+app.use('/api/insights', require('./routes/insights'));      // owner metrics + AI performance
 app.use('/api/pharmacies', require('./routes/pharmacies'));  // Phase 1
 app.use('/api/whatsapp', require('./routes/whatsapp'));      // Phase 2
 app.use('/api/catalogue', require('./routes/catalogue'));    // Phase 3
 app.use('/api/conversations', require('./routes/conversations')); // Phase 4 — staff inbox
 app.use('/api/requests', require('./routes/requests'));      // pharmacist alternatives
 app.use('/api/customers', require('./routes/customers'));    // patient identity list
+// Mounted on the SAME prefix as customers, deliberately: a purchase-based
+// condition profile is a fact about a customer, and giving it a second noun in
+// the URL space would imply a second record that does not exist.
+app.use('/api/customers', require('./routes/conditions'));   // purchase-based condition profiles
 app.use('/api/orders', require('./routes/orders'));               // Phase 5 — order queue
 
 app.use(notFound);
@@ -140,6 +170,18 @@ async function start() {
   // a confusing connection error.
   assertRequiredEnv();
   await ping();
+
+  // Pay the pooler's expensive connects HERE, at boot, where nobody is
+  // waiting — rather than on the first customer message of the day.
+  // Measured ~4.8s per new connection on 6543; see services/db.js.
+  //
+  // Awaited on purpose: the process should not report itself as listening
+  // until it can actually serve a burst without stalling.
+  await warmPool();
+
+  // Then keep them warm through the gaps between WhatsApp messages, which
+  // routinely exceed the old 30s idle_timeout.
+  startKeepAlive();
 
   if (env.devAuthBypass) {
     console.warn(JSON.stringify({
@@ -258,6 +300,7 @@ async function start() {
   const shutdown = async (signal) => {
     console.log(JSON.stringify({ level: 'info', msg: 'shutting down', signal }));
     server.close();
+    stopKeepAlive();
     await sessionManager.stop();
     process.exit(0);
   };

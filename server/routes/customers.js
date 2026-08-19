@@ -55,8 +55,22 @@ router.get('/', requireAuth, async (req, res, next) => {
       from customers where pharmacy_id = ${req.pharmacyId}
     `;
 
+    // Count patients with DIABETES condition confirmed by purchase
+    const [conditionCounts] = await db`
+      select count(distinct customer_id)::int as diabetic_patients
+      from patient_condition
+      where pharmacy_id = ${req.pharmacyId}
+        and condition_code = 'DIABETES'
+        and status = 'CONFIRMED_BY_PURCHASE'
+    `;
+
+    const finalCounts = {
+      ...counts,
+      diabetic_patients: conditionCounts?.diabetic_patients || 0,
+    };
+
     res.json({
-      counts,
+      counts: finalCounts,
       customers: rows.map((c) => ({
         ...c,
         activity: classifyActivity(c.last_seen_at),

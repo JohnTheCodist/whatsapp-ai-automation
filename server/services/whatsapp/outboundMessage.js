@@ -39,7 +39,7 @@ const ACTOR_BY_AUTHOR = { assistant: 'ai', staff: 'staff', system: 'system' };
  *
  * Split out from sendAndRecordOutbound below for the sites that need the
  * insert to sit inside a larger transaction alongside other statements (e.g.
- * also stamping conversations.greeted_at) — they call sessionManager.sendText
+ * also stamping customers.onboarded_at) — they call sessionManager.sendText
  * themselves first, same as always, then call this inside their own
  * `db.begin`. Every site still gets the event recorded through one shared
  * path rather than nine hand-written inserts.

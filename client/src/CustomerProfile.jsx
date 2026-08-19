@@ -21,6 +21,7 @@
 import { useEffect, useState } from 'react';
 import CustomerTimeline from './CustomerTimeline.jsx';
 import CustomerCrm from './CustomerCrm.jsx';
+import ConversationState from './ConversationState.jsx';
 
 const STATUS_TONE = {
   active: 'bg-teal-50 text-teal-700',
@@ -80,8 +81,16 @@ export default function CustomerProfile({ customerId, onBack, onOpenConversation
   }
   if (!data) return <p className="text-sm text-slate-500">Loading…</p>;
 
-  const { customer, orders, medicationJourneys, conversations, communication } = data;
-  const name = customer.displayName || customer.waPhone;
+  const {
+    customer, orders, medicationJourneys, conversations, communication, activeConversation,
+    // Defaulted so an older API response (or a cached one mid-deploy) renders
+    // the empty state rather than throwing on `refills.due`.
+    refills = { due: 0, completed: 0 },
+  } = data;
+  // fullName first: it is what the customer told the pharmacy, verified
+  // against their own typed words. displayName is whatever they set on their
+  // phone ("John's iPhone") and is a fallback for recognition only.
+  const name = customer.fullName || customer.displayName || customer.waPhone;
   const optedOut = communication.status === 'opted_out';
 
   return (
@@ -113,16 +122,58 @@ export default function CustomerProfile({ customerId, onBack, onOpenConversation
         </div>
       </div>
 
-      {/* ---- quick actions ---- */}
-      <div className="flex flex-wrap gap-2">
-        {conversations.recent[0] && (
+      {/* ---- what is happening right now ----
+          Above the aggregate cards on purpose. Counts describe the
+          relationship; this describes the situation, and a pharmacist opening
+          a profile mid-conversation needs the situation first. */}
+      {activeConversation ? (
+        <section
+          className={`rounded-lg border p-4 ${
+            activeConversation.priority === 'high'
+              ? 'border-red-300 bg-red-50/60'
+              : 'border-slate-200 bg-white'
+          }`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Current conversation
+            </h3>
+            <ConversationState state={activeConversation.workflowState} />
+          </div>
+          {activeConversation.preview && (
+            <p className="mt-2 text-sm text-slate-800">
+              {/* Whose words these are matters: an unanswered question and our
+                  own last reply look identical without it. */}
+              <span className="text-slate-400">
+                {activeConversation.previewDirection === 'inbound' ? 'Customer: ' : 'We replied: '}
+              </span>
+              {activeConversation.preview}
+            </p>
+          )}
+          <p className="mt-1 text-xs text-slate-500">
+            Last message {fmtDateTime(activeConversation.lastMessageAt)}
+          </p>
           <button
-            onClick={() => onOpenConversation?.(conversations.recent[0].id)}
-            className="rounded bg-slate-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+            onClick={() => onOpenConversation?.(activeConversation.id)}
+            className="mt-3 rounded bg-slate-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 focus:outline-2 focus:outline-offset-2 focus:outline-teal-600"
           >
             Open conversation
           </button>
-        )}
+        </section>
+      ) : (
+        <section className="rounded-lg border border-slate-200 bg-white p-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Current conversation
+          </h3>
+          {/* An honest empty state. Showing the most recent CLOSED thread here
+              would read as live and is how someone replies into a conversation
+              that ended weeks ago. */}
+          <p className="mt-2 text-sm text-slate-400">No active conversation.</p>
+        </section>
+      )}
+
+      {/* ---- quick actions ---- */}
+      <div className="flex flex-wrap gap-2">
         <button
           onClick={() => onNavigate?.('orders')}
           className="rounded border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
@@ -185,13 +236,35 @@ export default function CustomerProfile({ customerId, onBack, onOpenConversation
             <p className="text-xs text-slate-400">Last active {fmtDateTime(conversations.lastConversationAt)}</p>
           )}
 
+          {conversations.active > 0 && (
+            <p className="text-xs text-teal-700">{conversations.active} active</p>
+          )}
+
+          {/* Conversation HISTORY — distinct threads, each with its own state
+              and message count. This is the section that makes "one patient,
+              many conversations" visible; before segmentation worked, it would
+              have shown a single row for months of activity. */}
           {conversations.recent.length > 0 ? (
-            <ul className="mt-4 space-y-2.5 border-t border-slate-100 pt-3">
-              {conversations.recent.slice(0, 3).map((c) => (
-                <li key={c.id} className="text-sm">
-                  <p className="text-xs text-slate-400">{fmtDateTime(c.lastMessageAt)}</p>
-                  {/* The customer's own words, verbatim — never generated. */}
-                  <p className="text-slate-700">{c.preview ? `"${c.preview}"` : <span className="text-slate-400">No message text</span>}</p>
+            <ul className="mt-4 space-y-3 border-t border-slate-100 pt-3">
+              {conversations.recent.map((c) => (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenConversation?.(c.id)}
+                    className="w-full rounded p-1 text-left transition hover:bg-slate-50 focus:outline-2 focus:outline-offset-1 focus:outline-teal-600"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs text-slate-400">{fmtDateTime(c.lastMessageAt)}</span>
+                      <ConversationState state={c.workflowState} />
+                    </div>
+                    {/* The customer's own words, verbatim — never generated. */}
+                    <p className="mt-0.5 text-sm text-slate-700">
+                      {c.preview ? `"${c.preview}"` : <span className="text-slate-400">No message text</span>}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      {c.messageCount} {c.messageCount === 1 ? 'message' : 'messages'}
+                    </p>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -214,6 +287,38 @@ export default function CustomerProfile({ customerId, onBack, onOpenConversation
               <p className="text-sm text-slate-500">No active medication journeys yet.</p>
               <p className="mt-1 text-xs text-slate-400">
                 Medication journeys will appear here when a customer is enrolled in a medication follow-up workflow.
+              </p>
+            </div>
+          )}
+        </section>
+
+        {/* ---- refills — foundation only ----
+
+            Deliberately shows nothing rather than a plausible number. A
+            pharmacist who reads "1 due" will act on it: ring the customer,
+            pull the stock off the shelf. A placeholder here is not a harmless
+            mock, it is a false instruction to do clinical work. */}
+        <section className="rounded-lg border border-slate-200 bg-white p-5">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Refills</h3>
+          {refills.due > 0 || refills.completed > 0 ? (
+            <div className="mt-2 flex items-baseline gap-6">
+              <div>
+                <p className={`text-2xl font-semibold ${refills.due > 0 ? 'text-amber-700' : 'text-slate-900'}`}>
+                  {refills.due}
+                </p>
+                <p className="text-xs text-slate-500">due</p>
+              </div>
+              <div>
+                <p className="text-2xl font-semibold text-slate-900">{refills.completed}</p>
+                <p className="text-xs text-slate-500">completed</p>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 rounded border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center">
+              <p className="text-sm text-slate-500">No refill activity yet.</p>
+              <p className="mt-1 text-xs text-slate-400">
+                Refills are driven by medication journeys, so they will start appearing here once that
+                follow-up workflow is enrolled.
               </p>
             </div>
           )}

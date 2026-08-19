@@ -11,9 +11,10 @@
     },
     {
       "//": "autoPort:false because 4100 is not incidental. client/vite.config.js proxies /api to localhost:4100, so moving the API to an assigned port would leave the dashboard calling a dead address — every screen loading and every request failing, which looks like a broken app rather than a port mismatch.",
+      "//2": "Runs under scripts/dev-server.js, not bare node. server/index.js deliberately lets an uncaughtException kill the process, on the reasoning that a supervisor restarts it in seconds — true on Render, but nothing did that locally, so one thrown Baileys socket error killed the API for the rest of the session. WhatsApp kept accepting messages nothing was listening for, which presented as 'some messages get a reply and later ones silently do not' rather than as a crash.",
       "name": "whatsapp-api",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["server/index.js"],
+      "runtimeArgs": ["scripts/dev-server.js"],
       "port": 4100,
       "autoPort": false
     }

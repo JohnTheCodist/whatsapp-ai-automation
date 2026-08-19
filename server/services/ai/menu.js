@@ -75,17 +75,24 @@ function menuItems({ pharmacyName, botName }) {
  * to call themselves. It is frequently an emoji, a nickname, or a business
  * name — so it is used as a greeting and never as an identity.
  */
-function buildMenu({ pharmacyName, botName, customerName, welcomeNote, returning = false }) {
+/** The "Hi, I'm Ada from Sterling Pharmacy" opening line, shared by both the
+ * welcome and the menu so the two never drift into introducing the bot
+ * differently depending on which one fires first. */
+function introLines({ pharmacyName, botName, customerName, welcomeNote }) {
   const bot = botName || pharmacyName || 'the pharmacy';
   const name = cleanName(customerName);
+  const lines = [name ? `Hi ${name} — I'm ${bot} from ${pharmacyName}.` : `Hi, I'm ${bot} from ${pharmacyName}.`];
+  if (welcomeNote) lines.push(welcomeNote);
+  return lines;
+}
 
+function buildMenu({ pharmacyName, botName, customerName, welcomeNote, returning = false }) {
   const lines = [];
 
   if (returning) {
     lines.push('Here are the options again.');
   } else {
-    lines.push(name ? `Hi ${name} — I'm ${bot} from ${pharmacyName}.` : `Hi, I'm ${bot} from ${pharmacyName}.`);
-    if (welcomeNote) lines.push(welcomeNote);
+    lines.push(...introLines({ pharmacyName, botName, customerName, welcomeNote }));
     lines.push('What would you like to do today?');
   }
 
@@ -101,6 +108,28 @@ function buildMenu({ pharmacyName, botName, customerName, welcomeNote, returning
   lines.push('Reply with a number, or just type your question.');
   lines.push('Type *menu* any time to see this again.');
 
+  return lines.join('\n');
+}
+
+/**
+ * The FIRST-EVER message a genuinely new customer sees — deliberately short.
+ *
+ * The full itemized menu is a contract offering eight specific things; a
+ * stranger who just said "Good morning" has not asked for that list, and
+ * dumping it on them is the exact behaviour this function exists to replace.
+ * They get a warm line and a pointer to *menu*, then decide for themselves
+ * what to do next — which is what lets "I need paracetamol" on the very next
+ * message go straight to the AI instead of through a menu they never wanted.
+ *
+ * Sent at most ONCE per customer, ever — see customers.onboarded_at (0028).
+ * Never sent to a returning customer regardless of how long the gap since
+ * their last message; that decision is made by the caller before this
+ * function is reached at all, not by anything in here.
+ */
+function buildWelcome({ pharmacyName, botName, customerName, welcomeNote }) {
+  const lines = introLines({ pharmacyName, botName, customerName, welcomeNote });
+  lines.push('How may I assist you today?');
+  lines.push('You can also type *menu* any time to see what I can help with.');
   return lines.join('\n');
 }
 
@@ -151,6 +180,36 @@ function isMenuRequest(text) {
 }
 
 /**
+ * Is this message NOTHING BUT a greeting — "Good morning", "Hi", "Hey there"
+ * — with no actual request in it?
+ *
+ * Deliberately whole-message, same discipline as isMenuRequest above. "Hi, do
+ * you have paracetamol" is not a bare greeting; it is a request that happens
+ * to open politely, and forcing it through a canned welcome instead of the
+ * AI would mean the customer has to say hello twice to get an answer. Only
+ * the pure case — nothing here but the greeting itself, optionally with
+ * trailing punctuation or an emoji — gets the short first-contact reply.
+ *
+ * Only matters for a customer who has never been onboarded (worker.js gates
+ * on that first). A returning customer's "Good morning" is never routed
+ * through this at all — it goes straight to the AI, which already replies
+ * to small talk naturally without this function's involvement.
+ */
+function isGreeting(text) {
+  if (typeof text !== 'string') return false;
+  const trimmed = text.trim()
+    // Trailing emoji/punctuation stripped before matching — "Hi 👋!" is
+    // still a bare greeting, just a decorated one.
+    .replace(/[\s!.,?👋🙏🙂😊✨]+$/u, '')
+    // Collapse "Good  morning" (a real thing people type) to one space, so
+    // the pattern below only has to know about one gap width, not guess how
+    // many someone's thumb produced.
+    .replace(/\s+/g, ' ');
+  return /^(hi|hello|hey|hiya|yo|howdy|sup|good\s?morning|good\s?afternoon|good\s?evening|good\s?day|morning|afternoon|evening)$/i
+    .test(trimmed);
+}
+
+/**
  * Resolve a menu selection.
  *
  * Bare numbers ONLY. "1" is a choice; "I want 1 pack of Panadol" is not, and
@@ -185,5 +244,5 @@ function intentBriefing(intent, { pharmacyName }) {
 }
 
 module.exports = {
-  buildMenu, menuItems, isMenuRequest, parseSelection, intentBriefing, cleanName,
+  buildMenu, buildWelcome, menuItems, isMenuRequest, isGreeting, parseSelection, intentBriefing, cleanName,
 };

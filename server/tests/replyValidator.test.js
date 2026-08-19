@@ -216,11 +216,15 @@ test('an OFFER is fine — the difference is tense', () => {
 // feature shipped"; what actually matters is whether an order was created on
 // THIS turn, which is the same standard prices are held to.
 
+// Flat, matching what runTool (catalogueTools.js) actually returns — every
+// tool's own run() result, unwrapped. Nothing in this codebase nests a tool
+// result under a `.result` key; a fixture that did would validate against a
+// shape that can never occur in production and prove nothing.
 const ORDER_CREATED = [
-  { name: 'create_order', result: { created: true, reference: 'ACD-EFG', total_naira: 3940 } },
+  { name: 'create_order', created: true, reference: 'ACD-EFG', total_naira: 3940 },
 ];
 const ORDER_REFUSED = [
-  { name: 'create_order', result: { created: false, reason: 'There are only 2 in stock.' } },
+  { name: 'create_order', created: false, reason: 'There are only 2 in stock.' },
 ];
 
 test('an order claim is allowed when an order really was created', () => {
@@ -262,4 +266,52 @@ test('a violation says what was quoted and why it failed', () => {
   const r = validateReply('It is ₦9,999.', TOOL_RESULT);
   assert.match(r.violations[0].detail, /9,999/, 'the offending figure must be in the message');
   assert.match(r.violations[0].detail, /neither a verified price nor a multiple/);
+});
+
+// ---- get_order_history money fields (any key ending in _naira, not just
+// the literal `price_naira` find_products uses) ----
+
+const ORDER_HISTORY_RESULT = [{
+  orders: [{
+    reference: 'ABC-123',
+    total_naira: 3940,
+    items: [{ name: 'Coartem 20/120mg', unit_price_naira: 1970, line_total_naira: 3940 }],
+  }],
+}];
+
+test('a total quoted from order history passes, even though the field is not called price_naira', () => {
+  const r = validateReply('Your last order (ABC-123) came to ₦3,940.', ORDER_HISTORY_RESULT);
+  assert.equal(r.ok, true, JSON.stringify(r.violations));
+});
+
+test('a unit price quoted from order history passes', () => {
+  const r = validateReply('You paid ₦1,970 for the Coartem.', ORDER_HISTORY_RESULT);
+  assert.equal(r.ok, true, JSON.stringify(r.violations));
+});
+
+test('an invented order total is still caught even though the tool ran', () => {
+  const r = validateReply('Your last order came to ₦5,000.', ORDER_HISTORY_RESULT);
+  assert.equal(r.ok, false);
+});
+
+test('a non-numeric _naira-suffixed field does not crash or get treated as a price', () => {
+  const weird = [{ note_naira: 'not a number', orders: [] }];
+  assert.doesNotThrow(() => validateReply('No numbers here.', weird));
+});
+
+// ---- contact_pharmacy's phone number is not mistaken for a price --------
+//
+// A Nigerian mobile number's grouped digits ("801 234 5678") sit uneasily
+// close to what extractMoney looks for, and the whole point of that
+// function is treating adjacent digit runs as suspicious. Locked down as
+// its own test because the failure mode — a real support number rejected
+// as an "unverified price" — would silently break the one message this
+// segment exists to make reliable.
+
+test('a phone number from contact_pharmacy is never read as a price', () => {
+  const r = validateReply(
+    'You can call the pharmacy directly on +234 801 234 5678.',
+    [{ available: true, phone: '+234 801 234 5678' }],
+  );
+  assert.equal(r.ok, true, JSON.stringify(r.violations));
 });

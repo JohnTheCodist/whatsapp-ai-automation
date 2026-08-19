@@ -75,16 +75,31 @@ async function alertStaffOfConsultation(pharmacyId, { briefing, customer = {}, i
   if (!target.ok) return { sent: false, reason: target.reason };
 
   const who = customer.display_name || customer.wa_phone || 'A customer';
+
+  // The customer's own words, exactly as buildBriefing collected them — NOT
+  // a paraphrase. See this module's sibling, consultationBriefing.js, for
+  // why: a pharmacist acts clinically on what they read here, and an
+  // AI-summarised "patient wants X" line risks quietly turning what someone
+  // actually said into something close but wrong. `said` was already being
+  // computed (and tested) but never rendered anywhere — the WhatsApp alert
+  // showed only the single trigger line. This is the fuller picture, still
+  // entirely their own sentences, just more of them.
+  const conversation = briefing.said?.length
+    ? briefing.said.map((s) => `"${s}"`)
+    : (briefing.trigger ? [`"${briefing.trigger}"`] : []);
+
   const lines = [
     isReminder
       ? `STILL WAITING — ${briefing.headline}`
       : (briefing.urgent ? `URGENT — ${briefing.headline}` : `Someone needs a pharmacist — ${briefing.headline}`),
     '',
     `${who}, waiting ${briefing.waiting}`,
-    // The customer's own words, exactly as on the dashboard card. A
-    // pharmacist reading this on their phone may act on it before opening
-    // anything, so it must not be a summary.
-    briefing.trigger ? `\n"${briefing.trigger}"` : null,
+    conversation.length ? '' : null,
+    conversation.length ? 'What they said:' : null,
+    ...conversation,
+    // Already-known structured context, not inferred from the text above —
+    // same "assembled, not summarised" rule.
+    briefing.discussed ? `\nAlso discussed: ${briefing.discussed}` : null,
     briefing.unansweredSince > 0
       ? `\n${briefing.unansweredSince} further message${briefing.unansweredSince > 1 ? 's' : ''} since, unanswered.`
       : null,
@@ -135,9 +150,19 @@ async function alertStaffOfNewOrder(pharmacyId, order, customer = {}) {
     // Says plainly what has and has not happened. A staff member reading this
     // on their phone needs to know the stock is already off the shelf, and
     // that the customer has NOT been told it is theirs yet.
-    order.stock_held
-      ? 'Stock is held. Confirm in the dashboard to reserve it for them — they have not been told yet.'
-      : 'Confirm in the dashboard — the customer has not been told yet.',
+    // The action, right here in the alert.
+    //
+    // This used to end "Confirm in the dashboard", which put the decision on
+    // a screen the pharmacist would have to stop and log into — so orders
+    // sat unconfirmed while the customer waited, even though the person who
+    // could clear them had already read the message. Replying is now the
+    // shortest path, and the reference is included so the instruction still
+    // works when a second order arrives before they answer.
+    'The customer has NOT been told yet.',
+    '',
+    `Reply  1  to confirm & mark ready`,
+    `       2  to reject`,
+    `(or "1 ${order.reference}" if more than one is waiting)`,
   ].filter((l) => l !== null);
 
   try {

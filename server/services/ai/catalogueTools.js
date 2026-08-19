@@ -22,7 +22,9 @@
  */
 
 const { getSql, assertPharmacyId } = require('../db');
-const { createOrder } = require('../orders/orderService');
+const { createOrder, amendPendingOrder } = require('../orders/orderService');
+const { subgroupsFor, isRefusedNeed } = require('./therapeuticNeed');
+const { resolveClinicalProduct } = require('../clinical/clinicalProductResolver');
 const { categoriesFor } = require('./needVocabulary');
 const { alertStaffOfNewOrder } = require('../orders/staffAlert');
 const { saleUnit } = require('./saleUnit');
@@ -36,12 +38,73 @@ function naira(kobo) {
 }
 
 /**
+ * The stored canonical digits (234801...) -> "+234 801 234 5678".
+ *
+ * Storage stays a plain digit string, the same convention as wa_phone —
+ * comparable and de-duplicable without normalising on every read. Display
+ * is the one place that has to look like a phone number to a person reading
+ * it on WhatsApp, so the grouping happens here and nowhere else.
+ */
+function formatPhoneForDisplay(digits) {
+  if (!digits) return null;
+  const cc = digits.slice(0, 3);
+  const rest = digits.slice(3);
+  if (rest.length !== 10) return `+${digits}`; // unexpected length: show raw rather than mis-group it
+  return `+${cc} ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6)}`;
+}
+
+/**
  * Shape a product for the model.
  *
  * `price` is null when unknown, NEVER 0 — those are different claims, and a
  * model shown 0 will cheerfully quote "it's free". Stock is likewise a
  * three-state answer: a number, or "not tracked", never a silent zero.
  */
+/**
+ * A catalogue row's NAFDAC therapeutic subgroup, or null.
+ *
+ * Memoised because resolveClinicalProduct parses the name and walks the
+ * in-memory registry, and a browse can ask about a few hundred rows at once.
+ * Keyed on the fields the resolver actually reads, so two rows naming the
+ * same medicine share one answer. The NAFDAC dataset is immutable for the
+ * life of the process, so a cached answer cannot go stale.
+ *
+ * Returns null for 'Other' as well as for no match: 'Other' is a real NAFDAC
+ * value meaning "unclassified", and treating it as a shelf would let an
+ * unrelated grab bag answer a specific request.
+ */
+const subgroupCache = new Map();
+const SUBGROUP_CACHE_MAX = 5000;
+
+function subgroupForProduct(row) {
+  const key = [row.name, row.generic_name, row.brand_name, row.strength, row.form]
+    .map((v) => (v == null ? '' : String(v))).join('|').toLowerCase();
+  if (subgroupCache.has(key)) return subgroupCache.get(key);
+
+  let subgroup = null;
+  try {
+    const resolved = resolveClinicalProduct({
+      source_product_name: row.name,
+      generic_name: row.generic_name,
+      brand: row.brand_name,
+      strength: row.strength,
+      form: row.form,
+    });
+    const value = resolved?.therapeutic_subgroup || null;
+    subgroup = value && String(value).toLowerCase() !== 'other' ? value : null;
+  } catch {
+    // A registry miss must never break a product search — the text match
+    // below still stands on its own.
+    subgroup = null;
+  }
+
+  // Bounded, so a pharmacy with a very large catalogue cannot grow this
+  // without limit over a long-running process.
+  if (subgroupCache.size >= SUBGROUP_CACHE_MAX) subgroupCache.clear();
+  subgroupCache.set(key, subgroup);
+  return subgroup;
+}
+
 function presentProduct(row) {
   return {
     id: row.id,
@@ -173,6 +236,89 @@ const TOOLS = [
       };
     },
   },
+
+  {
+    name: 'contact_pharmacy',
+    description:
+      'Give the customer a direct phone number to reach the pharmacy team. LAST RESORT ONLY — call this after '
+      + 'you have already tried find_products, browse_category, get_pharmacy_info, ask_pharmacist or a '
+      + 'pharmacist handoff, and none of them could help. Do NOT use this as a substitute for a pharmacist '
+      + 'handoff on a clinical question — if a pharmacist needs to review something, that handoff is still '
+      + 'the primary action; you may mention this number ALONGSIDE it, never instead of it. Do NOT use this '
+      + 'for routine "are you open" or "where are you" questions — get_pharmacy_info already answers those.',
+    parameters: {
+      type: 'object',
+      properties: {
+        reason: {
+          type: 'string',
+          enum: ['automation_limit', 'customer_requested_direct_contact'],
+          description:
+            'automation_limit: you have tried what you can and cannot resolve this. '
+            + 'customer_requested_direct_contact: they explicitly asked for a phone number or to call.',
+        },
+      },
+      required: ['reason'],
+    },
+    // GROUNDING, THE SAME DISCIPLINE AS EVERY PRICE IN THIS FILE
+    // The number is read fresh from pharmacy_profile on every call, never
+    // from anything cached in the conversation or the prompt. A pharmacy
+    // with no number configured gets `available: false` and an explicit
+    // instruction not to guess — the same shape as find_products returning
+    // no match. §11's rule ("never invent a number") is enforced here by
+    // there being no code path that returns anything but a real, current
+    // database value or an honest absence.
+    async run(ctx, args) {
+      const { pharmacyId, conversationId, customerId } = ctx;
+      assertPharmacyId(pharmacyId);
+
+      const reason = ['automation_limit', 'customer_requested_direct_contact'].includes(args?.reason)
+        ? args.reason
+        : 'automation_limit';
+
+      const db = getSql();
+      const [row] = await db`
+        select phone from pharmacy_profile where pharmacy_id = ${pharmacyId}
+      `;
+
+      if (!row?.phone) {
+        return {
+          available: false,
+          note: 'No contact phone number is configured for this pharmacy. Do NOT invent, guess or substitute '
+            + 'one — tell the customer you cannot provide a direct number right now, and use the pharmacist '
+            + 'handoff instead if the situation calls for one.',
+        };
+      }
+
+      // Audited specifically because this is the moment automation is
+      // conceding a limit, not because a phone number was merely mentioned —
+      // see PATIENT_EVENTS.PHARMACY_CONTACT_PROVIDED for why get_pharmacy_info
+      // does NOT also fire this.
+      if (conversationId) {
+        await recordEvent(db, {
+          pharmacyId, customerId,
+          eventType: PATIENT_EVENTS.PHARMACY_CONTACT_PROVIDED,
+          actorType: 'ai',
+          entityType: 'conversation', entityId: conversationId,
+          metadata: { reason },
+          // Timestamped, the same reason as customerCrm.js's tag events: the
+          // default key is (eventType, entityType, entityId), and entityId
+          // here is the CONVERSATION — the same one across every escalation
+          // within it. Automation can hit its limit more than once in one
+          // thread (§17's whole point is counting HOW OFTEN), and the
+          // default key would silently collapse a second escalation into a
+          // no-op, undercounting exactly what this event exists to measure.
+          idempotencyKey: `pharmacy_contact_provided:${conversationId}:${Date.now()}`,
+        });
+      }
+
+      return {
+        available: true,
+        phone: formatPhoneForDisplay(row.phone),
+        note: 'Tell the customer plainly that they can call the pharmacy directly on this number. State the '
+          + 'number exactly as given here — do not reformat it.',
+      };
+    },
+  },
   {
     name: 'browse_category',
     description:
@@ -198,11 +344,37 @@ const TOOLS = [
       const need = String(args?.need || '').trim();
       if (!need) return { products: [], note: 'No need was given.' };
 
+      // A red-flag complaint must not be answered with a shelf, however the
+      // sentence is built. clinicalFilter catches most of these before the
+      // model is ever asked, but it ALLOWS "chest pain" — verified directly —
+      // so refusing here too is what stops "pain" resolving to painkillers
+      // for a possible cardiac event. See therapeuticNeed's own header.
+      if (isRefusedNeed(need)) {
+        return {
+          need,
+          products: [],
+          refused: true,
+          note: 'This reads as a symptom or an emergency, not a request for a kind of product. '
+            + 'Do NOT search the catalogue or suggest a medicine for it. Hand this to a pharmacist, '
+            + 'and if it sounds urgent say plainly that they should seek immediate care.',
+        };
+      }
+
       const db = getSql();
       // "pain" must find the shelf labelled "Analgesic". Without this the
       // feature works only for categories whose clinical name happens to be
       // the everyday one, and an empty result looks like an empty shop.
       const terms = categoriesFor(need);
+
+      // NAFDAC's controlled vocabulary, as a SECOND route to the same shelf.
+      //
+      // The text match below can only find what the catalogue happens to
+      // say. A customer asking for "blood pressure medicine" against a row
+      // called "Amlodipine 10mg" with category "Cardio" matches nothing —
+      // no string in that row resembles the request. NAFDAC knows
+      // amlodipine's subgroup is Hypertension, so resolving the PRODUCT
+      // through the registry finds it where text matching cannot.
+      const wantedSubgroups = subgroupsFor(need);
 
       // Ordered by the pharmacy's own pick first, then by what actually
       // sells, then price. Every one of those is a fact this system holds —
@@ -237,10 +409,58 @@ const TOOLS = [
         limit 4
       `;
 
+      // ---- second route: NAFDAC therapeutic subgroup -----------------------
+      //
+      // Runs only when the text match left room, and only when the need
+      // resolved to a controlled subgroup. Text matching is the more precise
+      // signal — it matched the pharmacy's own words — so it keeps priority
+      // and this fills the remainder. For "blood pressure medicine" against a
+      // catalogue that says "Amlodipine 10mg / Cardio", the text match finds
+      // nothing and this route is the whole answer.
+      const bySubgroup = [];
+      if (rows.length < 4 && wantedSubgroups.length > 0) {
+        const seen = new Set(rows.map((r) => r.id));
+        // NO times_bought here, deliberately. That column is a correlated
+        // count over order_items, and this query is a wide catalogue scan
+        // rather than the tight text-filtered one above — running it per row
+        // across 400 products made this the slowest query in the tool and it
+        // timed out against the pooler on first run. The 90-day sales figure
+        // is a nicety for ordering, not something this route needs; the
+        // pharmacy's own pick and price still order it.
+        const candidates = await db`
+          select p.id, p.name, p.generic_name, p.brand_name, p.strength, p.form, p.pack_size,
+                 p.category, p.price_kobo, p.stock_qty, p.stock_tracked,
+                 p.description, p.is_featured
+          from products p
+          where p.pharmacy_id = ${pharmacyId}
+            and p.status = 'active'
+            and p.price_kobo is not null
+            and (p.stock_tracked = false or coalesce(p.stock_qty,0) > 0)
+          order by p.is_featured desc, p.price_kobo
+          -- Bounded: this is resolved row-by-row against the registry in
+          -- process, so it must not be able to walk an unbounded catalogue.
+          limit 400
+        `;
+        for (const c of candidates) {
+          if (seen.has(c.id)) continue;
+          const subgroup = subgroupForProduct(c);
+          if (subgroup && wantedSubgroups.includes(subgroup)) {
+            bySubgroup.push({ ...c, times_bought: 0, _matched_subgroup: subgroup });
+            if (rows.length + bySubgroup.length >= 4) break;
+          }
+        }
+      }
+
+      const matched = [...rows, ...bySubgroup];
+
       return {
         need,
-        match_count: rows.length,
-        products: rows.map((r) => ({
+        // What the request was understood to mean, in NAFDAC's own controlled
+        // vocabulary. Reported so a wrong answer is debuggable: "we searched
+        // Hypertension" is checkable, "it found nothing" is not.
+        therapeutic_subgroups: wantedSubgroups,
+        match_count: matched.length,
+        products: matched.map((r) => ({
           ...presentProduct(r),
           // The pharmacy's words, or nothing. Never a description written here.
           description: r.description || null,
@@ -262,14 +482,20 @@ const TOOLS = [
           pharmacy_recommends: r.is_featured,
           times_bought_90d: r.times_bought,
         })),
-        note: rows.length === 0
+        note: matched.length === 0
           ? `This pharmacy has nothing in stock matching "${need}". Use ask_pharmacist if the customer still wants something.`
           : 'Offer these as options with their prices. You may say which the PHARMACY recommends, or which '
             + 'customers buy most — both are facts. You may NOT say which works better, which is stronger, '
             + 'or which is right for this person. '
             + 'For the line about each product use `description` if present, otherwise `factual_summary`, '
             + 'otherwise say only the name and price. Do NOT write your own words about what a medicine is '
-            + 'good for, treats, helps with or relieves — not even a mild one.',
+            + 'good for, treats, helps with or relieves — not even a mild one. '
+            // The closing step of the intended flow. These are options from a
+            // shelf, chosen by matching a request to a category — not a
+            // recommendation for this person, and the reply must not let a
+            // customer mistake one for the other.
+            + 'Close by offering the pharmacist: these are what the pharmacy stocks for that need, and which '
+            + 'one suits them is a pharmacist\'s call. Say it naturally, once — not as a disclaimer.',
       };
     },
   },
@@ -315,6 +541,108 @@ const TOOLS = [
           'A pharmacist has been asked and will answer shortly. Tell the customer you have checked with '
           + 'the pharmacist and will come back to them. Do NOT suggest a substitute yourself, do not '
           + 'guess what they might offer, and do not promise a timeframe.',
+      };
+    },
+  },
+
+  {
+    name: 'get_order_history',
+    description:
+      'Look up this customer\'s past orders with this pharmacy. Use this whenever they ask about '
+      + 'something they bought before — "what did I order last time", "the usual", "same as before", '
+      + 'or when their history matters for what happens next. Returns their most recent orders with '
+      + 'what was in each. Do NOT answer a question about past orders from anything said earlier in '
+      + 'this conversation or from your own memory — always call this tool. If it returns no orders, '
+      + 'say so plainly; do not guess what they might have bought before.',
+    parameters: {
+      type: 'object',
+      properties: {
+        limit: {
+          type: 'integer',
+          description: 'How many recent orders to return. Defaults to 5, capped at 10.',
+        },
+      },
+    },
+    // THE RULE THIS TOOL EXISTS TO ENFORCE (Segment 1 §1: AI memory is not
+    // the database)
+    //
+    // Without this tool, "what did I buy last time?" has exactly two possible
+    // sources: the current conversation's own recent turns (which vanish the
+    // moment the thread rolls over, or were never there if the customer is
+    // asking about something from weeks ago), or the model inventing a
+    // plausible-sounding answer. Both are unacceptable for the same reason
+    // every other fact in this system is grounded: a wrong medicine name in
+    // "you bought Amoxicillin last time" is not a stylistic slip, it is
+    // fabricated medical history.
+    //
+    // So this tool is the ONLY sanctioned path to that fact. It queries the
+    // orders table scoped to (pharmacyId, customerId) — never trusts
+    // anything the model or customer supplied as an identifier — and returns
+    // exactly what is in the database. If the database has nothing, the tool
+    // says so explicitly rather than returning an empty list the model might
+    // read as "check elsewhere".
+    async run(ctx, args) {
+      const { pharmacyId, customerId } = ctx;
+      assertPharmacyId(pharmacyId);
+
+      // No customerId means no verified identity yet (e.g. very first
+      // message before resolution completes) — there is nothing to look up,
+      // and returning an empty list here must not be misread as "this
+      // customer has never ordered", so this is worded as a distinct case.
+      if (!customerId) {
+        return { orders: [], note: 'This customer is not yet identified — no history to retrieve.' };
+      }
+
+      const limit = Math.min(Math.max(parseInt(args?.limit, 10) || 5, 1), 10);
+
+      const db = getSql();
+      // customer_id AND pharmacy_id both in the WHERE — belt and braces
+      // alongside ctx being server-bound. A customer_id alone would still be
+      // correct today (ids are UUIDs scoped per pharmacy already), but this
+      // is the same tenant-guard discipline as every other query in this
+      // file, and it costs nothing to keep it explicit here too.
+      const orders = await db`
+        select id, reference, status, total_kobo, created_at
+        from orders
+        where pharmacy_id = ${pharmacyId} and customer_id = ${customerId}
+        order by created_at desc
+        limit ${limit}
+      `;
+
+      if (orders.length === 0) {
+        return { orders: [], note: 'This customer has no previous orders with this pharmacy. Do not invent any.' };
+      }
+
+      const items = await db`
+        select order_id, name_snapshot, quantity, unit_price_kobo, line_total_kobo
+        from order_items
+        where order_id in ${db(orders.map((o) => o.id))}
+        order by order_id
+      `;
+      const itemsByOrder = new Map();
+      for (const it of items) {
+        if (!itemsByOrder.has(it.order_id)) itemsByOrder.set(it.order_id, []);
+        itemsByOrder.get(it.order_id).push({
+          // name_snapshot, not products.name — what they actually received,
+          // frozen at order time. A catalogue rename since then must not
+          // silently rewrite what this order says was bought.
+          name: it.name_snapshot,
+          quantity: it.quantity,
+          unit_price_naira: naira(it.unit_price_kobo),
+          line_total_naira: naira(it.line_total_kobo),
+        });
+      }
+
+      return {
+        orders: orders.map((o) => ({
+          reference: o.reference,
+          status: o.status,
+          total_naira: naira(o.total_kobo),
+          placed_at: o.created_at,
+          items: itemsByOrder.get(o.id) || [],
+        })),
+        note: 'Every field above is from this pharmacy\'s own records. State it as fact; do not embellish '
+          + 'or add anything not shown here.',
       };
     },
   },
@@ -401,7 +729,12 @@ const TOOLS = [
       + 'You must have found each product with find_products first — use the exact product id it returned. '
       + 'This does NOT reserve stock or confirm anything: it puts the order in front of pharmacy staff, '
       + 'who decide. Tell the customer their order has been sent to the pharmacy and someone will confirm it. '
-      + 'Never tell them it is reserved, held, or confirmed.',
+      + 'Never tell them it is reserved, held, or confirmed. '
+      + 'IF THE CUSTOMER ALREADY HAS A PENDING ORDER IN THIS CONVERSATION (for example, you asked "anything '
+      + 'else?" and they named another product): call this tool again with just the new item(s). It '
+      + 'automatically folds into their existing order rather than creating a second one — you do not need '
+      + 'to track this yourself or ask the customer to confirm a new reference. Read the response\'s '
+      + '`addedToExistingOrder` field to know which happened.',
     parameters: {
       type: 'object',
       properties: {
@@ -423,6 +756,15 @@ const TOOLS = [
           description: 'Pickup unless the customer explicitly asked for delivery.',
         },
         note: { type: 'string', description: 'Anything the customer asked to pass on. Optional.' },
+        confirm_add_to_existing: {
+          type: 'boolean',
+          description:
+            'Leave this out unless you are answering a DUPLICATE_ITEM refusal. If an item is already on '
+            + 'the customer\'s open order, this tool refuses and tells you the quantities. Ask the customer '
+            + 'whether they meant to add more — they may have sent the same message twice by mistake. Only '
+            + 'if they say yes, call again with confirm_add_to_existing: true. If they say no, do not call '
+            + 'this tool at all: their order already has what they wanted.',
+        },
       },
       required: ['items'],
     },
@@ -446,30 +788,58 @@ const TOOLS = [
         items,
         fulfilment: args?.fulfilment === 'delivery' ? 'delivery' : 'pickup',
         note: args?.note ? String(args.note).slice(0, 500) : null,
+        allowDuplicate: args?.confirm_add_to_existing === true,
       });
 
       if (!result.ok) {
+        // A duplicate is a QUESTION, not a failure, and is passed back with
+        // the numbers rather than as prose the model would have to parse out
+        // of a sentence. Marked needsConfirmation so it cannot be read as
+        // "the order failed" and reported to the customer as one.
+        if (result.code === 'DUPLICATE_ITEM') {
+          return {
+            created: false,
+            needsConfirmation: true,
+            code: result.code,
+            duplicates: result.duplicates,
+            reason: result.error,
+          };
+        }
         // Returned as a refusal the model can read out, not an exception.
         // The customer needs to hear why — "only 2 left" is useful, a stack
         // trace is not.
         return { created: false, reason: result.error, code: result.code };
       }
 
-      // Alert staff, but never let a failed alert fail the order. The order
-      // exists and stock is already held; throwing here would tell the
-      // customer their request failed when it did not.
-      alertStaffOfNewOrder(pharmacyId, result.order, ctx.customer || {})
-        .then((r) => console.log(JSON.stringify({
-          level: r.sent ? 'info' : 'warn', msg: 'staff order alert', sent: r.sent, reason: r.reason,
-        })))
-        .catch((err) => console.error(JSON.stringify({
-          level: 'error', msg: 'staff order alert threw', error: err.message,
-        })));
+      // Staff already got an alert for this reference when the cart was
+      // first created. Paging them again for every extra item added in the
+      // same conversation would mean three alerts for one shopping trip —
+      // they will see the updated total when they open the order.
+      if (!result.merged) {
+        // Alert staff, but never let a failed alert fail the order. The
+        // order exists; throwing here would tell the customer their request
+        // failed when it did not.
+        alertStaffOfNewOrder(pharmacyId, result.order, ctx.customer || {})
+          .then((r) => console.log(JSON.stringify({
+            level: r.sent ? 'info' : 'warn', msg: 'staff order alert', sent: r.sent, reason: r.reason,
+          })))
+          .catch((err) => console.error(JSON.stringify({
+            level: 'error', msg: 'staff order alert threw', error: err.message,
+          })));
+      }
 
       return {
         created: true,
+        // Also true for a merge — this call did not fail, it just landed on
+        // the existing cart instead of opening a new one. The model reads
+        // this field to decide whether to say "your order" or "I've added
+        // that to your order".
+        addedToExistingOrder: Boolean(result.merged),
         reference: result.order.reference,
         status: 'pending',
+        // The FULL cart, not just what this call added — a customer asking
+        // "what's my order status" mid-conversation needs the whole picture,
+        // and the model has no other way to see items folded in earlier.
         total_naira: naira(result.order.total_kobo),
         items: result.order.items.map((l) => ({
           name: l.name_snapshot,
@@ -477,10 +847,107 @@ const TOOLS = [
           unit_price_naira: naira(l.unit_price_kobo),
           line_total_naira: naira(l.line_total_kobo),
         })),
-        note:
-          'The order has been sent to the pharmacy and is awaiting their confirmation. '
-          + 'Give the customer the reference. Stock is held internally, but the customer must NOT '
-          + 'be told it is reserved — only a pharmacist confirming makes that true.',
+        note: result.merged
+          ? 'This was added to the customer\'s existing pending order (same reference) rather than starting a '
+            + 'new one — they asked for something else in the same conversation. Read back the FULL item list '
+            + 'above with the updated total, using the same reference as before. Do not say a new order was '
+            + 'created.'
+          : 'The order has been sent to the pharmacy and is awaiting their confirmation. '
+            + 'Give the customer the reference. Stock is held internally, but the customer must NOT '
+            + 'be told it is reserved — only a pharmacist confirming makes that true.',
+      };
+    },
+  },
+
+  {
+    name: 'change_order_item',
+    description:
+      'Change how many of a product is on the customer\'s CURRENT order, or remove it, when they change '
+      + 'their mind before the pharmacy has confirmed it ("actually make that 2", "take the vitamin C off", '
+      + '"I don\'t need the folic acid any more"). '
+      + 'Use the product id from find_products or from the order you just read back. '
+      + 'Set quantity to 0 to remove the item entirely; removing the last item cancels the order. '
+      + 'This only works while the order is still awaiting the pharmacy. Once staff have confirmed or '
+      + 'prepared it, this refuses and tells you so — pass that on and offer a person, do not try again. '
+      + 'You do not need the order reference: it finds the customer\'s open order in this conversation.',
+    parameters: {
+      type: 'object',
+      properties: {
+        product_id: {
+          type: 'string',
+          description: 'The id of the product already on the order. Never invent one.',
+        },
+        quantity: {
+          type: 'integer',
+          description: 'The NEW total quantity for this item (not a difference). 0 removes it.',
+        },
+      },
+      required: ['product_id', 'quantity'],
+    },
+    async run(ctx, args) {
+      const { pharmacyId, conversationId } = ctx;
+      assertPharmacyId(pharmacyId);
+
+      if (!conversationId) {
+        return { changed: false, reason: 'There is no active conversation to find an order in.' };
+      }
+
+      const db = getSql();
+      // The order is found from the CONVERSATION, never from anything the
+      // model supplied. A model-chosen order id would be an edit to whatever
+      // order it happened to name — including another customer's.
+      const [open] = await db`
+        select id from orders
+        where pharmacy_id = ${pharmacyId} and conversation_id = ${conversationId} and status = 'pending'
+        order by created_at desc
+        limit 1
+      `;
+      if (!open) {
+        return {
+          changed: false,
+          reason: 'There is no order awaiting the pharmacy in this conversation. '
+            + 'If they already had one confirmed, a member of staff has to change it.',
+        };
+      }
+
+      const result = await amendPendingOrder(pharmacyId, open.id, {
+        productId: String(args?.product_id || ''),
+        quantity: args?.quantity,
+      });
+
+      if (!result.ok) {
+        // A refusal the model can read out, same discipline as create_order.
+        return { changed: false, reason: result.error, code: result.code };
+      }
+
+      if (result.cancelled) {
+        return {
+          changed: true,
+          orderCancelled: true,
+          reference: result.order.reference,
+          note: 'That was the last item, so the whole order has been cancelled and the pharmacy will see that. '
+            + 'Confirm this plainly to the customer and offer to help if they want something else.',
+        };
+      }
+
+      return {
+        changed: true,
+        removed: Boolean(result.removed),
+        reference: result.order.reference,
+        status: 'pending',
+        total_naira: naira(result.order.total_kobo),
+        // The FULL remaining order, so the reply can read back what they now
+        // have rather than only what changed.
+        items: result.order.items.map((l) => ({
+          product_id: l.product_id,
+          name: l.name_snapshot,
+          quantity: l.quantity,
+          unit_price_naira: naira(l.unit_price_kobo),
+          line_total_naira: naira(l.line_total_kobo),
+        })),
+        note: 'The order was updated and still has the SAME reference — it has not been re-sent or duplicated. '
+          + 'Read back the remaining items and the new total. It is still awaiting the pharmacy\'s '
+          + 'confirmation; do not say it is reserved or ready.',
       };
     },
   },

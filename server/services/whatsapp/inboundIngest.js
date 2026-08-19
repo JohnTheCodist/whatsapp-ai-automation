@@ -22,6 +22,7 @@
 const { getSql, assertPharmacyId } = require('../db');
 const { shouldIngest } = require('./ingestionPolicy');
 const { resolveConversation } = require('./conversationPolicy');
+const { onCustomerMessage } = require('./conversationService');
 const { recordEvent } = require('../customers/customerEvents');
 const { PATIENT_EVENTS } = require('../customers/patientEventTypes');
 const { resolveCustomer } = require('../customers/customerIdentity');
@@ -193,6 +194,14 @@ async function ingest(msg) {
               window_expires_at = now() + interval '${tx.unsafe(String(REPLY_WINDOW_HOURS))} hours'
           where id = ${conversation.id}
         `;
+        // ...and moves the workflow axis: the customer has spoken, so this is
+        // the assistant's turn, not a thread still waiting on them.
+        //
+        // Only on REUSE. A freshly inserted conversation already defaults to
+        // 'open', and the worker moves it on when it actually picks the
+        // message up — claiming AI_HANDLING here would assert the assistant
+        // has the thread before anything has looked at it.
+        await onCustomerMessage(tx, { pharmacyId, conversationId: conversation.id });
       }
 
       // 4. The message itself.

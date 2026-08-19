@@ -14,15 +14,20 @@
  * the model is a way of finding rows in it.
  *
  * WHAT AN ORDER MEANS — TWO STAGES
- * `pending` DOES hold stock (0010), so a second customer cannot be sold the
- * same pack while the pharmacist decides. It does NOT mean the pharmacy has
- * agreed. Those are different facts and the customer is told only the second
- * one: the assistant says "I've sent this to the pharmacy", never "it's
- * reserved", until a human confirms. replyValidator enforces that.
+ * `pending` holds NOTHING. A request sitting in the queue has not been
+ * looked at by anyone, and stock should not move on the strength of a
+ * WhatsApp message alone — a pharmacist confirming against the physical
+ * shelf is the actual moment the pharmacy commits.
  *
- * Holding without promising is the whole design. Holding at confirmation
- * would let the pharmacist confirm a pack already gone; promising at
- * creation would commit the pharmacy to something nobody approved.
+ * Stock is decremented, atomically, the first time a human moves an order
+ * OUT of `pending` (to `confirmed`, or straight to `ready` — the dashboard
+ * now offers pending orders a single button that does both at once, so one
+ * click both commits the stock and tells the customer it is ready). The
+ * conditional UPDATE that makes this race-safe moved with it: see
+ * commitStock and its call site in updateStatus. Two customers can both have
+ * a PENDING order for the last pack — nothing is at stake until a human acts
+ * on one of them, and whichever is confirmed first wins the stock; the other
+ * fails at confirm time with a clear reason, not silently at order time.
  */
 
 const crypto = require('node:crypto');
@@ -48,6 +53,19 @@ const MAX_QTY_PER_LINE = 100;
 const MAX_LINES = 20;
 
 /**
+ * How recently an open cart must have been touched for re-ordering something
+ * already on it to be treated as a possible double-tap rather than a genuine
+ * second helping.
+ *
+ * Ten minutes, and the reason it is not shorter or longer: a mis-send or a
+ * repeated "1" happens within seconds to a couple of minutes, while a
+ * customer coming back later in the same conversation to add another pack is
+ * making a real decision that should not be second-guessed. Ten covers the
+ * mistake comfortably without turning ordinary top-ups into an interrogation.
+ */
+const DUPLICATE_CONFIRM_MINUTES = 10;
+
+/**
  * Create a pending order from what the customer asked for.
  *
  * @param {string} pharmacyId
@@ -63,7 +81,13 @@ const MAX_LINES = 20;
  * assistant needs to explain WHY to a customer, and an exception string is
  * not something it can safely paraphrase.
  */
-async function createOrder(pharmacyId, { customerId, conversationId = null, items, fulfilment = 'pickup', note = null }) {
+async function createOrder(pharmacyId, {
+  customerId, conversationId = null, items, fulfilment = 'pickup', note = null,
+  // Set only once the customer has actually said to add more of something
+  // already on their order. Defaults to false so the safe path — ask — is
+  // what happens when a caller says nothing.
+  allowDuplicate = false,
+}) {
   assertPharmacyId(pharmacyId);
 
   if (!customerId) return { ok: false, code: 'NO_CUSTOMER', error: 'No customer on this conversation.' };
@@ -128,11 +152,6 @@ async function createOrder(pharmacyId, { customerId, conversationId = null, item
   const db = getSql();
   const ids = [...wanted.keys()];
 
-  const [settings] = await db`
-    select reservation_hold_minutes from pharmacies where id = ${pharmacyId}
-  `;
-  const holdMinutes = settings?.reservation_hold_minutes ?? 120;
-
   // Scoped to the pharmacy: a product id from another tenant simply does not
   // resolve, so a leaked id cannot be ordered here.
   const products = await db`
@@ -179,13 +198,159 @@ async function createOrder(pharmacyId, { customerId, conversationId = null, item
       unit_price_kobo: p.price_kobo,
       quantity,
       line_total_kobo: p.price_kobo * quantity,
-      // Not a column — stripped before insert. Tells the hold loop whether
-      // this product has a stock number to decrement at all.
+      // Not a column — stripped before insert. Kept on the returned line so
+      // a caller can tell which items will actually commit stock later.
       _stock_tracked: p.stock_tracked,
     });
   }
 
   const totalKobo = lines.reduce((sum, l) => sum + l.line_total_kobo, 0);
+
+  // ---- fold into an already-open cart, rather than starting a second one --
+  //
+  // "Anything else?" -> customer names another product -> that is still the
+  // SAME shopping trip. Without this, every follow-up item became its own
+  // order: a customer who picked three things over one conversation left
+  // staff three references to separately confirm and reconcile, for what
+  // was, to the customer, one request.
+  //
+  // Scoped to `pending` only. Once a pharmacist has acted (confirmed,
+  // rejected, readied), that order is no longer just a conversation between
+  // the customer and the assistant — folding a new item into it silently
+  // would change something a human already looked at. A pharmacist-owned
+  // order gets left alone; the next item starts a fresh one, exactly like
+  // today.
+  if (conversationId) {
+    const merged = await db.begin(async (tx) => {
+      // Locked so two rapid-fire messages in the same conversation cannot
+      // both see "no open cart" and each start their own.
+      const [openCart] = await tx`
+        select id, updated_at,
+               (updated_at > now() - make_interval(mins => ${DUPLICATE_CONFIRM_MINUTES})) as recently_touched
+        from orders
+        where pharmacy_id = ${pharmacyId} and conversation_id = ${conversationId} and status = 'pending'
+        order by created_at desc
+        limit 1
+        for update
+      `;
+      if (!openCart) return null;
+
+      const existingLines = await tx`
+        select id, product_id, quantity, line_total_kobo from order_items
+        where order_id = ${openCart.id} and pharmacy_id = ${pharmacyId}
+      `;
+      const byProduct = new Map(existingLines.map((l) => [l.product_id, l]));
+
+      // ---- the double-tap guard ------------------------------------------
+      //
+      // Re-ordering something that is ALREADY on the open cart, moments after
+      // putting it there, is far more often a mistake than an intention: a
+      // customer taps send twice, or repeats "1" because the first reply was
+      // slow. Silently doubling the quantity is the one outcome nobody wants
+      // — they collect two cards, or a pharmacist reserves stock against a
+      // number the customer never meant.
+      //
+      // So within the window this REFUSES and hands the decision back to the
+      // customer, rather than guessing either way. Deliberate top-ups still
+      // work: the assistant sets allowDuplicate once the customer has
+      // actually said to add more, which is exactly the confirmation this is
+      // asking for.
+      //
+      // Bounded by time on purpose. An hour later in a long conversation,
+      // "and another paracetamol" is a normal second helping and asking
+      // about it would be pedantic — outside the window it merges as before.
+      if (!allowDuplicate && openCart.recently_touched) {
+        const clashes = lines
+          .filter((line) => byProduct.has(line.product_id))
+          .map((line) => ({
+            productId: line.product_id,
+            name: line.name_snapshot,
+            alreadyOnOrder: byProduct.get(line.product_id).quantity,
+            askedToAdd: line.quantity,
+            combined: byProduct.get(line.product_id).quantity + line.quantity,
+          }));
+
+        // Returned rather than thrown: nothing has been written yet, so the
+        // transaction closes cleanly and the caller turns this into a
+        // question instead of an error.
+        if (clashes.length > 0) return { duplicates: clashes, reference: null };
+      }
+
+      // Same product ordered twice in one trip adds to the existing line
+      // rather than duplicating the row — "2 more paracetamol" reads as one
+      // line of 5, not two lines of 2 and 3 a pharmacist has to add up.
+      for (const line of lines) {
+        const existingLine = byProduct.get(line.product_id);
+        if (existingLine) {
+          await tx`
+            update order_items
+            set quantity = ${existingLine.quantity + line.quantity},
+                line_total_kobo = ${existingLine.line_total_kobo + line.line_total_kobo}
+            where id = ${existingLine.id}
+          `;
+        } else {
+          await tx`
+            insert into order_items ${tx(
+              { ...line, order_id: openCart.id, pharmacy_id: pharmacyId },
+              'order_id', 'pharmacy_id', 'product_id', 'name_snapshot',
+              'unit_price_kobo', 'quantity', 'line_total_kobo'
+            )}
+          `;
+        }
+      }
+
+      const [updated] = await tx`
+        update orders set total_kobo = total_kobo + ${totalKobo}, updated_at = now()
+        where id = ${openCart.id}
+        returning *
+      `;
+
+      const [history] = await tx`
+        insert into order_status_history (order_id, pharmacy_id, from_status, to_status, actor_type, note)
+        values (${openCart.id}, ${pharmacyId}, 'pending', 'pending', 'assistant',
+                ${`Added ${lines.length} item${lines.length === 1 ? '' : 's'} from the same conversation.`})
+        returning id, changed_at
+      `;
+      await recordEvent(tx, {
+        pharmacyId, customerId, eventType: PATIENT_EVENTS.ORDER_ITEMS_ADDED,
+        occurredAt: history.changed_at, actorType: 'ai',
+        entityType: 'order_status_history', entityId: history.id,
+        metadata: {
+          orderId: openCart.id, reference: updated.reference,
+          addedTotalKobo: totalKobo, addedItemCount: lines.length,
+        },
+      });
+
+      const allItems = await tx`
+        select product_id, name_snapshot, unit_price_kobo, quantity, line_total_kobo
+        from order_items where order_id = ${openCart.id} and pharmacy_id = ${pharmacyId}
+        order by id
+      `;
+
+      return { order: updated, items: allItems };
+    });
+
+    if (merged && merged.duplicates) {
+      // A question, not a failure. The shape matches every other business
+      // refusal in this module so the assistant reads it the same way, but
+      // the payload carries the numbers it needs to ask a precise question:
+      // "you already have 1 on this order — make it 2?"
+      const [first] = merged.duplicates;
+      return {
+        ok: false,
+        code: 'DUPLICATE_ITEM',
+        duplicates: merged.duplicates,
+        error: merged.duplicates.length === 1
+          ? `${first.name} is already on this order (${first.alreadyOnOrder}). `
+            + `Ask whether to make it ${first.combined}, or leave it at ${first.alreadyOnOrder}.`
+          : 'Some of those are already on this order. Ask whether to increase the quantities or leave them as they are.',
+      };
+    }
+
+    if (merged) {
+      return { ok: true, merged: true, order: { ...merged.order, items: merged.items } };
+    }
+  }
 
   // Retry on reference collision. Random 6 characters over a 20-ish letter
   // alphabet collides rarely, but "rarely" across every pharmacy forever is
@@ -194,50 +359,18 @@ async function createOrder(pharmacyId, { customerId, conversationId = null, item
     const reference = generateReference();
     try {
       const order = await db.begin(async (tx) => {
-        // ---- hold the stock, atomically -------------------------------
-        //
-        // `and stock_qty >= quantity` in the WHERE clause is the actual
-        // concurrency guard. The read above is only for a good error
-        // message; between it and here, another customer can take the last
-        // pack. Postgres evaluates this condition and the decrement in one
-        // statement, so exactly one of two racing orders can win.
-        //
-        // Untracked products hold nothing — the pharmacy is not counting
-        // them, so there is no number to decrement and nothing to restore
-        // later.
-        let heldAnything = false;
-        for (const line of lines) {
-          if (!line._stock_tracked) continue;
-
-          const [held] = await tx`
-            update products
-            set stock_qty = stock_qty - ${line.quantity}, updated_at = now()
-            where id = ${line.product_id}
-              and pharmacy_id = ${pharmacyId}
-              and stock_tracked = true
-              and stock_qty >= ${line.quantity}
-            returning id, stock_qty
-          `;
-
-          if (!held) {
-            // Someone took it while this order was being built. Aborting the
-            // transaction rolls back every hold placed above it, so a
-            // multi-line order never half-reserves.
-            const err = new Error(`RACE_LOST:${line.name_snapshot}`);
-            err.raceLost = line.name_snapshot;
-            throw err;
-          }
-          heldAnything = true;
-        }
-
+        // NO stock touched here. The pre-check above (`p.stock_qty <
+        // quantity`) already caught the obvious case for a good error
+        // message; it is deliberately not atomic and not relied on for
+        // correctness — see the module header. The real guard now lives in
+        // commitStock, run once a human moves this order out of `pending`.
         const [created] = await tx`
           insert into orders (pharmacy_id, customer_id, conversation_id, reference,
                               status, total_kobo, fulfilment, note,
                               stock_held, reserved_until)
           values (${pharmacyId}, ${customerId}, ${conversationId}, ${reference},
                   'pending', ${totalKobo}, ${fulfilment}, ${note},
-                  ${heldAnything},
-                  ${heldAnything ? tx`now() + (${holdMinutes} || ' minutes')::interval` : null})
+                  false, null)
           returning *
         `;
 
@@ -266,15 +399,8 @@ async function createOrder(pharmacyId, { customerId, conversationId = null, item
 
       return { ok: true, order: { ...order, items: lines } };
     } catch (err) {
-      if (err.raceLost) {
-        // Another customer took it mid-transaction. Every hold this order
-        // placed was rolled back with it, so nothing is stranded.
-        return {
-          ok: false,
-          code: 'INSUFFICIENT_STOCK',
-          error: `Someone just took the last ${err.raceLost}. It is no longer available.`,
-        };
-      }
+      // No stock hold happens in this transaction any more, so the only
+      // failure left to retry on is a reference collision.
       if (/unique/i.test(err.message) && /reference/i.test(err.message)) continue;
       throw err;
     }
@@ -283,9 +409,186 @@ async function createOrder(pharmacyId, { customerId, conversationId = null, item
   return { ok: false, code: 'REFERENCE_COLLISION', error: 'Could not allocate an order reference. Please try again.' };
 }
 
-/** Staff-side status change, with history. */
+/**
+ * Change or remove a line on an order the pharmacy has not acted on yet.
+ *
+ * WHY `pending` IS THE HARD BOUNDARY
+ * While an order is pending, nothing has happened in the physical world: no
+ * stock has been decremented (commitStock runs on the first exit from
+ * pending), no pharmacist has agreed to supply anything, and the customer has
+ * been told only that their request was sent. Editing it is therefore free —
+ * it is still just a conversation about what they want.
+ *
+ * The moment a human clicks confirm or ready, that stops being true. Stock has
+ * left the shelf, a person has committed the pharmacy, and the customer has
+ * been told it is reserved or ready to collect. Silently rewriting the
+ * contents then would mean a pharmacist picking items against a list that
+ * changed after they read it — so this refuses, and the customer is directed
+ * to a person who can actually undo those things. That refusal is the whole
+ * safety property of this function, not a limitation to work around.
+ *
+ * Removing every line CANCELS the order rather than leaving an empty one: an
+ * order with no items is not a smaller order, it is a customer who changed
+ * their mind, and staff should see that plainly.
+ *
+ * @param {object} changes
+ * @param {string} changes.productId  the line to change
+ * @param {number} changes.quantity   new quantity; 0 removes the line
+ */
+async function amendPendingOrder(pharmacyId, orderId, { productId, quantity }) {
+  assertPharmacyId(pharmacyId);
+  if (!productId) return { ok: false, code: 'BAD_ITEM', error: 'Which product should change?' };
+
+  // A MISSING quantity must never mean zero. Number(null), Number(undefined
+  // via ''), and Number([]) all coerce to 0, and 0 here means "delete this
+  // line" — so a model that simply omitted the field would silently remove
+  // an item the customer never asked to remove. Removal has to be an
+  // explicit 0, which is exactly what the tool schema asks for.
+  if (quantity === null || quantity === undefined || quantity === '') {
+    return {
+      ok: false,
+      code: 'BAD_QUANTITY',
+      error: 'Say how many of it they want, or 0 to take it off the order.',
+    };
+  }
+  const qty = Number(quantity);
+  if (!Number.isInteger(qty) || qty < 0) {
+    return { ok: false, code: 'BAD_QUANTITY', error: 'Quantity must be a whole number, or 0 to remove the item.' };
+  }
+  if (qty > MAX_QTY_PER_LINE) {
+    return {
+      ok: false,
+      code: 'QUANTITY_TOO_LARGE',
+      error: `${qty} is more than this assistant can take in one order. A member of staff will need to help with that.`,
+    };
+  }
+
+  const db = getSql();
+
+  try {
+    return await db.begin(async (tx) => {
+      // Locked so a pharmacist confirming at this exact moment cannot slip
+      // between the status check and the write — without this, an amend and a
+      // confirm can interleave and the order gets edited after commitStock
+      // already counted the old quantities off the shelf.
+      const [order] = await tx`
+        select id, status, reference, total_kobo from orders
+        where id = ${orderId} and pharmacy_id = ${pharmacyId}
+        for update
+      `;
+      if (!order) return { ok: false, code: 'NOT_FOUND', error: 'Order not found.' };
+
+      if (order.status !== 'pending') {
+        return {
+          ok: false,
+          code: 'ALREADY_ACTIONED',
+          error: order.status === 'cancelled' || order.status === 'rejected'
+            ? `Order ${order.reference} is already ${order.status}, so there is nothing to change.`
+            : `Order ${order.reference} has already been ${order.status} by the pharmacy, so it cannot be changed here. `
+              + 'A member of staff can still help with it.',
+          status: order.status,
+          reference: order.reference,
+        };
+      }
+
+      const [line] = await tx`
+        select id, name_snapshot, unit_price_kobo, quantity, line_total_kobo
+        from order_items
+        where order_id = ${orderId} and pharmacy_id = ${pharmacyId} and product_id = ${productId}
+      `;
+      if (!line) {
+        return { ok: false, code: 'NOT_ON_ORDER', error: 'That product is not on this order.' };
+      }
+
+      // Priced from the LINE's own stored unit price, never recomputed from
+      // the catalogue. The customer was quoted this figure when the item was
+      // added; a price change since then must not silently reprice an order
+      // they already agreed to.
+      const newLineTotal = line.unit_price_kobo * qty;
+
+      if (qty === 0) {
+        await tx`delete from order_items where id = ${line.id}`;
+      } else {
+        await tx`
+          update order_items set quantity = ${qty}, line_total_kobo = ${newLineTotal}
+          where id = ${line.id}
+        `;
+      }
+
+      const [{ count: remaining, total: newTotal }] = await tx`
+        select count(*)::int as count, coalesce(sum(line_total_kobo), 0)::bigint as total
+        from order_items where order_id = ${orderId} and pharmacy_id = ${pharmacyId}
+      `;
+
+      // Nothing left on it. An empty order is a cancelled one — see the
+      // header. Goes through the same 'cancelled' status every other
+      // cancellation uses, so the inbox and the timeline read consistently.
+      const becameEmpty = remaining === 0;
+      const [updated] = await tx`
+        update orders
+        set total_kobo = ${newTotal},
+            status = ${becameEmpty ? 'cancelled' : 'pending'},
+            status_detail = ${becameEmpty ? 'Customer removed every item before the pharmacy confirmed it.' : null},
+            updated_at = now()
+        where id = ${orderId} and pharmacy_id = ${pharmacyId}
+        returning *
+      `;
+
+      const note = becameEmpty
+        ? `Customer removed the last item (${line.name_snapshot}); order cancelled.`
+        : qty === 0
+          ? `Customer removed ${line.name_snapshot}.`
+          : `Customer changed ${line.name_snapshot} from ${line.quantity} to ${qty}.`;
+
+      const [history] = await tx`
+        insert into order_status_history (order_id, pharmacy_id, from_status, to_status, actor_type, note)
+        values (${orderId}, ${pharmacyId}, 'pending', ${becameEmpty ? 'cancelled' : 'pending'}, 'assistant', ${note})
+        returning id, changed_at
+      `;
+      await recordEvent(tx, {
+        pharmacyId, customerId: updated.customer_id,
+        eventType: becameEmpty
+          ? orderEventType('pending', 'cancelled', 'assistant')
+          : PATIENT_EVENTS.ORDER_ITEMS_AMENDED,
+        occurredAt: history.changed_at, actorType: 'ai',
+        entityType: 'order_status_history', entityId: history.id,
+        metadata: {
+          orderId, reference: updated.reference,
+          productId, fromQuantity: line.quantity, toQuantity: qty,
+          totalKobo: Number(newTotal),
+        },
+      });
+
+      const items = await tx`
+        select product_id, name_snapshot, unit_price_kobo, quantity, line_total_kobo
+        from order_items where order_id = ${orderId} and pharmacy_id = ${pharmacyId}
+        order by id
+      `;
+
+      return {
+        ok: true,
+        cancelled: becameEmpty,
+        removed: qty === 0,
+        order: { ...updated, items },
+      };
+    });
+  } catch (err) {
+    throw err;
+  }
+}
+
+/**
+ * Staff-side status change, with history.
+ *
+ * `ready` is reachable directly from `pending` as well as from `confirmed` —
+ * the dashboard's pending queue now offers ONE button that confirms and
+ * marks ready in the same click, so a pharmacist is not sending the customer
+ * two separate "your order is..." messages for what is, in practice, a
+ * single decision. `confirmed` stays a legal stop of its own for any order
+ * already sitting there, or a caller that wants the two steps kept apart.
+ */
 const ALLOWED_TRANSITIONS = {
-  pending: ['confirmed', 'rejected', 'cancelled'],
+  pending: ['confirmed', 'ready', 'rejected', 'cancelled'],
   confirmed: ['ready', 'cancelled', 'completed'],
   ready: ['completed', 'cancelled'],
   completed: [],
@@ -295,6 +598,15 @@ const ALLOWED_TRANSITIONS = {
 
 /** Statuses where the pharmacy is no longer going to supply the order. */
 const RELEASES_STOCK = new Set(['rejected', 'cancelled']);
+
+/**
+ * The first exit from `pending` that commits the pharmacy to supplying the
+ * order — this is now the moment stock actually leaves the shelf. Both
+ * targets are listed because the dashboard can reach either one directly
+ * from `pending` (see ALLOWED_TRANSITIONS); whichever happens first is the
+ * one that commits stock, and it must never happen twice for one order.
+ */
+const COMMITS_STOCK_FROM_PENDING = new Set(['confirmed', 'ready']);
 
 /**
  * Return held units to the shelf. Exactly once.
@@ -331,6 +643,58 @@ async function releaseStock(tx, pharmacyId, orderId) {
   return restored.length;
 }
 
+/**
+ * Atomically decrement stock for every tracked line on this order — the same
+ * conditional-UPDATE guard that used to run at order creation (see the
+ * module header), moved to the first transition out of `pending`.
+ *
+ * Returns a result object rather than throwing for the ordinary case: a
+ * pharmacist confirming a pack that is already gone is a business outcome
+ * updateStatus's caller must report, not a crash.
+ *
+ * @param {object} tx  must be a transaction — a failed line has to roll back
+ *   every line already decremented in this same call.
+ */
+async function commitStock(tx, pharmacyId, orderId) {
+  const items = await tx`
+    select oi.product_id, oi.quantity, oi.name_snapshot, p.stock_tracked
+    from order_items oi
+    join products p on p.id = oi.product_id and p.pharmacy_id = ${pharmacyId}
+    where oi.order_id = ${orderId} and oi.pharmacy_id = ${pharmacyId}
+  `;
+
+  let heldAnything = false;
+  for (const line of items) {
+    // Untracked products commit nothing — the pharmacy is not counting them,
+    // so there is no number to decrement and nothing to restore later.
+    if (!line.stock_tracked) continue;
+
+    const [held] = await tx`
+      update products
+      set stock_qty = stock_qty - ${line.quantity}, updated_at = now()
+      where id = ${line.product_id}
+        and pharmacy_id = ${pharmacyId}
+        and stock_tracked = true
+        and stock_qty >= ${line.quantity}
+      returning id
+    `;
+
+    if (!held) {
+      // The caller is inside a transaction and must roll back on this
+      // result — every line committed above in this same call rolls back
+      // with it, so a multi-line order never half-commits.
+      return {
+        ok: false,
+        code: 'INSUFFICIENT_STOCK',
+        error: `Someone already took the last ${line.name_snapshot}. It is no longer available.`,
+      };
+    }
+    heldAnything = true;
+  }
+
+  return { ok: true, heldAnything };
+}
+
 async function updateStatus(pharmacyId, orderId, toStatus, { changedBy = null, note = null, actorType = 'staff' } = {}) {
   assertPharmacyId(pharmacyId);
   const db = getSql();
@@ -353,44 +717,72 @@ async function updateStatus(pharmacyId, orderId, toStatus, { changedBy = null, n
     };
   }
 
-  const updated = await db.begin(async (tx) => {
-    // Stock goes back when the pharmacy is no longer supplying it. Not on
-    // `completed` — that stock genuinely left the shelf with the customer.
-    if (RELEASES_STOCK.has(toStatus)) {
-      await releaseStock(tx, pharmacyId, orderId);
-    }
+  try {
+    const updated = await db.begin(async (tx) => {
+      // Stock commits HERE — the first time a human moves this order out of
+      // `pending` — not at creation. See the module header for why, and
+      // commitStock for the race-safety guard that moved here with it.
+      let justCommitted = false;
+      if (order.status === 'pending' && COMMITS_STOCK_FROM_PENDING.has(toStatus)) {
+        const commit = await commitStock(tx, pharmacyId, orderId);
+        if (!commit.ok) {
+          // Thrown, not returned: this is inside db.begin, and only a throw
+          // rolls the transaction back. Caught below, outside the
+          // transaction, and turned back into the same result shape every
+          // other business refusal in this module uses.
+          const err = new Error(commit.error);
+          err.businessRefusal = commit;
+          throw err;
+        }
+        justCommitted = commit.heldAnything;
+      }
 
-    const [row] = await tx`
-      update orders set status = ${toStatus}, status_detail = ${note},
-             -- A confirmed order is not on a countdown any more; the hold
-             -- became a commitment the moment a person agreed to it.
-             reserved_until = ${toStatus === 'pending' ? tx`reserved_until` : null},
-             updated_at = now()
-      where id = ${orderId} and pharmacy_id = ${pharmacyId}
-      returning *
-    `;
-    const [history] = await tx`
-      insert into order_status_history (order_id, pharmacy_id, from_status, to_status, changed_by, actor_type, note)
-      values (${orderId}, ${pharmacyId}, ${order.status}, ${toStatus}, ${changedBy}, ${actorType}, ${note})
-      returning id, changed_at
-    `;
-    // actorType here is exactly what the caller passed to updateStatus
-    // (defaults to 'staff') — not upgraded to 'pharmacist', since orderService
-    // itself does not distinguish a pharmacist from any other staff member
-    // making the change. Claiming that distinction here would assert
-    // something the calling code never actually knew.
-    await recordEvent(tx, {
-      pharmacyId, customerId: row.customer_id,
-      eventType: orderEventType(order.status, toStatus, actorType),
-      occurredAt: history.changed_at,
-      actorType, actorId: changedBy,
-      entityType: 'order_status_history', entityId: history.id,
-      metadata: { orderId, reference: row.reference, fromStatus: order.status, toStatus },
+      // Stock goes back when the pharmacy is no longer supplying it. Not on
+      // `completed` — that stock genuinely left the shelf with the customer.
+      if (RELEASES_STOCK.has(toStatus)) {
+        await releaseStock(tx, pharmacyId, orderId);
+      }
+
+      const [row] = await tx`
+        update orders set status = ${toStatus}, status_detail = ${note},
+               -- OR, not overwrite: stays true once set (confirmed -> ready
+               -- must not forget stock already committed at confirmed), and
+               -- becomes true the moment this transition is the one that
+               -- just committed it.
+               stock_held = stock_held OR ${justCommitted},
+               -- Nothing is ever held while pending any more, so there is
+               -- no countdown to preserve or clear here — always null.
+               reserved_until = null,
+               updated_at = now()
+        where id = ${orderId} and pharmacy_id = ${pharmacyId}
+        returning *
+      `;
+      const [history] = await tx`
+        insert into order_status_history (order_id, pharmacy_id, from_status, to_status, changed_by, actor_type, note)
+        values (${orderId}, ${pharmacyId}, ${order.status}, ${toStatus}, ${changedBy}, ${actorType}, ${note})
+        returning id, changed_at
+      `;
+      // actorType here is exactly what the caller passed to updateStatus
+      // (defaults to 'staff') — not upgraded to 'pharmacist', since orderService
+      // itself does not distinguish a pharmacist from any other staff member
+      // making the change. Claiming that distinction here would assert
+      // something the calling code never actually knew.
+      await recordEvent(tx, {
+        pharmacyId, customerId: row.customer_id,
+        eventType: orderEventType(order.status, toStatus, actorType),
+        occurredAt: history.changed_at,
+        actorType, actorId: changedBy,
+        entityType: 'order_status_history', entityId: history.id,
+        metadata: { orderId, reference: row.reference, fromStatus: order.status, toStatus },
+      });
+      return row;
     });
-    return row;
-  });
 
-  return { ok: true, order: updated, from: order.status };
+    return { ok: true, order: updated, from: order.status };
+  } catch (err) {
+    if (err.businessRefusal) return err.businessRefusal;
+    throw err;
+  }
 }
 
 async function listOrders(pharmacyId, { status = null, limit = 50 } = {}) {
@@ -501,6 +893,7 @@ async function expireStaleHolds({ limit = 50 } = {}) {
 }
 
 module.exports = {
-  createOrder, updateStatus, listOrders, generateReference,
-  expireStaleHolds, releaseStock, ALLOWED_TRANSITIONS, RELEASES_STOCK,
+  createOrder, amendPendingOrder, updateStatus, listOrders, generateReference,
+  expireStaleHolds, releaseStock, commitStock,
+  ALLOWED_TRANSITIONS, RELEASES_STOCK, COMMITS_STOCK_FROM_PENDING,
 };

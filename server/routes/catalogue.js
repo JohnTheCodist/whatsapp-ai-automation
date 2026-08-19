@@ -14,7 +14,7 @@ const multer = require('multer');
 const path = require('node:path');
 
 const { requireAuth } = require('../middleware/auth');
-const { getSql, assertPharmacyId } = require('../services/db');
+const { getSql, assertPharmacyId, readWithRetry } = require('../services/db');
 const { stageUpload, confirmAndImport } = require('../services/catalogue/catalogueImport');
 const { FIELD_DISPLAY, TIER_DISPLAY } = require('../services/catalogue/catalogueFields');
 
@@ -148,30 +148,44 @@ router.get('/products', requireAuth, async (req, res, next) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
     const search = (req.query.q || '').trim();
 
-    const rows = search
-      ? await db`
-          select id, name, generic_name, category, form, strength, pack_size,
-                 price_kobo, stock_qty, stock_tracked, status, data_flags, description, is_featured
-          from products
-          where pharmacy_id = ${req.pharmacyId} and name ilike ${'%' + search + '%'}
-          order by name limit ${limit}
-        `
-      : await db`
-          select id, name, generic_name, category, form, strength, pack_size,
-                 price_kobo, stock_qty, stock_tracked, status, data_flags, description, is_featured
-          from products
-          where pharmacy_id = ${req.pharmacyId}
-          order by updated_at desc limit ${limit}
-        `;
+    // Both reads run inside ONE retry unit rather than two.
+    //
+    // This endpoint failed in production with `read ECONNRESET` thrown by the
+    // counts query while the rows query directly above it had just succeeded:
+    // the first read drew a live connection, the second drew one the pooler
+    // had already dropped. Nothing was wrong with either statement.
+    //
+    // Retrying them together keeps the list and the totals derived from the
+    // same attempt. Retrying only the failing one could pair a fresh count
+    // with a stale list, which is a subtler wrong answer than the error was.
+    const { rows, counts } = await readWithRetry(async () => {
+      const list = search
+        ? await db`
+            select id, name, generic_name, category, form, strength, pack_size,
+                   price_kobo, stock_qty, stock_tracked, status, data_flags, description, is_featured
+            from products
+            where pharmacy_id = ${req.pharmacyId} and name ilike ${'%' + search + '%'}
+            order by name limit ${limit}
+          `
+        : await db`
+            select id, name, generic_name, category, form, strength, pack_size,
+                   price_kobo, stock_qty, stock_tracked, status, data_flags, description, is_featured
+            from products
+            where pharmacy_id = ${req.pharmacyId}
+            order by updated_at desc limit ${limit}
+          `;
 
-    const [counts] = await db`
-      select
-        count(*)::int as total,
-        count(*) filter (where price_kobo is null)::int as no_price,
-        count(*) filter (where status = 'active' and price_kobo is not null)::int as sellable,
-        count(*) filter (where status = 'hidden')::int as hidden
-      from products where pharmacy_id = ${req.pharmacyId}
-    `;
+      const [totals] = await db`
+        select
+          count(*)::int as total,
+          count(*) filter (where price_kobo is null)::int as no_price,
+          count(*) filter (where status = 'active' and price_kobo is not null)::int as sellable,
+          count(*) filter (where status = 'hidden')::int as hidden
+        from products where pharmacy_id = ${req.pharmacyId}
+      `;
+
+      return { rows: list, counts: totals };
+    });
 
     res.json({
       counts,

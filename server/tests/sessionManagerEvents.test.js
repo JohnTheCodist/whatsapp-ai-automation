@@ -70,3 +70,67 @@ test('sendText refuses an empty message', async () => {
   mgr.sessions.set('a', { accountId: 'a', sock: {}, closed: false });
   await assert.rejects(() => mgr.sendText('a', 'x@s.whatsapp.net', '   '), /empty message/);
 });
+
+// ---------------------------------------------------------------------------
+// restore retries
+// ---------------------------------------------------------------------------
+//
+// A statement timeout on start()'s (trivial, indexed) account query used to
+// leave WhatsApp offline indefinitely: the failure was caught, nothing
+// retried, and the stored status row still read 'connected' — so the
+// dashboard showed a healthy connection over a socket that did not exist.
+// Nothing about that failure was permanent; a restart fixed it instantly.
+//
+// The stub `db` is PASSED IN rather than monkey-patched. getSql is
+// destructured at module load, so patching the module afterwards has no
+// effect — an earlier version of this test therefore ran against the real
+// database, opened a real socket, and killed the live session.
+
+const timeoutError = () => {
+  const e = new Error('canceling statement due to statement timeout');
+  e.code = '57014';
+  return e;
+};
+
+test('start() retries a failing account query instead of giving up', async () => {
+  let calls = 0;
+  const db = () => {
+    calls += 1;
+    return calls < 3 ? Promise.reject(timeoutError()) : Promise.resolve([]);
+  };
+
+  const mgr = new SessionManager();
+  const attempts = [];
+  mgr.on('session-error', (e) => { if (e.phase === 'restore-query') attempts.push(e.attempt); });
+
+  const restored = await mgr.start({ staggerMs: 0, retries: 5, db });
+
+  assert.equal(calls, 3, 'should have retried until the query succeeded');
+  assert.equal(restored, 0, 'no accounts came back, so none were restored');
+  assert.deepEqual(attempts, [1, 2], 'every failed attempt is reported, not just the last');
+});
+
+test('start() rethrows once retries are exhausted, rather than reporting zero sessions', async () => {
+  const db = () => Promise.reject(timeoutError());
+  const mgr = new SessionManager();
+  mgr.on('session-error', () => {});
+
+  // Returning 0 would read as "there were no sessions to restore", which is a
+  // different and far less alarming fact than "restore failed".
+  await assert.rejects(
+    () => mgr.start({ staggerMs: 0, retries: 2, db }),
+    /statement timeout/,
+  );
+});
+
+test('a stopping manager abandons retries immediately', async () => {
+  let calls = 0;
+  const db = () => { calls += 1; return Promise.reject(timeoutError()); };
+  const mgr = new SessionManager();
+  mgr.on('session-error', () => {});
+  mgr.stopping = true;
+
+  const result = await mgr.start({ staggerMs: 0, retries: 5, db });
+  assert.equal(result, 0);
+  assert.equal(calls, 0, 'shutdown must not be delayed by backoff sleeps');
+});
