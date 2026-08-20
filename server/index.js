@@ -134,6 +134,57 @@ app.use('/api/customers', require('./routes/customers'));    // patient identity
 app.use('/api/customers', require('./routes/conditions'));   // purchase-based condition profiles
 app.use('/api/orders', require('./routes/orders'));               // Phase 5 — order queue
 
+// ---------- the dashboard itself ----------
+//
+// ONE SERVICE, NOT TWO. In development Vite serves the client on its own port
+// and proxies /api here; in production nothing was serving the built client at
+// all, so a deploy of this repo answered API calls and 404'd every page. That
+// is also the difference between one paid service and two.
+//
+// Mounted AFTER every /api route on purpose: express matches in order, so the
+// static handler must not get a chance to answer an API path.
+//
+// Skipped entirely when the build is absent — a developer running the API
+// alongside Vite has no client/dist, and silently serving a stale one would
+// be worse than not serving it.
+{
+  const path = require('node:path');
+  const fs = require('node:fs');
+  const dist = path.join(__dirname, '..', 'client', 'dist');
+  const index = path.join(dist, 'index.html');
+
+  if (fs.existsSync(index)) {
+    // Hashed assets are safe to cache hard; index.html must never be, or a
+    // deploy leaves browsers holding a page that references files the new
+    // build no longer has.
+    app.use(express.static(dist, {
+      index: false,
+      setHeaders: (res, filePath) => {
+        res.setHeader(
+          'Cache-Control',
+          filePath.endsWith('.html') ? 'no-cache' : 'public, max-age=31536000, immutable',
+        );
+      },
+    }));
+
+    // SPA fallback. Anything that is not an API call, a webhook or a PDF and
+    // did not match a real file is a client route, so hand back index.html and
+    // let the browser router decide — that is what makes a refresh on /orders
+    // work instead of 404ing.
+    app.get(/^\/(?!api\/|webhooks\/|pdf\/).*/, (req, res, next) => {
+      if (req.method !== 'GET') return next();
+      return res.sendFile(index);
+    });
+
+    console.log(JSON.stringify({ level: 'info', msg: 'serving dashboard from client/dist' }));
+  } else {
+    console.log(JSON.stringify({
+      level: 'info',
+      msg: 'no client build found — API only (run npm run build to serve the dashboard)',
+    }));
+  }
+}
+
 app.use(notFound);
 app.use(errorHandler);
 
