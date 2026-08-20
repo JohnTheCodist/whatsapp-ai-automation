@@ -1,135 +1,67 @@
-# Render blueprint — RxNaija
+# Render blueprint — ONE service.
 #
-# Deploy with: Render dashboard → New → Blueprint → point at this repo.
-# Secrets are NOT in this file; every `sync: false` value is typed once into
-# the Render dashboard and then lives only there.
+# The API also serves the built dashboard (see the static block near the end
+# of server/index.js), so there is no second static site to pay for or keep
+# in step. `npm run build` installs the client's dependencies and produces
+# client/dist; `npm start` serves both that and /api from the same process.
 #
-# ─── THE TWO DECISIONS THAT MATTER ──────────────────────────────────────────
+# WHY NOT THE FREE PLAN
+# Free web services sleep after ~15 minutes idle. This process holds a live
+# WhatsApp socket (Baileys) and runs the job worker in-process, so sleeping
+# does not merely delay a request — it drops the pharmacy's connection and
+# stops the sweeps that return held stock and chase unanswered consultations.
+# A messaging product cannot be asleep between messages.
 #
-# REGION: frankfurt, and this is not cosmetic.
-# The database is aws-1-eu-west-3 (Paris). Render's default region is Oregon,
-# which puts roughly 150ms of Atlantic between the app and every query it
-# makes — and a single dashboard screen makes several. Frankfurt to Paris is
-# single-digit milliseconds. Changing the region later means recreating the
-# service, so it is worth getting right on the first deploy.
-#
-# PLAN: starter, not free.
-# A free service sleeps after ~15 minutes of inactivity, and this app cannot
-# survive that:
-#   - Baileys holds a persistent WhatsApp socket in this process. Sleep drops
-#     it, and the pharmacy silently goes offline.
-#   - The job worker runs in-process (see worker.start() in server/index.js).
-#     Sleep stops inbound message processing, the stock-hold sweep, the
-#     consultation reminders, and the pharmacist idle-takeback.
-#   - Cold start is ~50s, paid by whichever customer messages first.
-# For a pharmacy assistant expected to answer at 11pm, sleeping is a
-# correctness problem rather than a performance one. Set this to `free` only
-# for a throwaway preview environment.
-
+# REGION: the Supabase pooler is eu-west-3 (Paris). frankfurt is the closest
+# Render region, which keeps every query on the same continent as the
+# database instead of paying an Atlantic round trip per call.
 services:
   - type: web
     name: rxnaija
     runtime: node
-    region: frankfurt
     plan: starter
+    region: frankfurt
     branch: main
-
-    # The client is a Vite SPA the API serves as static files, so it has to be
-    # built before the server starts. `npm ci` (not install) so a deploy uses
-    # the exact lockfile versions that were tested.
-    buildCommand: npm ci && npm run build
+    buildCommand: npm install && npm run build
     startCommand: npm start
-
-    # LIVENESS, deliberately — not /api/health.
-    #
-    # /api/health pings the database and answers 503 when it is unreachable,
-    # which is right for a monitor and wrong for this setting: Render restarts
-    # a service whose health check fails. Pointing it there would mean a
-    # transient Postgres blip kills the process, drops the WhatsApp socket,
-    # and takes the pharmacy offline — turning a bad minute into a re-pair, a
-    # cold start, and a restart loop if the blip persists.
-    #
-    # /api/live answers "is this process serving?" with no dependencies, so
-    # Render restarts the app only when the app is genuinely the problem.
-    # Point external uptime monitoring at /api/health instead; that is the
-    # endpoint that should page a human.
-    healthCheckPath: /api/live
-
-    autoDeploy: true
-
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
 
-      # Render injects PORT and expects the app to bind it. server/config/env.js
-      # already reads process.env.PORT, so nothing is pinned here.
+      # OFF, explicitly. This bypass serves every request as a fixed pharmacy
+      # with no authentication — it exists for local development and would be
+      # an open door in production. Stated here rather than omitted so it
+      # cannot be switched on by an inherited default.
+      - key: DEV_AUTH_BYPASS
+        value: "false"
 
-      # ---- secrets: entered in the Render dashboard, never committed ----
+      # ---- set by hand in the dashboard (sync:false = never in git) ----
       - key: DATABASE_URL
-        sync: false          # Supabase pooler URI, port 6543 (transaction mode)
+        sync: false
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
-      - key: LLM_API_KEY
-        sync: false
-      # Encrypts stored WhatsApp credentials. Generate once with
-      # `openssl rand -base64 32`. Losing or rotating it means every pharmacy
-      # has to re-pair their phone, so keep it somewhere durable.
+      # Encrypts stored WhatsApp credentials. If this is lost or changed,
+      # every pharmacy must re-pair their phone — back it up before deploying.
       - key: SESSION_ENCRYPTION_KEY
         sync: false
-
-      # ---- assistant ----
-      - key: LLM_API_URL
+      - key: OPENAI_API_KEY
         sync: false
-      - key: LLM_MODEL
+
+      # ---- baked into the client bundle at BUILD time ----
+      #
+      # Vite inlines VITE_* at build, not at run, so these must exist during
+      # buildCommand or the dashboard ships with sign-in disabled and no
+      # error until someone tries to log in. The anon key is publishable and
+      # designed to sit in a browser; the service-role key above must never
+      # appear in a VITE_ variable.
+      - key: VITE_SUPABASE_URL
         sync: false
-      # Below Render's own 30s request ceiling, so a slow model surfaces as a
-      # handled error rather than a dropped connection.
-      - key: LLM_TIMEOUT_MS
-        value: "25000"
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
 
-      # ---- channel ----
-      - key: CHANNEL_PROVIDER
-        value: baileys
-      - key: DEFAULT_COUNTRY
-        value: NG
-      - key: DEFAULT_COUNTRY_CODE
-        value: "234"
-      # A send that never returns used to hang the whole outbound path for a
-      # pharmacy. Bounded so it fails loudly instead.
-      - key: BAILEYS_SEND_TIMEOUT_MS
-        value: "30000"
-
-      # ---- worker ----
-      # Runs in-process. If this is ever split onto its own Render service,
-      # set WORKER_ENABLED=false here and true only there, so two workers
-      # cannot claim the same job.
-      - key: WORKER_ENABLED
-        value: "true"
-      - key: WORKER_POLL_INTERVAL_MS
-        value: "2000"
-      - key: WORKER_CONCURRENCY
-        value: "2"
-
-      # ---- database pool ----
-      # Statement timeout sits BELOW the dashboard's own 20s fetch bound, so
-      # the server loses that race deliberately: it returns a real error the
-      # UI can show and retry, instead of the browser aborting into silence.
-      - key: PG_STATEMENT_TIMEOUT_MS
-        value: "15000"
-      # One instance on starter. Raise only alongside the pooler's own limit —
-      # and note Supabase counts connections per project, not per service.
-      - key: PG_POOL_MAX
-        value: "15"
-      - key: PG_KEEP_ALIVE
-        value: "15"
-      - key: PG_MAX_LIFETIME
-        value: "600"
-
-      # ---- safety rail ----
-      # Never true in production: it serves every API route unauthenticated.
-      # Stated explicitly rather than omitted, so nobody has to remember that
-      # the default is safe.
-      - key: DEV_AUTH_BYPASS
-        value: "false"
+    # Baileys keeps its auth state in Postgres (encrypted), not on disk, so no
+    # persistent volume is required — which is what allows a restart or a
+    # redeploy to restore the WhatsApp session rather than demand a re-pair.
