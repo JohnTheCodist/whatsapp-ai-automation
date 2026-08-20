@@ -1,0 +1,74 @@
+# systemd unit for the RxNaija API + dashboard.
+#
+# Install:  sudo cp deploy/rxnaija.service /etc/systemd/system/
+#           sudo systemctl daemon-reload
+#           sudo systemctl enable --now rxnaija
+#
+# WHY systemd AND NOT pm2
+# pm2 is another process to install, keep updated, and remember to configure
+# for boot. systemd is already running on the box, already starts at boot, and
+# already collects logs. One less moving part in the layer whose entire job is
+# "keep the thing running".
+
+[Unit]
+Description=RxNaija — pharmacy WhatsApp assistant
+Documentation=https://github.com/JohnTheCodist/whatsapp-ai-automation
+# Network, not network-online: this process tolerates the database being
+# briefly unreachable at boot (it retries), and waiting for full online state
+# delays start for no benefit.
+After=network.target
+
+[Service]
+Type=simple
+User=rxnaija
+WorkingDirectory=/opt/rxnaija
+ExecStart=/usr/bin/node server/index.js
+
+# Secrets live in a root-owned file the service user can read, NOT in this
+# unit — `systemctl cat` and `systemd-analyze` print unit contents, and
+# SESSION_ENCRYPTION_KEY appearing in either is a credential leak into logs
+# and shell history.
+EnvironmentFile=/opt/rxnaija/.env.production
+
+# ---- keep it alive ----
+#
+# Restart on ANY exit, not just failure. A clean exit here is still an outage:
+# it means the WhatsApp socket is gone and no customer is being answered.
+Restart=always
+RestartSec=5
+# Allow rapid restarts while a real fault is being fixed, but stop flapping
+# forever — 10 tries in 5 minutes and it stays down so the failure is visible
+# rather than hidden behind an endless restart loop.
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+# Give in-flight work a chance to finish, but do not hang a deploy on a socket
+# that will never close.
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+# ---- logging ----
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rxnaija
+
+# ---- hardening ----
+#
+# This process talks to the public internet and runs a model's tool calls. It
+# has no reason to write outside its own directory or read the rest of the
+# filesystem.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# Baileys keeps auth state in Postgres, not on disk, so the only writable
+# path needed is npm's cache during a deploy.
+ReadWritePaths=/opt/rxnaija
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

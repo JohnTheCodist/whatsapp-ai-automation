@@ -1,0 +1,59 @@
+# Caddy — TLS and reverse proxy for app.rxnaija.com
+#
+# Install:  sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
+#           sudo systemctl reload caddy
+#
+# WHY CADDY AND NOT NGINX
+# Certificates. Caddy obtains and renews Let's Encrypt automatically from the
+# domain name alone — no certbot, no cron job, no renewal that silently
+# expires eighteen months from now on a box nobody has logged into since.
+# For a single-service deploy that is the whole difference.
+
+app.rxnaija.com {
+	# Everything is one upstream: the Node process serves both /api and the
+	# built dashboard (see the static block in server/index.js). No separate
+	# root or file_server here — routing already happens inside the app, and
+	# duplicating it in the proxy is how the two drift apart.
+	reverse_proxy localhost:4000 {
+		# WebSocket upgrades pass through untouched by default in Caddy v2,
+		# which the dashboard's live connections rely on.
+
+		# Fail fast rather than hanging if the app is restarting mid-deploy.
+		health_uri /api/health
+		health_interval 30s
+		health_timeout 5s
+	}
+
+	encode gzip zstd
+
+	header {
+		# HSTS. Only safe because Caddy guarantees TLS on this host — do not
+		# copy this to an origin that must also answer plain HTTP.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# The server sets its own Cache-Control (no-cache on index.html,
+		# immutable on hashed assets). Caddy must not override it or a deploy
+		# leaves browsers on a stale page pointing at files that no longer
+		# exist.
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/rxnaija.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}
+
+# The marketing pages are static and can share the box for free. Uncomment
+# once DNS for the root domain points here.
+#
+# rxnaija.com, www.rxnaija.com {
+# 	root * /opt/rxnaija/client/public
+# 	file_server
+# 	encode gzip zstd
+# 	try_files {path} {path}.html /home.html
+# }
