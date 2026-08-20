@@ -24,6 +24,7 @@ const { screenMessage } = require('../safety/clinicalFilter');
 const { chat, isConfigured, LlmUnavailable } = require('./llmClient');
 const { toolSchemas, runTool } = require('./catalogueTools');
 const { validateReply } = require('./replyValidator');
+const { toneLine } = require('./assistantTone');
 
 /**
  * Bounded so a model that keeps calling tools cannot spend the pharmacy's
@@ -86,11 +87,16 @@ function buildCorrection(violations) {
 /** How much conversation the model sees. Enough for "I want two" to resolve. */
 const HISTORY_LIMIT = 10;
 
-function buildSystemPrompt({ pharmacyName, context, botName, menuBriefing }) {
+function buildSystemPrompt({ pharmacyName, context, botName, menuBriefing, tone }) {
   const lines = [
     botName
       ? `You are ${botName}, the WhatsApp assistant for ${pharmacyName || 'a Nigerian community pharmacy'}, replying to a customer. If asked your name, you are ${botName}.`
       : `You are the WhatsApp assistant for ${pharmacyName || 'a Nigerian community pharmacy'}, replying to a customer.`,
+    // Placed BEFORE the rules, not after, and that ordering is deliberate:
+    // tone describes how to say things, and every rule below constrains what
+    // may be said. A voice instruction sitting after "never give dosage
+    // advice" reads as a licence to soften it.
+    toneLine(tone),
     '',
     'RULES:',
     '- Only state a price, stock level or product detail that a tool returned in this conversation. Never estimate, never recall, never round.',
@@ -259,7 +265,7 @@ function buildSystemPrompt({ pharmacyName, context, botName, menuBriefing }) {
  * @returns {Promise<{action:'reply'|'handoff', text?:string, reason?:string,
  *   category?:string, toolResults:object[], contextUpdate?:object}>}
  */
-async function respond({ pharmacyId, pharmacyName, text, history = [], context = {}, customerId = null, conversationId = null, botName = null, menuBriefing = null, customer = null }) {
+async function respond({ pharmacyId, pharmacyName, text, history = [], context = {}, customerId = null, conversationId = null, botName = null, menuBriefing = null, customer = null, tone = null }) {
   // ---- 1. safety, before anything else ----------------------------------
   const screening = screenMessage(text);
   if (!screening.allow) {
@@ -283,7 +289,7 @@ async function respond({ pharmacyId, pharmacyName, text, history = [], context =
 
   // ---- 2. tool-calling loop ---------------------------------------------
   const messages = [
-    { role: 'system', content: buildSystemPrompt({ pharmacyName, context, botName, menuBriefing }) },
+    { role: 'system', content: buildSystemPrompt({ pharmacyName, context, botName, menuBriefing, tone }) },
     ...history.slice(-HISTORY_LIMIT).map((m) => ({
       role: m.direction === 'inbound' ? 'user' : 'assistant',
       content: m.body || '',

@@ -493,7 +493,7 @@ async function processInbound(db, job) {
            ph.name as pharmacy_name, ph.reply_mode, ph.sending_paused,
            ph.notify_phone,
            (select phone from pharmacy_profile pp where pp.pharmacy_id = ph.id) as pharmacy_phone,
-           ph.bot_name, ph.menu_enabled, ph.welcome_note,
+           ph.bot_name, ph.assistant_tone, ph.menu_enabled, ph.welcome_note,
            ph.daily_reply_cap, ph.hourly_conversation_cap,
            ph.quiet_hours_enabled, ph.quiet_hours_start, ph.quiet_hours_end,
            ph.warmup_started_at, ph.warmup_enabled, ph.warmup_day1_limit, ph.warmup_days,
@@ -1067,6 +1067,7 @@ async function processInbound(db, job) {
     // For the staff alert, so it can say who ordered rather than just a number.
     customer: { display_name: row.display_name, full_name: row.full_name, wa_phone: row.wa_phone },
     botName: row.bot_name,
+    tone: row.assistant_tone,
     // A menu choice is a bare digit, which tells the model nothing on its
     // own. Passed as a FACT about what was chosen, not as an instruction —
     // same discipline as conversation context, so nothing arriving from a

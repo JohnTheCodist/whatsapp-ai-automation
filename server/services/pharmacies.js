@@ -14,6 +14,7 @@
  */
 
 const { getSql, assertPharmacyId } = require('./db');
+const { isValidTone, DEFAULT_TONE } = require('./ai/assistantTone');
 const { normalizeMsisdn } = require('./whatsapp/senderIdentity');
 
 const DAYS = Object.freeze(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
@@ -205,8 +206,8 @@ async function getPharmacy(pharmacyId) {
   const db = getSql();
   const [row] = await db`
     select id, name, slug, status, bot_name, welcome_note, menu_enabled,
-           notify_phone, notify_on_new_order, reservation_hold_minutes,
-           created_at, updated_at
+           notify_phone, notify_on_new_order, public_whatsapp_number,
+           reservation_hold_minutes, created_at, updated_at
     from pharmacies where id = ${pharmacyId}
   `;
   return row || null;
@@ -266,8 +267,33 @@ async function updateAssistantSettings(pharmacyId, fields = {}) {
     ? normaliseShortText(fields.notifyPhone, 32, 'Alert number')
     : undefined;
 
+  // The number printed on the customer QR code.
+  //
+  // Normalised to bare digits on the way IN, unlike notifyPhone above — and
+  // the difference is deliberate. An alert number is only ever read by a
+  // person and re-normalised at send time, so showing it back exactly as
+  // typed is the friendlier behaviour. This one is pasted straight into a
+  // wa.me URL that gets printed, where a space or a leading + produces a link
+  // that fails silently after the flyers exist.
+  // Rejected rather than silently defaulted: an owner who sent a tone we do
+  // not have chose SOMETHING, and quietly storing 'warm' instead would show
+  // them a setting they did not pick.
+  const assistantTone = 'assistantTone' in fields
+    ? (isValidTone(fields.assistantTone) ? fields.assistantTone : null)
+    : undefined;
+  if (assistantTone === null) {
+    const err = new Error('Unknown assistant tone');
+    err.status = 400; err.code = 'INVALID_TONE';
+    throw err;
+  }
+
+  const publicWhatsappNumber = 'publicWhatsappNumber' in fields
+    ? normalisePublicNumber(fields.publicWhatsappNumber)
+    : undefined;
+
   const current = await db`
-    select bot_name, welcome_note, menu_enabled, notify_phone, notify_on_new_order
+    select bot_name, assistant_tone, welcome_note, menu_enabled, notify_phone, notify_on_new_order,
+           public_whatsapp_number
     from pharmacies where id = ${pharmacyId}
   `;
   if (!current.length) return null;
@@ -275,16 +301,40 @@ async function updateAssistantSettings(pharmacyId, fields = {}) {
   const [row] = await db`
     update pharmacies set
       bot_name = ${botName !== undefined ? botName : current[0].bot_name},
+      assistant_tone = ${assistantTone !== undefined ? assistantTone : current[0].assistant_tone},
       welcome_note = ${welcomeNote !== undefined ? welcomeNote : current[0].welcome_note},
       menu_enabled = ${'menuEnabled' in fields ? Boolean(fields.menuEnabled) : current[0].menu_enabled},
       notify_phone = ${notifyPhone !== undefined ? notifyPhone : current[0].notify_phone},
       notify_on_new_order = ${'notifyOnNewOrder' in fields ? Boolean(fields.notifyOnNewOrder) : current[0].notify_on_new_order},
+      public_whatsapp_number = ${publicWhatsappNumber !== undefined ? publicWhatsappNumber : current[0].public_whatsapp_number},
       updated_at = now()
     where id = ${pharmacyId}
-    returning id, name, bot_name, welcome_note, menu_enabled,
-              notify_phone, notify_on_new_order, updated_at
+    returning id, name, bot_name, assistant_tone, welcome_note, menu_enabled,
+              notify_phone, notify_on_new_order, public_whatsapp_number, updated_at
   `;
   return row;
+}
+
+/**
+ * Bare digits, international form, no punctuation — the shape wa.me needs.
+ *
+ * A Nigerian number written the local way (0803…) is the expected input from
+ * someone reading it off their own phone, so it is converted rather than
+ * rejected: refusing it would send staff away to reformat it by hand, and
+ * accepting it verbatim would build a dead link.
+ */
+function normalisePublicNumber(input) {
+  const digits = String(input ?? '').replace(/\D/g, '');
+  if (!digits) return null;
+  const msisdn = digits.startsWith('0') ? `234${digits.slice(1)}` : digits;
+  // Loose bound, matching the client. This is a sanity check against a
+  // half-typed number, not a validator for every international format.
+  if (msisdn.length < 10 || msisdn.length > 15) {
+    const err = new Error('That does not look like a full WhatsApp number — include the country code.');
+    err.status = 400;
+    throw err;
+  }
+  return msisdn;
 }
 
 /** Trims, caps length, and turns empty-ish input into NULL rather than ''. */

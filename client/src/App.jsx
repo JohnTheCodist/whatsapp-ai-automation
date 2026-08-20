@@ -32,6 +32,7 @@ import Requests from './Requests.jsx';
 import Customers from './Customers.jsx';
 import AssistantSettings from './AssistantSettings.jsx';
 import CustomerContactSettings from './CustomerContactSettings.jsx';
+import CustomerQrCode from './CustomerQrCode.jsx';
 import PharmacyHoursSettings from './PharmacyHoursSettings.jsx';
 import { playOrderChime, playConsultationAlarm, unlockChime, isUnlocked } from './orderChime.js';
 import {
@@ -132,7 +133,7 @@ function sectionFor(tab) {
   return PARENT_OF[tab] || SECTIONS.find((s) => s.id === tab) || SECTIONS[0];
 }
 
-export default function App() {
+export default function App({ onSignOut }) {
   const [tab, setTab] = useState('overview');
   const [health, setHealth] = useState(null);
   // Badge counts live in the shell so a staff member on the Orders tab still
@@ -303,6 +304,18 @@ export default function App() {
         })}
 
         <div className="mt-auto pt-3">
+          {/* Only when a real session exists. Under DEV_AUTH_BYPASS there is
+              nothing to sign out OF, and a button that silently does nothing
+              is worse than its absence. */}
+          {onSignOut && (
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="mb-2 w-full rounded-[9px] px-2.5 py-1.5 text-left text-[12px] text-[var(--ui-ink-soft)] hover:bg-[var(--ui-sunk)] hover:text-[var(--ui-ink)]"
+            >
+              Sign out
+            </button>
+          )}
           <span className="block px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ui-ink-faint)]">
             Connection
           </span>
@@ -569,6 +582,11 @@ export default function App() {
             {tab === 'setup' && (
               <div className="space-y-4">
                 <AssistantSettings />
+                {/* Directly under the assistant's own settings and above the
+                    pairing panel: the number it prefills comes from the
+                    connection, and the alert number it must not be confused
+                    with sits immediately above. */}
+                <CustomerQrCode />
                 <CustomerContactSettings />
                 <PharmacyHoursSettings />
                 <ConnectWhatsApp />

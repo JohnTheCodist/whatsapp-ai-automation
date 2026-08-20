@@ -210,19 +210,33 @@ export default function AssistantSettings() {
             <span className="text-sm text-slate-700">Show the menu of options after greeting</span>
           </label>
 
-          <label className="block border-t border-slate-200 pt-4">
-            <span className="text-sm font-medium text-slate-700">Alert this number about new orders</span>
-            <input
-              value={notifyPhone}
-              onChange={(e) => setNotifyPhone(e.target.value.slice(0, 32))}
-              placeholder="2348012345678"
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
-            />
-            <span className="mt-1 block text-xs text-slate-500">
-              A WhatsApp message goes here when a customer places an order — useful when nobody is
-              watching this screen. Leave blank for no alerts.
-            </span>
-          </label>
+          {/* Deliberately boxed and labelled against the customer QR panel.
+              These two numbers do opposite jobs and both mix-ups fail
+              silently: a staff phone used as the customer line leaves people
+              messaging someone with no assistant behind them, and the bot's
+              own line used here makes it message itself. Naming whose phone
+              this is — and what arrives on it — is the cheapest guard. */}
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">
+                Staff alert number
+              </span>
+              <input
+                value={notifyPhone}
+                onChange={(e) => setNotifyPhone(e.target.value.slice(0, 32))}
+                placeholder="2348012345678"
+                inputMode="tel"
+                className="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm"
+              />
+              <span className="mt-1 block text-xs text-slate-500">
+                A <strong>staff member's own phone</strong> — not the pharmacy line
+                customers message. New orders and pharmacist escalations are sent
+                here, and whoever holds it can reply <strong>1</strong> to confirm or
+                <strong> 2</strong> to reject without opening this dashboard. Leave
+                blank for no alerts.
+              </span>
+            </label>
+          </div>
 
           <div className="flex items-center gap-3 pt-2">
             <button
