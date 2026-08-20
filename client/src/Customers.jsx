@@ -28,6 +28,114 @@ function relTime(iso) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+/**
+ * The chronic register — conditions the pharmacy is tracking from purchase
+ * history, and who is under each.
+ *
+ * A condition with no patients is not rendered at all. Four permanent
+ * "Asthma — 0" cards would push the conditions that DO have patients off the
+ * first screen, and a card that is always zero is one staff learn to ignore.
+ * The server already omits them; this renders nothing if the whole register
+ * is empty rather than an explanatory box about a feature that has not
+ * produced anything yet.
+ *
+ * WHAT THE WORDING HAS TO CARRY
+ * "Confirmed by purchase" is not a diagnosis, and the UI must never let that
+ * distinction get lost — hence the basis line under the heading and the
+ * per-patient evidence, both drawn from the engine rather than asserted here.
+ */
+function ChronicRegister({ onOpen }) {
+  const [data, setData] = useState(null);
+  const [open, setOpen] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch('/api/customers/conditions/registry', {
+          signal: AbortSignal.timeout(20000),
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (!cancelled) setData(j);
+      } catch {
+        /* the register is supplementary — the patient list below still works */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const conditions = data?.conditions || [];
+  if (conditions.length === 0) return null;
+
+  const shown = conditions.find((c) => c.code === open);
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-medium text-slate-700">Chronic conditions tracked</h3>
+        <span className="text-xs text-slate-500">
+          {data.trackedPatients} patient{data.trackedPatients === 1 ? '' : 's'} · from purchase history
+        </span>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {conditions.map((c) => {
+          const isOpen = c.code === open;
+          return (
+            <button
+              key={c.code}
+              type="button"
+              aria-expanded={isOpen}
+              onClick={() => setOpen(isOpen ? null : c.code)}
+              className={`rounded-lg border px-3 py-2 text-left transition ${
+                isOpen
+                  ? 'border-teal-400 bg-teal-50'
+                  : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              <span className="block text-xs text-slate-500">{c.name}</span>
+              <span className="text-lg font-semibold tabular-nums text-slate-900">{c.patientCount}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {shown && (
+        <div className="mt-3 rounded-lg border border-slate-200">
+          <p className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500">
+            {shown.name} — confirmed by purchase history, not a diagnosis
+          </p>
+          <ul className="divide-y divide-slate-100">
+            {shown.patients.map((p) => (
+              <li key={p.customerId}>
+                <button
+                  type="button"
+                  onClick={() => onOpen(p.customerId)}
+                  className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-1 px-3 py-2 text-left text-sm hover:bg-slate-50"
+                >
+                  <span className="font-medium text-slate-800">{p.name}</span>
+                  <span className="text-xs text-slate-500">{p.phone}</span>
+                  {/* Recency is the actionable part: a confirmed condition with
+                      no recent purchase is the patient worth calling. */}
+                  {p.purchaseStatus === 'NO_RECENT_PURCHASE' && (
+                    <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                      no recent purchase
+                    </span>
+                  )}
+                  <span className="ml-auto text-xs tabular-nums text-slate-400">
+                    {p.purchases} purchase{p.purchases === 1 ? '' : 's'}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function Customers({ onOpenConversation, onNavigate, initialQuery = '' }) {
   const [data, setData] = useState(null);
   const [q, setQ] = useState(initialQuery);
@@ -77,12 +185,39 @@ export default function Customers({ onOpenConversation, onNavigate, initialQuery
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 text-sm text-slate-600">
-          <span className="font-medium text-slate-800">{data.counts.total} customers</span>
-          {data.counts.opted_out > 0 && <span>{data.counts.opted_out} opted out</span>}
-          {data.counts.blocked > 0 && <span>{data.counts.blocked} blocked</span>}
+      {/* Above the full list: a pharmacy scanning for "who is on blood
+          pressure medicine" should not have to open records one by one to
+          find out. Renders nothing at all when no condition has patients. */}
+      <ChronicRegister onOpen={setSelectedId} />
+
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 text-sm text-slate-600">
+            <span className="font-medium text-slate-800">{data.counts.total} customers</span>
+            {data.counts.opted_out > 0 && <span>{data.counts.opted_out} opted out</span>}
+            {data.counts.blocked > 0 && <span>{data.counts.blocked} blocked</span>}
+          </div>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search name or phone…"
+            className="w-56 rounded border border-slate-300 px-3 py-1.5 text-sm"
+          />
         </div>
+
+        {/* Condition stats card */}
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <div className="flex items-baseline justify-between">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-blue-600">Diabetic Patients</p>
+              <p className="text-3xl font-bold text-blue-900">{data.counts.diabetic_patients ?? 0}</p>
+              <p className="text-xs text-blue-700 mt-1">Confirmed by purchase history</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}

@@ -18,11 +18,14 @@
 const express = require('express');
 const { requireAuth } = require('../middleware/auth');
 const { getSql, assertPharmacyId } = require('../services/db');
+const { priorityFor } = require('../services/whatsapp/conversationState');
+const conversationService = require('../services/whatsapp/conversationService');
 const { sendAndRecordOutbound } = require('../services/whatsapp/outboundMessage');
 const { CATEGORIES } = require('../services/whatsapp/communicationPolicy');
 const { recordEvent } = require('../services/customers/customerEvents');
 const { PATIENT_EVENTS } = require('../services/customers/patientEventTypes');
 const { buildBriefing } = require('../services/safety/consultationBriefing');
+const differential = require('../services/clinical/clinicalDifferentialService');
 
 const router = express.Router();
 
@@ -133,10 +136,15 @@ router.get('/', requireAuth, async (req, res, next) => {
     assertPharmacyId(req.pharmacyId);
     const db = getSql();
 
+    // The workflow filter. `all` (the default) keeps the previous behaviour
+    // so nothing that already calls this route changes shape; `active` is the
+    // working inbox — everything not resolved or archived.
+    const filter = String(req.query.state || 'all');
+
     const rows = await db`
       select
-        c.id, c.mode, c.last_message_at,
-        cust.wa_phone, cust.display_name,
+        c.id, c.mode, c.last_message_at, c.workflow_state, c.created_at as started_at,
+        cust.wa_phone, cust.display_name, cust.full_name,
         h.id as handoff_id, h.reason as handoff_reason, h.detail as handoff_detail,
         h.requested_at as handoff_at,
         (select body from messages m where m.conversation_id = c.id order by m.id desc limit 1) as last_body,
@@ -152,11 +160,29 @@ router.get('/', requireAuth, async (req, res, next) => {
         order by requested_at limit 1
       ) h on true
       where c.pharmacy_id = ${req.pharmacyId}
+        ${filter === 'all' ? db`` : filter === 'active'
+          ? db`and c.workflow_state not in ('resolved', 'archived')`
+          : db`and c.workflow_state = ${filter}`}
       order by
+        -- Someone waiting on a pharmacist outranks everything, including an
+        -- older thread. This is the same judgement priorityFor() encodes:
+        -- the clinical queue is the one that can actually harm someone, so it
+        -- is never sorted behind general recency.
+        (c.workflow_state = 'waiting_for_pharmacist') desc,
         (h.id is not null) desc,
         h.requested_at asc nulls last,
         c.last_message_at desc
       limit 100
+    `;
+
+    // Counts per state, for the inbox headings. A separate aggregate rather
+    // than counting the 100-row page: "WAITING FOR PHARMACIST 3" has to be
+    // the true total, not however many happened to fit on this page.
+    const stateCounts = await db`
+      select workflow_state, count(*)::int as n
+      from conversations
+      where pharmacy_id = ${req.pharmacyId}
+      group by workflow_state
     `;
 
     const [counts] = await db`
@@ -166,7 +192,14 @@ router.get('/', requireAuth, async (req, res, next) => {
       from handoffs where pharmacy_id = ${req.pharmacyId}
     `;
 
-    res.json({ counts, conversations: rows });
+    // Priority is derived from the workflow state, never stored and never
+    // chosen by the model or the UI — so two screens cannot disagree about
+    // what is urgent.
+    res.json({
+      counts,
+      byState: Object.fromEntries(stateCounts.map((r) => [r.workflow_state, r.n])),
+      conversations: rows.map((c) => ({ ...c, priority: priorityFor(c.workflow_state) })),
+    });
   } catch (err) {
     next(err);
   }
@@ -204,25 +237,54 @@ router.get('/:id', requireAuth, async (req, res, next) => {
   }
 });
 
-/** Mute the assistant. The worker checks `mode` before every reply. */
+/**
+ * A pharmacist explicitly takes the conversation. THE ONLY THING THAT MUTES
+ * THE ASSISTANT — raising a handoff no longer does (see
+ * conversationState.deriveOwnership): HUMAN_PENDING keeps the assistant
+ * answering within its safety boundaries, and only this route moves the
+ * thread to HUMAN_ACTIVE.
+ */
 router.post('/:id/takeover', requireAuth, async (req, res, next) => {
   try {
     assertPharmacyId(req.pharmacyId);
     const db = getSql();
 
-    const [updated] = await db`
-      update conversations set mode = 'human'
-      where id = ${req.params.id} and pharmacy_id = ${req.pharmacyId}
-      returning id, mode
-    `;
+    // DEV_AUTH_BYPASS hands out an all-zeroes placeholder id that does not
+    // exist in auth.users, and handoffs.accepted_by is a real foreign key.
+    // Writing it raw threw a 500 AFTER the mode update had already
+    // committed — the conversation went silent while the pharmacist saw an
+    // error and reasonably assumed the takeover had not happened. Same
+    // guard the other four routes already use.
+    const actorId = req.user?.id && req.user.id !== '00000000-0000-0000-0000-000000000000'
+      ? req.user.id
+      : null;
+
+    // Both writes in one transaction. They are a single decision — "this
+    // human now owns this thread" — and the failure above is exactly what
+    // splitting them costs: a muted conversation with no one recorded as
+    // having claimed it.
+    const [updated] = await db.begin(async (tx) => {
+      const [conv] = await tx`
+        update conversations set mode = 'human'
+        where id = ${req.params.id} and pharmacy_id = ${req.pharmacyId}
+        returning id, mode
+      `;
+      if (!conv) return [null];
+
+      // Claim the handoff so two staff do not both start typing.
+      // handoff_last_activity_at starts the idle clock (0031): from here on,
+      // silence means the customer is waiting on a human who may have been
+      // pulled away, and the sweep in worker.js hands back to the assistant
+      // rather than leaving the thread mute.
+      await tx`
+        update handoffs
+        set accepted_by = ${actorId}, accepted_at = now(), handoff_last_activity_at = now()
+        where conversation_id = ${req.params.id} and resolved_at is null and accepted_at is null
+      `;
+      return [conv];
+    });
+
     if (!updated) return res.status(404).json({ error: 'Conversation not found.', code: 'NOT_FOUND' });
-
-    // Claim the handoff so two staff do not both start typing.
-    await db`
-      update handoffs set accepted_by = ${req.user?.id || null}, accepted_at = now()
-      where conversation_id = ${req.params.id} and resolved_at is null and accepted_at is null
-    `;
-
     res.json(updated);
   } catch (err) {
     next(err);
@@ -269,6 +331,24 @@ router.post('/:id/reply', requireAuth, async (req, res, next) => {
       body: text, author: 'staff', delay: false, category: CATEGORIES.TRANSACTIONAL,
     });
     await db`update conversations set last_message_at = now() where id = ${conversation.id}`;
+
+    // A staff reply is the clearest possible signal that a human is still
+    // engaged — resets the idle-takeback clock (0031) so a pharmacist
+    // mid-conversation is never handed back to the assistant underneath them.
+    await db`
+      update handoffs set handoff_last_activity_at = now()
+      where conversation_id = ${conversation.id} and resolved_at is null
+    `;
+
+    // A pharmacist answered, so the thread is waiting on the customer — not
+    // still sitting in the pharmacist queue. Without this the inbox would keep
+    // showing it as needing a human that has already replied, which is the
+    // single most misleading state the inbox can be in.
+    await conversationService.onPharmacistReplied(db, {
+      pharmacyId: req.pharmacyId,
+      conversationId: conversation.id,
+      actorId: req.user?.id || null,
+    });
 
     res.json({ ok: true, message });
   } catch (err) {
@@ -325,7 +405,263 @@ router.post('/:id/resolve', requireAuth, async (req, res, next) => {
         metadata: { category: h.category },
       });
     }
+    // Only move the workflow state if a handoff was actually resolved.
+    // Calling this unconditionally would mark a thread RESOLVED on a
+    // double-click that resolved nothing.
+    if (rows.length) {
+      await conversationService.resolve(db, {
+        pharmacyId: req.pharmacyId,
+        conversationId: req.params.id,
+        actorType: 'staff',
+        actorId: req.user?.id || null,
+        reason: 'pharmacist_resolved',
+      });
+    }
+
     res.json({ ok: true, resolved: rows.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /:id/archive — file a resolved thread away.
+ *
+ * Its own route rather than a generic "set state" endpoint, because a generic
+ * one would let the UI drive the machine directly and the matrix would stop
+ * being the authority. The matrix permits archiving only from RESOLVED, so an
+ * attempt to archive a live thread comes back refused with a reason rather
+ * than quietly succeeding.
+ */
+router.post('/:id/archive', requireAuth, async (req, res, next) => {
+  try {
+    assertPharmacyId(req.pharmacyId);
+    const result = await conversationService.archive(getSql(), {
+      pharmacyId: req.pharmacyId,
+      conversationId: req.params.id,
+      actorType: 'staff',
+      actorId: req.user?.id || null,
+    });
+    if (!result.changed) {
+      return res.status(409).json({
+        error: 'That conversation cannot be archived from its current state.',
+        code: result.reason,
+        state: result.from,
+      });
+    }
+    res.json({ ok: true, from: result.from, to: result.to });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /:id/differential — a pharmacist asks the AI for possible causes.
+ *
+ * Deliberately separate from everything else in this file: every other
+ * route here moves a conversation through the handoff matrix or sends a
+ * message a customer will read. This does neither. It calls the LLM,
+ * returns an unsourced, clearly-labelled opinion to the DASHBOARD ONLY, and
+ * never touches conversations, messages, or handoffs. See
+ * clinicalDifferentialService.js for why this exists as a separate module
+ * from the evidence-gated recommendation path.
+ */
+router.post('/:id/differential', requireAuth, async (req, res, next) => {
+  try {
+    assertPharmacyId(req.pharmacyId);
+    const db = getSql();
+
+    const [target] = await db`
+      select pe.id as execution_id, c.customer_id
+      from clinical_encounters e
+      join protocol_executions pe on pe.encounter_id = e.id
+      join conversations c on c.id = e.conversation_id
+      where e.conversation_id = ${req.params.id} and e.pharmacy_id = ${req.pharmacyId}
+      order by pe.started_at desc
+      limit 1
+    `;
+    if (!target) {
+      return res.status(404).json({
+        error: 'No clinical assessment found for this conversation.', code: 'NO_ASSESSMENT',
+      });
+    }
+
+    const actorId = req.user?.id && req.user.id !== '00000000-0000-0000-0000-000000000000'
+      ? req.user.id
+      : null;
+
+    const suggestion = await differential.suggestLikelyCauses(req.pharmacyId, target.execution_id, {
+      actorType: 'pharmacist', actorId, customerId: target.customer_id,
+    });
+
+    res.json(suggestion);
+  } catch (err) {
+    if (err.code === 'LLM_UNAVAILABLE' || err.code === 'DIFFERENTIAL_UNAVAILABLE') {
+      return res.status(503).json({ error: err.message, code: err.code });
+    }
+    next(err);
+  }
+});
+
+/**
+ * Everything a pharmacist needs to decide, for ONE waiting patient.
+ *
+ * WHY THIS ENDPOINT EXISTS
+ * The queue card answered "who is waiting and what did they type". That is
+ * triage, not decision support — a pharmacist reading "they said: I have
+ * fever" still has to open the thread and reconstruct the case by hand.
+ *
+ * Meanwhile the assessment engine had ALREADY collected the age, the
+ * duration, the severity, which red flag fired, and the patient's
+ * purchase-confirmed chronic conditions. All of it sat in tables nothing on
+ * this screen read. This assembles that into one view.
+ *
+ * NOTHING HERE IS SUMMARISED BY A MODEL. Every field is a stored value: the
+ * patient's own words verbatim, structured answers as the normaliser parsed
+ * them, red flags as configured. A paraphrase of a clinical fact that reads
+ * well and is wrong is the specific failure this product is built to avoid,
+ * and the pharmacist is the last person who should receive one.
+ */
+router.get('/:id/clinical-brief', requireAuth, async (req, res, next) => {
+  try {
+    assertPharmacyId(req.pharmacyId);
+    const db = getSql();
+    const P = req.pharmacyId;
+    const id = req.params.id;
+
+    const [conv] = await db`
+      select c.id, c.customer_id, c.context,
+             cust.display_name, cust.full_name, cust.wa_phone
+      from conversations c
+      join customers cust on cust.id = c.customer_id
+      where c.id = ${id} and c.pharmacy_id = ${P}
+    `;
+    if (!conv) return res.status(404).json({ error: 'Conversation not found.', code: 'NOT_FOUND' });
+
+    // The most recent encounter for this thread. A conversation can carry
+    // more than one over its life; the open question is about the latest.
+    const [enc] = await db`
+      select id, patient_profile_id, presenting_complaint, symptom_duration, severity,
+             reported_symptoms, relevant_history, current_medications_reported,
+             allergies_reported, red_flags_detected, protocol_slug, protocol_version,
+             assessment_status, started_at
+      from clinical_encounters
+      where pharmacy_id = ${P} and conversation_id = ${id}
+      order by started_at desc
+      limit 1
+    `;
+
+    const [profile] = conv.customer_id ? await db`
+      select age_years, sex, important_safety_information, clinical_name
+      from patient_profiles
+      where pharmacy_id = ${P} and customer_id = ${conv.customer_id}
+      limit 1
+    ` : [];
+
+    // The assessment, as asked and answered. `raw_response` is kept beside the
+    // parsed value on purpose — when the normaliser could not read an answer,
+    // the pharmacist needs the sentence the patient actually typed rather than
+    // a blank.
+    const answers = enc ? await db`
+      select ea.question_key, ea.raw_response, ea.normalized_value, ea.normalized_number,
+             ea.unit, ea.status, ea.answered_at, pq.text as question_text
+      from encounter_answers ea
+      join protocol_executions pe on pe.id = ea.execution_id
+      left join protocol_questions pq on pq.id = ea.question_id
+      where ea.pharmacy_id = ${P} and pe.encounter_id = ${enc.id}
+      order by ea.answered_at asc nulls last, ea.id asc
+    ` : [];
+
+    // Structured facts, which may come from an answer OR from elsewhere in the
+    // conversation. `source` and `status` travel with them because a
+    // patient-reported temperature and a measured one are not the same claim.
+    const facts = enc ? await db`
+      select concept, value, value_number, unit, source, status, confidence, collected_at
+      from encounter_facts
+      where pharmacy_id = ${P} and encounter_id = ${enc.id}
+      order by collected_at asc
+    ` : [];
+
+    // Chronic conditions this pharmacy has confirmed from purchase history.
+    // Directly decision-relevant: an antihypertensive patient asking about a
+    // decongestant is a different conversation.
+    const conditions = conv.customer_id ? await db`
+      select condition_code, condition_name, status, evidence_strength, last_observed
+      from patient_condition
+      where pharmacy_id = ${P} and customer_id = ${conv.customer_id}
+        and status = 'CONFIRMED_BY_PURCHASE'
+      order by condition_name
+    ` : [];
+
+    // What they have actually bought. The interaction check a pharmacist does
+    // in their head starts here, and it is real data rather than self-report.
+    const medications = conv.customer_id ? await db`
+      select oi.name_snapshot as name, max(o.created_at) as last_bought,
+             count(*)::int as times
+      from orders o
+      join order_items oi on oi.order_id = o.id
+      where o.pharmacy_id = ${P} and o.customer_id = ${conv.customer_id}
+        and o.status in ('confirmed','ready','completed')
+      group by oi.name_snapshot
+      order by max(o.created_at) desc
+      limit 8
+    ` : [];
+
+    res.json({
+      conversationId: conv.id,
+      patient: {
+        name: conv.full_name || profile?.clinical_name || conv.display_name || conv.wa_phone,
+        phone: conv.wa_phone,
+        ageYears: profile?.age_years ?? null,
+        sex: profile?.sex ?? null,
+        safetyNote: profile?.important_safety_information ?? null,
+      },
+      encounter: enc ? {
+        complaint: enc.presenting_complaint,
+        duration: enc.symptom_duration,
+        severity: enc.severity,
+        symptoms: enc.reported_symptoms,
+        history: enc.relevant_history,
+        medicationsReported: enc.current_medications_reported,
+        allergiesReported: enc.allergies_reported,
+        redFlags: enc.red_flags_detected,
+        protocol: enc.protocol_slug ? `${enc.protocol_slug} v${enc.protocol_version}` : null,
+        status: enc.assessment_status,
+        startedAt: enc.started_at,
+      } : null,
+      answers: answers.map((a) => ({
+        question: a.question_text || a.question_key,
+        key: a.question_key,
+        // The parsed value when there is one, else the raw sentence — never
+        // an empty cell, which would read as "not asked" rather than "said
+        // something we could not parse".
+        answer: a.normalized_value ?? (a.normalized_number !== null ? String(a.normalized_number) : null),
+        raw: a.raw_response,
+        unit: a.unit,
+        status: a.status,
+      })),
+      facts: facts.map((f) => ({
+        concept: f.concept,
+        value: f.value ?? (f.value_number !== null ? String(f.value_number) : null),
+        unit: f.unit,
+        source: f.source,
+        status: f.status,
+      })),
+      conditions: conditions.map((c) => ({
+        code: c.condition_code,
+        name: c.condition_name,
+        strength: c.evidence_strength,
+        lastObserved: c.last_observed,
+      })),
+      medications: medications.map((m) => ({
+        name: m.name,
+        lastBought: m.last_bought,
+        times: m.times,
+      })),
+      // Restated on every clinical payload, same as the conditions routes:
+      // a client cannot render this having lost the basis for it.
+      disclaimer: 'Assessment data collected by the assistant. Conditions are derived from purchase history, not diagnoses.',
+    });
   } catch (err) {
     next(err);
   }

@@ -121,14 +121,33 @@ function extractActionClaims(text) {
  *
  * Same principle as prices: a claim is permitted because a tool result backs
  * it, not because the feature exists somewhere in the codebase.
+ *
+ * Checked FLAT — `created`/`reference` directly on the tool result, not
+ * nested under a `.result` property. runTool (catalogueTools.js) returns
+ * whatever create_order's own `run()` returns, unwrapped; nothing in this
+ * codebase wraps a tool's output in `{ result: {...} }`. The nested check
+ * that used to live here could never match anything real, which meant this
+ * function always returned false and every reply confirming a
+ * JUST-CREATED order — exactly what create_order's own instructions tell
+ * the model to say — was rejected as an unfulfillable promise on the very
+ * first turn an order was ever placed.
  */
 function orderWasCreated(toolResults) {
-  return (toolResults || []).some((r) => r && r.result && r.result.created === true && r.result.reference);
+  return (toolResults || []).some((r) => r && r.created === true && r.reference);
 }
 
 /**
  * Collect every number the tools actually returned, walking the whole result
  * tree so a nested product list is covered without hard-coding its shape.
+ *
+ * Prices match any key ENDING in `_naira`, not only the literal
+ * `price_naira`. find_products only ever returns `price_naira`, but
+ * get_order_history returns `unit_price_naira`, `line_total_naira` and
+ * `total_naira` — a real order total or line item is exactly the kind of
+ * figure this check exists to protect, and matching only the one literal
+ * name would have silently let those numbers through unverified. The suffix
+ * match means a future tool's new money field is covered by construction,
+ * not by remembering to update this file when it ships.
  */
 function collectFacts(toolResults) {
   const prices = new Set();
@@ -139,8 +158,10 @@ function collectFacts(toolResults) {
     if (Array.isArray(node)) { node.forEach(walk); return; }
     if (typeof node !== 'object') return;
 
-    if (typeof node.price_naira === 'number') prices.add(node.price_naira);
-    if (typeof node.stock_qty === 'number') stocks.add(node.stock_qty);
+    for (const [key, value] of Object.entries(node)) {
+      if (typeof value === 'number' && key.endsWith('_naira')) prices.add(value);
+      if (typeof value === 'number' && key === 'stock_qty') stocks.add(value);
+    }
 
     for (const value of Object.values(node)) walk(value);
   };

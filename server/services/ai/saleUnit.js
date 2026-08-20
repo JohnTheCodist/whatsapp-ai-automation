@@ -57,6 +57,45 @@ const UNIT_BY_FORM = {
 };
 
 /**
+ * Customer words that mean the SAME unit at a Nigerian counter.
+ *
+ * "Sachet" is the one that matters. A strip of tablets is called a sachet by
+ * a great many customers here, and treating that as an error — which this
+ * file previously did, instructing the assistant to "gently correct" them —
+ * is the assistant being wrong about Nigerian usage while sounding certain.
+ * It reads as a foreign product lecturing a customer about their own
+ * vocabulary, over a distinction the pharmacy itself does not make.
+ *
+ * So these are synonyms, not mistakes. The assistant still STATES the price
+ * in the catalogue's own unit, for consistency across a conversation — it
+ * just no longer treats the customer's word as something to be put right.
+ *
+ * Only genuinely interchangeable words belong here. "Bottle" and "card" are
+ * different things, and a customer who says bottle when the product is a
+ * card DOES need telling, or they will arrive expecting a bottle.
+ */
+const UNIT_SYNONYMS = {
+  card: ['sachet', 'satchet', 'sachets', 'strip', 'strips', 'pack', 'packet'],
+  sachet: ['card', 'sachets', 'satchet', 'packet', 'pack'],
+  bottle: ['btl', 'bottles'],
+  tube: ['tubes'],
+  vial: ['vials', 'ampoule'],
+  pack: ['packet', 'packs'],
+};
+
+/**
+ * Would a customer saying `spoken` reasonably mean a product sold by `unit`?
+ * Case- and plural-tolerant, because this is matched against typed chat.
+ */
+function isUnitSynonym(spoken, unit) {
+  if (!spoken || !unit) return false;
+  const a = String(spoken).trim().toLowerCase();
+  const b = String(unit).trim().toLowerCase();
+  if (a === b) return true;
+  return (UNIT_SYNONYMS[b] || []).includes(a);
+}
+
+/**
  * @param {string|null|undefined} form  a product's raw catalogue `form`
  * @returns {string|null} the counter word, or null if the form is unknown/absent
  */
@@ -96,7 +135,12 @@ function isWrongUnit(said, product) {
   // "tablet" name the same unit rather than disagreeing about it.
   const SYNONYMS = { strip: 'card', tabs: 'card', tablets: 'card', capsules: 'card', bottles: 'bottle', tubes: 'tube', vials: 'vial' };
   const normalised = SYNONYMS[s] || s;
-  return normalised !== truth;
+  if (normalised === truth) return false;
+  // Regional usage, checked against the shared table rather than duplicated
+  // here — "sachet" for a card is standard Nigerian speech, not an error to
+  // be put right. Keeping this in one place is what stops the two lists
+  // drifting apart and the assistant correcting a word it accepts elsewhere.
+  return !isUnitSynonym(normalised, truth);
 }
 
-module.exports = { saleUnit, unitForForm, isWrongUnit, UNIT_BY_FORM };
+module.exports = { saleUnit, unitForForm, isWrongUnit, isUnitSynonym, UNIT_BY_FORM, UNIT_SYNONYMS };

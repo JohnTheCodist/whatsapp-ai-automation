@@ -67,6 +67,38 @@ test('ordinary messages are not mistaken for opt-outs', () => {
   }
 });
 
+test('"don\'t send the order yet" is shopping, NOT an opt-out', () => {
+  // FROM LIVE TRAFFIC, and the reason the matcher was narrowed. The first
+  // string below is verbatim: `don't … send` matched, the customer was opted
+  // out permanently mid-order, and their next four messages were silently
+  // suppressed. Nobody was told — not the customer, not the pharmacy.
+  //
+  // "send" is a commerce verb in a pharmacy far more often than a
+  // communication one, and the object is what disambiguates it.
+  for (const text of [
+    "Okay I have lots of drugs I want to buy so don't send The order unless we are done okay ?",
+    "don't send the order yet",
+    'do not send it until I confirm',
+    "don't send my order now",
+    'no more sending orders without asking me first',
+  ]) {
+    assert.equal(isOptOutRequest(text), false, `false opt-out on: "${text}"`);
+  }
+});
+
+test('but "don\'t send me messages" is still a real opt-out', () => {
+  // The narrowing must not open a hole. When the OBJECT is the message rather
+  // than the order, it is a consent withdrawal and still has to be honoured.
+  for (const text of [
+    "don't send me messages",
+    'do not send me any texts',
+    'stop sending me messages',
+    "don't send me anything again",
+  ]) {
+    assert.equal(isOptOutRequest(text), true, `missed a genuine opt-out: "${text}"`);
+  }
+});
+
 // ---- quiet hours ----
 
 test('the assistant is silent overnight', () => {

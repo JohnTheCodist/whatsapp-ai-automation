@@ -1,12 +1,21 @@
 /**
- * Stock reservation, against real Postgres.
+ * Stock commitment, against real Postgres.
  *
  * Two of these could not be written any other way. The concurrency test
- * fires overlapping orders for the last pack — the failure it guards against
- * only exists between a read and a write, so a mocked database would prove
- * nothing. The double-restore test guards a number moving in the direction
- * that causes overselling, which is discovered by a customer at the counter
- * rather than in a log.
+ * fires overlapping confirms for the last pack — the failure it guards
+ * against only exists between a read and a write, so a mocked database would
+ * prove nothing. The double-restore test guards a number moving in the
+ * direction that causes overselling, which is discovered by a customer at
+ * the counter rather than in a log.
+ *
+ * WHAT CHANGED FROM THE ORIGINAL VERSION OF THIS FILE
+ * Stock used to commit at order creation — `pending` held the pack so a
+ * second customer could not be sold it while a pharmacist decided. It now
+ * commits on the first transition OUT of `pending` (to `confirmed`, or
+ * straight to `ready` — the dashboard offers one button that does both at
+ * once). A `pending` order holds nothing at all: two customers can both have
+ * a pending order for the last pack, and nothing is at stake until a human
+ * acts on one of them.
  *
  * Skips loudly without TEST_DATABASE_URL.
  */
@@ -20,7 +29,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env'), quiet: true
 
 const TEST_URL = process.env.TEST_DATABASE_URL;
 const SKIP = !TEST_URL;
-const skipReason = 'TEST_DATABASE_URL not set — reservation NOT verified';
+const skipReason = 'TEST_DATABASE_URL not set — stock commitment NOT verified';
 if (TEST_URL) process.env.DATABASE_URL = TEST_URL;
 
 const TAG = 'restest';
@@ -29,7 +38,7 @@ let db;
 let orders;
 let ctx = null;
 
-/** Fresh product per test, so one test's holds cannot skew another's. */
+/** Fresh product per test, so one test's commits cannot skew another's. */
 async function mkProduct(pharmacyId, { name, qty, tracked = true, price = 100000 }) {
   const [row] = await db`
     insert into products ${db({
@@ -63,8 +72,8 @@ before(async () => {
   const p = await pharmacies.createPharmacy(userId, { name: `${TAG} Alpha` });
 
   const [customer] = await db`
-    -- Named up front: these tests exercise stock holds, and the name gate
-    -- (0020) would otherwise refuse every order before stock is touched.
+    -- Named up front: these tests exercise stock commitment, and the name
+    -- gate (0020) would otherwise refuse every order before stock is touched.
     insert into customers (pharmacy_id, identity_key, wa_phone, wa_jid, display_name,
                            full_name, name_verified, name_source)
     values (${p.id}, '2349011111111', '2349011111111', '2349011111111@s.whatsapp.net', 'Res Tester',
@@ -81,99 +90,167 @@ after(async () => {
   await db.end({ timeout: 5 });
 });
 
-// ---- the hold ----
+// ---- pending holds nothing ----
 
-test('creating an order decrements stock immediately', { skip: SKIP && skipReason }, async () => {
+test('creating an order does NOT touch stock', { skip: SKIP && skipReason }, async () => {
   const p = await mkProduct(ctx.pharmacyId, { name: 'Hold A', qty: 10 });
   const r = await orders.createOrder(ctx.pharmacyId, {
     customerId: ctx.customerId, items: [{ productId: p.id, quantity: 3 }],
   });
   assert.equal(r.ok, true);
-  assert.equal(await stockOf(p.id), 7, 'the hold must be real, not notional');
-  assert.equal(r.order.stock_held, true);
-  assert.ok(r.order.reserved_until, 'a hold without a deadline is stock lost forever');
+  assert.equal(await stockOf(p.id), 10, 'a request nobody has looked at must not move stock');
+  assert.equal(r.order.stock_held, false);
+  assert.equal(r.order.reserved_until, null, 'nothing is held, so there is no countdown to hold it on');
 });
 
-test('a pending order is held but NOT promised', { skip: SKIP && skipReason }, async () => {
-  // The whole two-stage design: stock moves, the customer is told nothing.
+test('a pending order is neither held nor promised', { skip: SKIP && skipReason }, async () => {
   const p = await mkProduct(ctx.pharmacyId, { name: 'Hold B', qty: 5 });
   const r = await orders.createOrder(ctx.pharmacyId, {
     customerId: ctx.customerId, items: [{ productId: p.id, quantity: 1 }],
   });
   assert.equal(r.order.status, 'pending', 'still awaiting a human');
-  assert.equal(await stockOf(p.id), 4, 'but the pack is already off the shelf');
+  assert.equal(await stockOf(p.id), 5, 'and the pack has not moved either');
 });
 
-test('an untracked product holds nothing', { skip: SKIP && skipReason }, async () => {
-  const p = await mkProduct(ctx.pharmacyId, { name: 'Untracked', qty: null, tracked: false });
-  const r = await orders.createOrder(ctx.pharmacyId, {
-    customerId: ctx.customerId, items: [{ productId: p.id, quantity: 4 }],
-  });
-  assert.equal(r.ok, true);
-  assert.equal(r.order.stock_held, false, 'nothing to decrement means nothing to restore later');
-  assert.equal(await stockOf(p.id), null);
-});
-
-// ---- the race ----
-
-test('two orders for the last pack: exactly one wins', { skip: SKIP && skipReason }, async () => {
-  // The reason the conditional UPDATE exists. Both callers read stock_qty=1
-  // and both believe they can have it; only the one whose UPDATE lands first
-  // actually does.
-  const p = await mkProduct(ctx.pharmacyId, { name: 'Last Pack', qty: 1 });
+test('two customers can both hold a PENDING order for the last pack', { skip: SKIP && skipReason }, async () => {
+  // The opposite of the old behaviour, deliberately: nothing is reserved by
+  // a message alone, so there is no race to lose at this stage.
+  const p = await mkProduct(ctx.pharmacyId, { name: 'Both Pending', qty: 1 });
 
   const [a, b] = await Promise.all([
     orders.createOrder(ctx.pharmacyId, { customerId: ctx.customerId, items: [{ productId: p.id, quantity: 1 }] }),
     orders.createOrder(ctx.pharmacyId, { customerId: ctx.customerId, items: [{ productId: p.id, quantity: 1 }] }),
   ]);
 
-  const winners = [a, b].filter((r) => r.ok);
-  assert.equal(winners.length, 1, 'both orders succeeded — the same pack was sold twice');
+  assert.equal(a.ok, true);
+  assert.equal(b.ok, true);
+  assert.equal(await stockOf(p.id), 1, 'two pending requests, still one pack on the shelf');
+});
+
+test('an untracked product commits nothing even once confirmed', { skip: SKIP && skipReason }, async () => {
+  const p = await mkProduct(ctx.pharmacyId, { name: 'Untracked', qty: null, tracked: false });
+  const r = await orders.createOrder(ctx.pharmacyId, {
+    customerId: ctx.customerId, items: [{ productId: p.id, quantity: 4 }],
+  });
+  assert.equal(r.ok, true);
+  await orders.updateStatus(ctx.pharmacyId, r.order.id, 'confirmed');
+  assert.equal(await stockOf(p.id), null, 'nothing to decrement means nothing to restore later');
+});
+
+// ---- the race moved to confirm time ----
+
+test('two confirms for the last pack: exactly one wins', { skip: SKIP && skipReason }, async () => {
+  // The reason the conditional UPDATE exists — now inside commitStock, run
+  // from updateStatus instead of createOrder. Both pending orders exist
+  // simultaneously (see the test above); this is what happens when a human
+  // finally acts on both of them.
+  const p = await mkProduct(ctx.pharmacyId, { name: 'Last Pack', qty: 1 });
+
+  const [a, b] = await Promise.all([
+    orders.createOrder(ctx.pharmacyId, { customerId: ctx.customerId, items: [{ productId: p.id, quantity: 1 }] }),
+    orders.createOrder(ctx.pharmacyId, { customerId: ctx.customerId, items: [{ productId: p.id, quantity: 1 }] }),
+  ]);
+  assert.equal(a.ok, true);
+  assert.equal(b.ok, true);
+
+  const [confirmA, confirmB] = await Promise.all([
+    orders.updateStatus(ctx.pharmacyId, a.order.id, 'ready'),
+    orders.updateStatus(ctx.pharmacyId, b.order.id, 'ready'),
+  ]);
+
+  const winners = [confirmA, confirmB].filter((r) => r.ok);
+  assert.equal(winners.length, 1, 'both confirms succeeded — the same pack was committed twice');
   assert.equal(await stockOf(p.id), 0, 'stock must never go negative');
 
-  const loser = [a, b].find((r) => !r.ok);
+  const loser = [confirmA, confirmB].find((r) => !r.ok);
   assert.equal(loser.code, 'INSUFFICIENT_STOCK');
 });
 
-test('a multi-line order never half-reserves', { skip: SKIP && skipReason }, async () => {
-  // If the second line cannot be held, the first line's hold must roll back
-  // with it — otherwise stock vanishes against an order that never existed.
+test('a multi-line order never half-commits', { skip: SKIP && skipReason }, async () => {
+  // If the second line cannot commit, the first line's commit must roll
+  // back with it — otherwise stock vanishes against an order a pharmacist
+  // never actually agreed to in full.
+  //
+  // Ordered within what both products have in stock right now, so the
+  // creation-time pre-check (a friendly, non-atomic message — see the module
+  // header) lets it through; the race this test proves is the one at CONFIRM
+  // time, which is where correctness now actually lives.
   const ok = await mkProduct(ctx.pharmacyId, { name: 'Plenty', qty: 10 });
-  const short = await mkProduct(ctx.pharmacyId, { name: 'Scarce', qty: 1 });
+  const short = await mkProduct(ctx.pharmacyId, { name: 'Scarce', qty: 3 });
 
   const r = await orders.createOrder(ctx.pharmacyId, {
     customerId: ctx.customerId,
-    items: [{ productId: ok.id, quantity: 2 }, { productId: short.id, quantity: 5 }],
+    items: [{ productId: ok.id, quantity: 2 }, { productId: short.id, quantity: 3 }],
   });
+  assert.equal(r.ok, true, 'creation does not check the race, only confirm does');
 
-  assert.equal(r.ok, false);
+  // Someone else takes "Scarce" entirely while this order sits pending —
+  // exactly the gap that no longer exists at creation time, but now must be
+  // caught here instead.
+  await db`update products set stock_qty = 0 where id = ${short.id}`;
+
+  const confirm = await orders.updateStatus(ctx.pharmacyId, r.order.id, 'confirmed');
+  assert.equal(confirm.ok, false);
+  assert.equal(confirm.code, 'INSUFFICIENT_STOCK');
   assert.equal(await stockOf(ok.id), 10, 'the first line must have been rolled back');
-  assert.equal(await stockOf(short.id), 1);
 });
 
 // ---- release ----
 
-test('rejecting an order returns the stock', { skip: SKIP && skipReason }, async () => {
+test('rejecting a pending order returns nothing, because nothing was taken', { skip: SKIP && skipReason }, async () => {
   const p = await mkProduct(ctx.pharmacyId, { name: 'Reject Me', qty: 10 });
   const r = await orders.createOrder(ctx.pharmacyId, {
     customerId: ctx.customerId, items: [{ productId: p.id, quantity: 4 }],
   });
-  assert.equal(await stockOf(p.id), 6);
+  assert.equal(await stockOf(p.id), 10);
 
   await orders.updateStatus(ctx.pharmacyId, r.order.id, 'rejected');
-  assert.equal(await stockOf(p.id), 10, 'a pack the pharmacy will not supply belongs back on the shelf');
+  assert.equal(await stockOf(p.id), 10, 'stock never moved, so rejecting has nothing to give back');
 });
 
-test('cancelling a confirmed order returns the stock', { skip: SKIP && skipReason }, async () => {
+test('cancelling a confirmed order returns the stock it committed', { skip: SKIP && skipReason }, async () => {
   const p = await mkProduct(ctx.pharmacyId, { name: 'Cancel Me', qty: 8 });
   const r = await orders.createOrder(ctx.pharmacyId, {
     customerId: ctx.customerId, items: [{ productId: p.id, quantity: 2 }],
   });
+  assert.equal(await stockOf(p.id), 8, 'still untouched while pending');
+
   await orders.updateStatus(ctx.pharmacyId, r.order.id, 'confirmed');
-  assert.equal(await stockOf(p.id), 6, 'confirming must not double-decrement');
+  assert.equal(await stockOf(p.id), 6, 'confirming is what commits it');
 
   await orders.updateStatus(ctx.pharmacyId, r.order.id, 'cancelled');
   assert.equal(await stockOf(p.id), 8);
+});
+
+test('cancelling an order marked ready straight from pending also returns the stock', { skip: SKIP && skipReason }, async () => {
+  // The merged dashboard button: pending -> ready in one hop, skipping
+  // `confirmed` entirely. Stock must still commit exactly once, and still
+  // release cleanly on a later cancel.
+  const p = await mkProduct(ctx.pharmacyId, { name: 'Ready Direct', qty: 6 });
+  const r = await orders.createOrder(ctx.pharmacyId, {
+    customerId: ctx.customerId, items: [{ productId: p.id, quantity: 2 }],
+  });
+
+  const ready = await orders.updateStatus(ctx.pharmacyId, r.order.id, 'ready');
+  assert.equal(ready.ok, true);
+  assert.equal(ready.order.stock_held, true);
+  assert.equal(await stockOf(p.id), 4, 'the single click both confirmed and readied it');
+
+  await orders.updateStatus(ctx.pharmacyId, r.order.id, 'cancelled');
+  assert.equal(await stockOf(p.id), 6);
+});
+
+test('confirmed then ready does not double-commit', { skip: SKIP && skipReason }, async () => {
+  const p = await mkProduct(ctx.pharmacyId, { name: 'No Double Commit', qty: 9 });
+  const r = await orders.createOrder(ctx.pharmacyId, {
+    customerId: ctx.customerId, items: [{ productId: p.id, quantity: 3 }],
+  });
+
+  await orders.updateStatus(ctx.pharmacyId, r.order.id, 'confirmed');
+  assert.equal(await stockOf(p.id), 6);
+
+  await orders.updateStatus(ctx.pharmacyId, r.order.id, 'ready');
+  assert.equal(await stockOf(p.id), 6, 'the second transition must not commit a second time');
 });
 
 test('COMPLETING an order does NOT return stock', { skip: SKIP && skipReason }, async () => {
@@ -195,7 +272,10 @@ test('stock is never restored twice', { skip: SKIP && skipReason }, async () => 
   const r = await orders.createOrder(ctx.pharmacyId, {
     customerId: ctx.customerId, items: [{ productId: p.id, quantity: 3 }],
   });
-  await orders.updateStatus(ctx.pharmacyId, r.order.id, 'rejected');
+  await orders.updateStatus(ctx.pharmacyId, r.order.id, 'confirmed');
+  assert.equal(await stockOf(p.id), 2);
+
+  await orders.updateStatus(ctx.pharmacyId, r.order.id, 'cancelled');
   assert.equal(await stockOf(p.id), 5);
 
   // A second release attempt, directly against the guard.
@@ -203,27 +283,24 @@ test('stock is never restored twice', { skip: SKIP && skipReason }, async () => 
   assert.equal(await stockOf(p.id), 5, 'stock was inflated by a second restore');
 });
 
-// ---- expiry ----
+// ---- the hold-expiry sweep is now a no-op for pending orders ----
 
-test('an expired hold returns its stock and cancels the order', { skip: SKIP && skipReason }, async () => {
-  const p = await mkProduct(ctx.pharmacyId, { name: 'Expire Me', qty: 7 });
+test('expireStaleHolds finds nothing to expire — pending orders hold nothing to lose', { skip: SKIP && skipReason }, async () => {
+  const p = await mkProduct(ctx.pharmacyId, { name: 'Never Expires', qty: 7 });
   const r = await orders.createOrder(ctx.pharmacyId, {
     customerId: ctx.customerId, items: [{ productId: p.id, quantity: 3 }],
   });
-  assert.equal(await stockOf(p.id), 4);
-
-  // Backdate the deadline rather than waiting two hours.
-  await db`update orders set reserved_until = now() - interval '1 minute' where id = ${r.order.id}`;
+  assert.equal(await stockOf(p.id), 7);
 
   const expired = await orders.expireStaleHolds();
-  assert.ok(expired.some((o) => o.id === r.order.id), 'the due order should have been swept');
-  assert.equal(await stockOf(p.id), 7, 'held stock nobody confirmed must come back');
+  assert.ok(!expired.some((o) => o.id === r.order.id), 'a pending order with nothing held must not be swept');
 
   const [after] = await db`select status from orders where id = ${r.order.id}`;
-  assert.equal(after.status, 'cancelled');
+  assert.equal(after.status, 'pending', 'still sitting in the queue, exactly as left');
+  assert.equal(await stockOf(p.id), 7);
 });
 
-test('a confirmed order is never expired out from under the customer', { skip: SKIP && skipReason }, async () => {
+test('a confirmed order is never touched by the sweep', { skip: SKIP && skipReason }, async () => {
   const p = await mkProduct(ctx.pharmacyId, { name: 'Safe Once Confirmed', qty: 5 });
   const r = await orders.createOrder(ctx.pharmacyId, {
     customerId: ctx.customerId, items: [{ productId: p.id, quantity: 2 }],
@@ -231,7 +308,7 @@ test('a confirmed order is never expired out from under the customer', { skip: S
   await orders.updateStatus(ctx.pharmacyId, r.order.id, 'confirmed');
 
   const [row] = await db`select reserved_until from orders where id = ${r.order.id}`;
-  assert.equal(row.reserved_until, null, 'confirming must clear the countdown');
+  assert.equal(row.reserved_until, null);
 
   await orders.expireStaleHolds();
   const [after] = await db`select status from orders where id = ${r.order.id}`;

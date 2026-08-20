@@ -1,0 +1,736 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>About RxNaija — Why we built it</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4
+ * Hallmark · macrostructure: Letter (belief-led) · genre: modern-minimal
+ * theme: studied-DNA (source: kubalabs.com/en about page + home.html system)
+ * tone: technical-warm · anchor hue: emerald 165°
+ * Shares home.html's token block verbatim so the two pages are one system.
+ * nav: N9 edge-aligned · footer: Ft5 statement
+ */
+
+:root {
+  --color-paper:       oklch(97% 0.007 105);
+  --color-wash:        oklch(93% 0.040 165);
+  --color-wash-soft:   oklch(95% 0.028 175);
+  --color-surface:     oklch(99% 0.004 105);
+
+  --color-ink:         oklch(21% 0.021 165);
+  --color-ink-muted:   oklch(45% 0.018 165);
+  --color-ink-faint:   oklch(58% 0.014 165);
+
+  --color-accent:      oklch(72% 0.132 165);
+  --color-accent-deep: oklch(65% 0.132 165);
+  --color-on-accent:   oklch(21% 0.030 165);
+  --color-flag:        oklch(62% 0.130 62);
+
+  --color-rule:        oklch(89% 0.010 150);
+  --color-focus:       oklch(55% 0.140 165);
+
+  --color-band:        oklch(19% 0.017 168);
+  --color-band-2:      oklch(24% 0.019 168);
+  --color-band-3:      oklch(29% 0.020 168);
+  --color-band-ink:    oklch(96% 0.006 110);
+  --color-band-muted:  oklch(74% 0.014 165);
+  --color-band-rule:   oklch(33% 0.016 168);
+
+  --font-display: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-body:    "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:    "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --text-xs:   0.75rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.1875rem;
+  --text-xl:   1.375rem;
+  --text-2xl:  1.75rem;
+  --text-3xl:  2.25rem;
+  --text-display: clamp(2.1rem, min(6vw, 7.2vh), 4.6rem);
+
+  --space-2xs: 0.25rem;
+  --space-xs:  0.5rem;
+  --space-sm:  0.75rem;
+  --space-md:  1rem;
+  --space-lg:  1.5rem;
+  --space-xl:  2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4.5rem;
+  --space-4xl: 7rem;
+
+  --pad-section:    clamp(2.6rem, 5.4vw, 4.4rem);
+  --pad-section-lg: clamp(3.2rem, 6.4vw, 5.4rem);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+  --rule-hair: 1px;
+
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 140ms;
+  --dur-mid:  320ms;
+  --dur-slow: 620ms;
+
+  --shadow-btn:  0 1px 2px oklch(21% 0.02 165 / 0.10), 0 6px 16px -8px oklch(21% 0.02 165 / 0.28);
+  --shadow-card: 0 30px 80px -40px oklch(21% 0.02 165 / 0.45);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { overflow-x: clip; }
+body {
+  margin: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3 { font-style: normal; margin: 0; text-wrap: balance; }
+p, ul { margin: 0; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; border-radius: var(--radius-sm); }
+
+.shell { position: relative; z-index: 1; max-width: 1200px; margin-inline: auto; padding-inline: var(--space-lg); }
+
+/* ── nav ── */
+.nav { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding-block: var(--space-lg); }
+.mark { display: inline-flex; align-items: center; gap: var(--space-xs); text-decoration: none; white-space: nowrap;
+        font-family: var(--font-display); font-weight: 800; font-size: var(--text-lg); letter-spacing: -0.03em; }
+.mark-glyph { width: 30px; height: 30px; flex: none; border-radius: 9px;
+  background: linear-gradient(145deg, var(--color-accent), var(--color-accent-deep));
+  box-shadow: var(--shadow-btn); display: grid; place-items: center;
+  color: var(--color-on-accent); font-size: var(--text-sm); font-weight: 800; }
+.nav-actions { display: flex; align-items: center; gap: var(--space-sm); }
+.icon-btn { width: 42px; height: 42px; display: grid; place-items: center; border-radius: var(--radius-md);
+  background: var(--color-surface); border: var(--rule-hair) solid var(--color-rule);
+  box-shadow: var(--shadow-btn); cursor: pointer; transition: transform var(--dur-fast) var(--ease-out); }
+.icon-btn:hover { transform: translateY(-1px); }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-xs);
+  padding: 0.85rem 1.4rem; border-radius: var(--radius-sm);
+  font-size: var(--text-base); font-weight: 600; text-decoration: none; white-space: nowrap; cursor: pointer;
+  border: var(--rule-hair) solid transparent; box-shadow: var(--shadow-btn);
+  transition: transform var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out); }
+.btn-primary { background: var(--color-accent); color: var(--color-on-accent); }
+.btn-primary:hover { background: var(--color-accent-deep); transform: translateY(-1px); }
+.btn-secondary { background: var(--color-surface); color: var(--color-ink); border-color: var(--color-rule); }
+.btn-secondary:hover { transform: translateY(-1px); }
+.btn-ghost { background: transparent; box-shadow: none; border-color: var(--color-band-rule); color: var(--color-band-ink); }
+.btn-ghost:hover { background: var(--color-band-2); transform: translateY(-1px); }
+
+/* ── hero ── */
+.top { position: relative; isolation: isolate; overflow: hidden; }
+.top::before { content: ""; position: absolute; inset: 0; z-index: -1;
+  background: radial-gradient(58% 46% at 88% -4%, var(--color-wash) 0%, transparent 62%),
+              radial-gradient(52% 40% at 4% 8%, var(--color-wash-soft) 0%, transparent 60%); }
+
+.crumb { display: flex; gap: var(--space-xs); font-size: var(--text-sm); color: var(--color-ink-faint); }
+.crumb a { text-decoration: none; }
+.crumb a:hover { color: var(--color-ink); }
+.crumb b { font-weight: 600; color: var(--color-ink); }
+.eyebrow { display: block; margin-top: var(--space-2xs);
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.22em; text-transform: uppercase; color: var(--color-ink-faint); }
+
+.top-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 0.95fr);
+  gap: clamp(var(--space-xl), 4.5vw, var(--space-3xl));
+  align-items: start; padding-block: var(--pad-section) var(--pad-section-lg); }
+@media (max-width: 900px) { .top-grid { grid-template-columns: minmax(0, 1fr); } }
+
+h1 { font-family: var(--font-display); font-weight: 800; font-size: var(--text-display);
+     line-height: 0.99; letter-spacing: -0.045em; max-width: 20ch; min-width: 0; margin-top: var(--space-lg); }
+h1 .accent { color: var(--color-accent-deep); }
+
+/* one authored line per mask — see home.html for why nowrap matters here */
+.ln { display: block; overflow: hidden; padding-block: 0.04em; white-space: nowrap; }
+@media (max-width: 700px) { .ln { white-space: normal; } }
+.ln > span { display: block; transform: translateY(105%); animation: uncover 1.05s cubic-bezier(0.16,1,0.3,1) forwards; }
+.ln:nth-child(1) > span { animation-delay: 0.08s; }
+.ln:nth-child(2) > span { animation-delay: 0.17s; }
+.ln:nth-child(3) > span { animation-delay: 0.26s; }
+.ln:nth-child(4) > span { animation-delay: 0.35s; }
+@keyframes uncover { to { transform: none; } }
+
+.settle { opacity: 0; filter: blur(9px); transform: translateY(15px);
+  animation: settle 0.95s cubic-bezier(0.16,1,0.3,1) forwards; }
+.settle-1 { animation-delay: 0.46s; }
+.settle-2 { animation-delay: 0.58s; }
+.settle-3 { animation-delay: 0.70s; }
+@keyframes settle { to { opacity: 1; filter: blur(0); transform: none; } }
+
+.top-lede { margin-top: var(--space-lg); max-width: 54ch; color: var(--color-ink-muted); font-size: var(--text-lg); }
+.top-cta { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-top: var(--space-xl); }
+
+/* the side card */
+.card { background: var(--color-surface); border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-lg); padding: clamp(var(--space-lg), 2.2vw, var(--space-xl));
+  box-shadow: var(--shadow-card); min-width: 0; }
+.card h2 { font-family: var(--font-display); font-weight: 800; font-size: var(--text-xl);
+  line-height: 1.16; letter-spacing: -0.03em; }
+.card > p { margin-top: var(--space-sm); color: var(--color-ink-muted); font-size: var(--text-sm); }
+.card ul { list-style: none; padding: 0; margin-top: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-sm); }
+.card li { display: flex; gap: var(--space-sm); align-items: flex-start; font-size: var(--text-sm); }
+.card li::before { content: ""; width: 7px; height: 7px; flex: none; margin-top: 0.5em;
+  border-radius: 2px; background: var(--color-accent); }
+
+/* ── split sections ──────────────────────────────────────────────────
+   One shape, four uses: a heading column that HOLDS while its evidence
+   scrolls past it. Sticky is the whole idea — the claim stays on screen for
+   as long as the proof takes to read, so the reader never has to carry it
+   in their head or scroll back to check what the cards were answering. */
+.split { padding-block: var(--pad-section-lg); background: var(--color-paper); }
+.split.alt {
+  background:
+    radial-gradient(64% 40% at 78% 0%, var(--color-wash) 0%, transparent 62%),
+    oklch(97.6% 0.005 105);
+  border-block: var(--rule-hair) solid var(--color-rule);
+}
+.split-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: clamp(var(--space-xl), 5vw, var(--space-3xl));
+  align-items: start;
+}
+.split-head { position: sticky; top: clamp(var(--space-lg), 12vh, var(--space-3xl)); min-width: 0; }
+.split-k {
+  display: inline-flex; align-items: center; gap: var(--space-xs);
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--color-ink-faint); margin-bottom: var(--space-lg);
+}
+.split-k::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--color-accent); }
+.split-head h2 {
+  font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(1.9rem, 4.2vw, 3.2rem);
+  line-height: 1.02; letter-spacing: -0.045em;
+  max-width: 14ch; overflow-wrap: anywhere; min-width: 0;
+}
+.split-head h2 .accent { color: var(--color-accent-deep); }
+.split-head > p { margin-top: var(--space-lg); max-width: 42ch; color: var(--color-ink-muted); }
+.split-body { min-width: 0; display: grid; gap: var(--space-md); }
+
+@media (max-width: 900px) {
+  .split-grid { grid-template-columns: minmax(0, 1fr); }
+  .split-head { position: static; }
+}
+
+/* ── from → to ──
+   The transformation card. Reads top-to-bottom as a before and an after,
+   with the connector drawing itself on hover — the "before" is deliberately
+   muted so the eye lands on the state the pharmacy is buying. */
+.swap-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 248px), 1fr)); }
+.swap {
+  position: relative; min-width: 0;
+  padding: var(--space-lg);
+  background: var(--color-surface);
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-md);
+  transition: transform var(--dur-mid) var(--ease-out),
+              border-color var(--dur-mid) var(--ease-out),
+              box-shadow var(--dur-mid) var(--ease-out);
+}
+.swap:hover {
+  transform: translateY(-3px);
+  border-color: oklch(84% 0.04 160);
+  box-shadow: 0 18px 40px -26px oklch(30% 0.04 165 / 0.55);
+}
+.swap-k {
+  display: block;
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--color-ink-faint);
+}
+.swap-k.to { color: var(--color-accent-deep); }
+.swap-a { margin-top: 4px; font-size: var(--text-sm); color: var(--color-ink-faint); }
+.swap-b { margin-top: 4px; font-size: var(--text-base); font-weight: 600; line-height: 1.35; }
+.swap-arrow {
+  display: block; position: relative;
+  height: 26px; margin: var(--space-sm) 0;
+}
+.swap-arrow::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 6px;
+  width: 2px; border-radius: 2px; background: var(--color-rule);
+}
+.swap-arrow::after {
+  content: ""; position: absolute; left: -2px; bottom: 0;
+  width: 6px; height: 6px; border-radius: var(--radius-pill);
+  background: var(--color-rule);
+  transition: background-color var(--dur-mid) var(--ease-out),
+              transform var(--dur-mid) var(--ease-out);
+}
+.swap:hover .swap-arrow::before { background: var(--color-accent); }
+.swap:hover .swap-arrow::after  { background: var(--color-accent); transform: scale(1.35); }
+
+/* ── principle pills ── */
+.pill-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 262px), 1fr)); }
+.pill {
+  position: relative; min-width: 0; overflow: hidden;
+  padding: var(--space-lg);
+  background: var(--color-surface);
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-md);
+  transition: transform var(--dur-mid) var(--ease-out), border-color var(--dur-mid) var(--ease-out);
+}
+.pill::after {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 3px;
+  background: var(--color-accent);
+  transform: scaleY(0); transform-origin: top;
+  transition: transform var(--dur-slow) var(--ease-out);
+}
+.pill:hover { transform: translateY(-3px); border-color: oklch(84% 0.04 160); }
+.pill:hover::after { transform: scaleY(1); }
+.pill-n { font-family: var(--font-mono); font-size: var(--text-xs); letter-spacing: 0.12em; color: var(--color-accent-deep); }
+.pill h3 {
+  margin-top: var(--space-sm);
+  font-family: var(--font-display); font-weight: 800;
+  font-size: var(--text-lg); line-height: 1.18; letter-spacing: -0.028em;
+  overflow-wrap: anywhere;
+}
+.pill p { margin-top: var(--space-xs); font-size: var(--text-sm); color: var(--color-ink-muted); }
+
+/* ── numbered method ──
+   The connector runs BEHIND the badges and stops at the last one, so the
+   list reads as a single path rather than four unrelated rows. */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-lg); }
+.step { position: relative; display: flex; gap: var(--space-md); min-width: 0; }
+.step:not(:last-child)::before {
+  content: ""; position: absolute; left: 17px; top: 38px; bottom: calc(var(--space-lg) * -1);
+  width: 2px; background: linear-gradient(var(--color-rule), oklch(92% 0.02 150));
+}
+.step-n {
+  position: relative; z-index: 1; flex: none;
+  width: 36px; height: 36px; border-radius: 10px;
+  display: grid; place-items: center;
+  background: var(--color-accent); color: var(--color-on-accent);
+  font-family: var(--font-mono); font-size: var(--text-xs); font-weight: 500;
+  box-shadow: 0 6px 16px -8px oklch(72% 0.13 165 / 0.9);
+}
+.step h3 {
+  font-family: var(--font-display); font-weight: 800;
+  font-size: var(--text-lg); line-height: 1.2; letter-spacing: -0.028em;
+  overflow-wrap: anywhere;
+}
+.step p { margin-top: 5px; font-size: var(--text-sm); color: var(--color-ink-muted); max-width: 52ch; }
+
+/* ── company facts ── */
+.fact-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 232px), 1fr)); }
+.fact {
+  min-width: 0; padding: var(--space-md) var(--space-lg);
+  background: var(--color-surface);
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-md);
+  transition: border-color var(--dur-mid) var(--ease-out);
+}
+.fact:hover { border-color: oklch(84% 0.04 160); }
+.fact-k {
+  display: block; margin-bottom: 4px;
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--color-ink-faint);
+}
+.fact b { font-size: var(--text-sm); font-weight: 600; overflow-wrap: anywhere; }
+
+/* ── close ── */
+.end { padding-block: var(--pad-section-lg); text-align: center;
+  background: radial-gradient(60% 46% at 50% 0%, var(--color-wash) 0%, transparent 62%), var(--color-paper); }
+.end h2 { font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(1.9rem, 4.6vw, 3.1rem); line-height: 1.02; letter-spacing: -0.045em;
+  max-width: 18ch; margin-inline: auto; }
+.end p { margin: var(--space-md) auto 0; max-width: 46ch; color: var(--color-ink-muted); }
+.end .top-cta { justify-content: center; }
+
+/* ── footer ── */
+.foot { background: var(--color-band); color: var(--color-band-muted); padding-block: var(--pad-section); }
+.foot-in { display: flex; flex-wrap: wrap; gap: var(--space-lg); align-items: center; }
+.foot .mark { color: var(--color-band-ink); }
+.foot nav { display: flex; flex-wrap: wrap; gap: var(--space-lg); margin-left: auto; }
+.foot a { font-size: var(--text-sm); text-decoration: none; white-space: nowrap; }
+.foot nav a:hover { color: var(--color-band-ink); }
+.foot-base { margin-top: var(--space-lg); padding-top: var(--space-lg);
+  border-top: var(--rule-hair) solid var(--color-band-rule); font-size: var(--text-xs); line-height: 1.6; max-width: 78ch;
+  display: grid; gap: var(--space-sm); }
+/* The registered entity, set a step brighter than the surrounding small print:
+   it is who the pharmacy is actually contracting with, not boilerplate. */
+.foot-entity { color: var(--color-band-ink); }
+.foot-entity b { font-weight: 600; }
+/* Separators live in CSS-adjacent spans rather than in the sentence, so the
+   line wraps on its own terms on a narrow screen instead of stranding a
+   floating "·" at the start of a line. */
+.foot-entity .sep { color: var(--color-band-rule); padding-inline: 0.5em; }
+.foot-legal { color: oklch(58% 0.014 165); }
+.foot-legal a { color: var(--color-accent); text-decoration: none; margin-left: 0.5em; }
+.foot-legal a:hover { text-decoration: underline; }
+
+/* ── scroll reveal — visible by default, hidden only once JS can restore it ── */
+.rv-armed [data-rv] { opacity: 0; transform: translateY(20px);
+  transition: opacity 0.75s var(--ease-out), transform 0.75s var(--ease-out);
+  transition-delay: var(--rv-d, 0ms); }
+.rv-armed [data-rv].rv-in { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  .ln > span { transform: none; }
+  .settle { opacity: 1; filter: none; transform: none; }
+  .rv-armed [data-rv] { opacity: 1; transform: none; transition: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="shell">
+
+    <nav class="nav">
+      <a class="mark" href="./home.html"><span class="mark-glyph" aria-hidden="true">R</span>RxNaija</a>
+      <div class="nav-actions">
+        <a class="btn btn-secondary" href="/">Sign in</a>
+        <button class="icon-btn" type="button" aria-label="Open menu">
+          <svg width="17" height="17" viewBox="0 0 17 17" fill="currentColor" aria-hidden="true">
+            <rect x="0" y="0" width="4.5" height="4.5" rx="1"/><rect x="6.25" y="0" width="4.5" height="4.5" rx="1"/><rect x="12.5" y="0" width="4.5" height="4.5" rx="1"/>
+            <rect x="0" y="6.25" width="4.5" height="4.5" rx="1"/><rect x="6.25" y="6.25" width="4.5" height="4.5" rx="1"/><rect x="12.5" y="6.25" width="4.5" height="4.5" rx="1"/>
+            <rect x="0" y="12.5" width="4.5" height="4.5" rx="1"/><rect x="6.25" y="12.5" width="4.5" height="4.5" rx="1"/><rect x="12.5" y="12.5" width="4.5" height="4.5" rx="1"/>
+          </svg>
+        </button>
+      </div>
+    </nav>
+
+    <div class="top-grid">
+      <div>
+        <div class="crumb"><a href="./home.html">Home</a><span>/</span><b>About</b></div>
+        <span class="eyebrow">About us</span>
+
+        <h1>
+          <span class="ln"><span>We build RxNaija so a</span></span>
+          <span class="ln"><span>pharmacy never misses a</span></span>
+          <span class="ln"><span>message — and never</span></span>
+          <span class="ln"><span><span class="accent">guesses</span> an answer.</span></span>
+        </h1>
+
+        <p class="top-lede settle settle-1">
+          RxNaija helps Nigerian community pharmacies work the line their customers
+          already use. It answers, prices, and takes the order from the pharmacy's own
+          catalogue — and stops dead at the point where a pharmacist is required.
+        </p>
+
+        <div class="top-cta settle settle-2">
+          <a class="btn btn-primary" href="./home.html#close">See it answer</a>
+          <a class="btn btn-secondary" href="./home.html">Explore the platform</a>
+        </div>
+      </div>
+
+      <aside class="card settle settle-3">
+        <h2>Customers stay on WhatsApp. Your pharmacist stays in charge.</h2>
+        <p>
+          One assistant across enquiries, pricing, orders and follow-up — built so the
+          commercial side runs itself and the clinical side never leaves your hands.
+        </p>
+        <ul>
+          <li>Prices read from your catalogue as they are spoken</li>
+          <li>Orders sent to the counter, stock committed on your click</li>
+          <li>Clinical questions escalated, never answered</li>
+          <li>Purchase history that carries into the next conversation</li>
+          <li>Refill reminders when a repeat medicine is due</li>
+        </ul>
+      </aside>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── why ── -->
+<section class="split" id="why">
+  <div class="shell split-grid">
+    <div class="split-head">
+      <span class="split-k">Why</span>
+      <h2>Every pharmacy already sells on WhatsApp. Almost none sell <span class="accent">well</span> on it.</h2>
+      <p>
+        The customers are already there. The orders are already there. What is missing
+        is the counter behind them — someone to answer at 9pm, quote the real price,
+        and write it down. RxNaija is that counter.
+      </p>
+    </div>
+
+    <div class="split-body swap-grid">
+      <article class="swap">
+        <span class="swap-k">From</span>
+        <p class="swap-a">A message read at midnight, replied to at nine</p>
+        <span class="swap-arrow" aria-hidden="true"></span>
+        <span class="swap-k to">To</span>
+        <p class="swap-b">Answered while they are still holding the phone</p>
+      </article>
+
+      <article class="swap">
+        <span class="swap-k">From</span>
+        <p class="swap-a">"I think it's around ₦1,500"</p>
+        <span class="swap-arrow" aria-hidden="true"></span>
+        <span class="swap-k to">To</span>
+        <p class="swap-b">The price on your shelf, read out as it is spoken</p>
+      </article>
+
+      <article class="swap">
+        <span class="swap-k">From</span>
+        <p class="swap-a">Orders scattered across chats and notebooks</p>
+        <span class="swap-arrow" aria-hidden="true"></span>
+        <span class="swap-k to">To</span>
+        <p class="swap-b">One queue at the counter, stock committed on your click</p>
+      </article>
+
+      <article class="swap">
+        <span class="swap-k">From</span>
+        <p class="swap-a">A customer you served once and never heard from again</p>
+        <span class="swap-arrow" aria-hidden="true"></span>
+        <span class="swap-k to">To</span>
+        <p class="swap-b">A refill reminder that arrives when the pack runs out</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ── principles ── -->
+<section class="split alt" id="principles">
+  <div class="shell split-grid">
+    <div class="split-head">
+      <span class="split-k">Principles</span>
+      <h2>Automating the counter must never automate the <span class="accent">pharmacist</span>.</h2>
+      <p>
+        Four rules we will not trade for a better demo. Each one is enforced in code,
+        not requested in a prompt — because a prompt is a request and a rule is a
+        guarantee.
+      </p>
+    </div>
+
+    <div class="split-body pill-grid">
+      <article class="pill">
+        <span class="pill-n">01</span>
+        <h3>The catalogue is the only source of price</h3>
+        <p>
+          Every figure is read from your own list at the moment it is spoken. The model
+          is not permitted to remember, estimate or round a price — if it cannot verify
+          it, it does not say it.
+        </p>
+      </article>
+
+      <article class="pill">
+        <span class="pill-n">02</span>
+        <h3>It stops where your licence begins</h3>
+        <p>
+          Doses, children, pregnancy and interactions never reach the model at all. They
+          are routed to you before a reply is drafted, so there is no confident guess to
+          intercept.
+        </p>
+      </article>
+
+      <article class="pill">
+        <span class="pill-n">03</span>
+        <h3>Your number, your voice, your customers</h3>
+        <p>
+          Nothing to migrate and nothing for customers to install. The line they already
+          message is the line that answers, and it speaks the way your counter speaks.
+        </p>
+      </article>
+
+      <article class="pill">
+        <span class="pill-n">04</span>
+        <h3>Every naira it makes is traceable</h3>
+        <p>
+          Each order carries the conversation that produced it. You can see what the
+          assistant sold, what it passed to you, and what it declined to answer.
+        </p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ── method ── -->
+<section class="split" id="method">
+  <div class="shell split-grid">
+    <div class="split-head">
+      <span class="split-k">Method</span>
+      <h2>You are never left alone in front of a <span class="accent">dashboard</span>.</h2>
+      <p>
+        Most pharmacies are running this within a day. We do the loading, you do the
+        approving — and we stay on the line through the first week, when the questions
+        are real.
+      </p>
+    </div>
+
+    <div class="split-body">
+      <ol class="steps">
+        <li class="step">
+          <span class="step-n">01</span>
+          <div>
+            <h3>We load your catalogue</h3>
+            <p>Send the list however you keep it — a spreadsheet, a photo of the shelf, an export. We match it, price it, and show you what we read before anything goes live.</p>
+          </div>
+        </li>
+        <li class="step">
+          <span class="step-n">02</span>
+          <div>
+            <h3>We connect the number you already use</h3>
+            <p>No new line, no new app for your customers. You scan once from the counter phone and the thread carries on exactly where it was.</p>
+          </div>
+        </li>
+        <li class="step">
+          <span class="step-n">03</span>
+          <div>
+            <h3>You set the boundary</h3>
+            <p>You decide what it may quote, what it must escalate, and when it should stay quiet. The clinical stops are on by default — you can tighten them, never loosen them.</p>
+          </div>
+        </li>
+        <li class="step">
+          <span class="step-n">04</span>
+          <div>
+            <h3>We show you what it earned</h3>
+            <p>At the end of the first week you see the orders it took, the questions it passed to you, and what that was worth. If it did not pay for itself, you do not pay for it.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- ── company ── -->
+<section class="split alt" id="company">
+  <div class="shell split-grid">
+    <div class="split-head">
+      <span class="split-k">Company</span>
+      <h2>Built in Nigeria, for Nigerian <span class="accent">counters</span>.</h2>
+      <p>
+        Not a template dropped into a new market. Priced in naira, written for how
+        people actually message a pharmacy here — "abeg how much", voice notes, and all.
+      </p>
+    </div>
+
+    <div class="split-body fact-grid">
+      <div class="fact"><span class="fact-k">Company</span><b>RxNaija</b></div>
+      <div class="fact"><span class="fact-k">Built for</span><b>Community pharmacies</b></div>
+      <div class="fact"><span class="fact-k">Channel</span><b>WhatsApp, on your own number</b></div>
+      <div class="fact"><span class="fact-k">Pricing</span><b>Paid from what it earns</b></div>
+      <div class="fact"><span class="fact-k">Clinical stance</span><b>Escalates, never advises</b></div>
+      <div class="fact"><span class="fact-k">Get in touch</span><b>hello@rxnaija.com</b></div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ── close ── -->
+<section class="end">
+  <div class="shell">
+    <h2>Built for the counter, not the conference room</h2>
+    <p>
+      If it does not save time on a busy Saturday, it does not ship. Come and put a
+      question to it — including one it should refuse.
+    </p>
+    <div class="top-cta">
+      <a class="btn btn-primary" href="./home.html#close">Ask it something</a>
+      <a class="btn btn-secondary" href="mailto:support@rxnaija.com?subject=RxNaija%20demo">Talk to a pharmacist first</a>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="shell">
+    <div class="foot-in">
+      <a class="mark" href="./home.html"><span class="mark-glyph" aria-hidden="true">R</span>RxNaija</a>
+      <nav aria-label="Footer">
+        <a href="./home.html">Home</a>
+        <a href="./about.html">About</a>
+        <a href="#">Safety</a>
+        <a href="#">Contact</a>
+      </nav>
+    </div>
+    <div class="foot-base">
+      <p class="foot-entity">
+        A product of <b>RXNAIJA HEALTH LTD</b><span class="sep">·</span>CAC Registration
+        No. 8345514<span class="sep">·</span>Nigeria
+      </p>
+      <p>
+        RxNaija assists a pharmacy's own staff with ordering and enquiries on WhatsApp.
+        It does not give clinical advice, and questions about doses, children, pregnancy
+        or interactions are passed to a registered pharmacist rather than answered.
+      </p>
+      <p class="foot-legal">
+        © <span id="yr">2026</span> RXNAIJA HEALTH LTD. All rights reserved.
+        <a href="mailto:support@rxnaija.com">support@rxnaija.com</a>
+      </p>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* Copyright year, from the clock rather than from whenever this file was last
+   edited — the same one-liner home.html uses, so the two footers cannot drift
+   apart in January. */
+(function () {
+  var yr = document.getElementById('yr');
+  if (yr) yr.textContent = new Date().getFullYear();
+})();
+
+/* Scroll reveal — identical contract to home.html: the observer is the fast
+   path, and a self-healing sweep is the source of truth. IntersectionObserver
+   alone strands elements that a fast scroll carries past between samples, and
+   since these start at opacity 0, stranded means invisible forever. */
+(function () {
+  if (!('IntersectionObserver' in window)) return;
+
+  // Each entry is one stagger run, so the cards in a section count 0,1,2,3
+  // from their own start rather than continuing a tally across the page —
+  // which would leave later sections sitting on a delay long enough to read
+  // as broken.
+  var groups = [
+    '#why .split-head, #why .swap',
+    '#principles .split-head, #principles .pill',
+    '#method .split-head, #method .step',
+    '#company .split-head, #company .fact',
+    '.end .shell > *'
+  ];
+
+  var seen = [];
+  groups.forEach(function (sel) {
+    [].slice.call(document.querySelectorAll(sel)).forEach(function (el, i) {
+      if (seen.indexOf(el) > -1) return;
+      seen.push(el);
+      el.setAttribute('data-rv', '');
+      el.style.setProperty('--rv-d', Math.min(i * 90, 360) + 'ms');
+    });
+  });
+  if (!seen.length) return;
+  document.documentElement.classList.add('rv-armed');
+
+  var pending = seen.slice();
+  function reveal(el) {
+    el.classList.add('rv-in');
+    var i = pending.indexOf(el);
+    if (i > -1) pending.splice(i, 1);
+    io.unobserve(el);
+  }
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (e) { if (e.isIntersecting) reveal(e.target); });
+  }, { rootMargin: '0px 0px -12% 0px', threshold: 0.06 });
+  seen.forEach(function (el) { io.observe(el); });
+
+  var ticking = false;
+  function sweep() {
+    ticking = false;
+    for (var i = pending.length - 1; i >= 0; i--) {
+      // no lower bound: anything already scrolled past must show, or jumping
+      // to the footer and scrolling back up meets blank space
+      if (pending[i].getBoundingClientRect().top < innerHeight * 0.94) reveal(pending[i]);
+    }
+    if (!pending.length) { removeEventListener('scroll', onScroll); removeEventListener('resize', onScroll); }
+  }
+  function onScroll() { if (ticking) return; ticking = true; requestAnimationFrame(sweep); }
+  addEventListener('scroll', onScroll, { passive: true });
+  addEventListener('resize', onScroll);
+  requestAnimationFrame(sweep);
+})();
+</script>
+</body>
+</html>

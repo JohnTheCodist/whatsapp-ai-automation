@@ -16,3 +16,6 @@ Thumbs.db
 .vscode/
 .idea/
 coverage/
+
+# Dev supervisor output — crash evidence, not source.
+logs/

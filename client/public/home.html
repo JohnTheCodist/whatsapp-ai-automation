@@ -1,0 +1,3609 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RxNaija — The counter your customers actually message</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R4 V5
+ * Hallmark · macrostructure: Marquee Hero (fold) + Split Studio (proof band)
+ * genre: modern-minimal · tone: technical-warm · anchor hue: emerald 163°
+ * theme: studied-DNA (source: image — kubalabs.com/en screenshot)
+ *   paper  oklch(97% 0.007 105) warm cream · light band
+ *   wash   oklch(93% 0.040 165) mint, corner-weighted
+ *   accent oklch(72% 0.132 165) emerald · chromatic-green
+ *   display Manrope 800 (geometric-grotesk, tight tracking) + mono IBM Plex Mono
+ *   observed: centred 3-line display at ~8vw, sub at ~40ch, two pill CTAs
+ *   side-by-side, dot-separated trust line, scattered speck texture,
+ *   near-empty nav (mark left / menu right), soft shadows on buttons
+ *   NOT carried over: their logo-carousel (no real logos to show — inventing
+ *   customer logos would be fabricated proof), their stat claims.
+ * nav: N9 edge-aligned · enrichment: E-none (CSS speck field + CSS-art thread)
+ */
+
+/* ─── tokens ─────────────────────────────────────────────────────── */
+:root {
+  --color-paper:       oklch(97% 0.007 105);
+  --color-wash:        oklch(93% 0.040 165);
+  --color-wash-soft:   oklch(95% 0.028 175);
+  --color-surface:     oklch(99% 0.004 105);
+
+  --color-ink:         oklch(21% 0.021 165);
+  --color-ink-muted:   oklch(45% 0.018 165);
+  --color-ink-faint:   oklch(58% 0.014 165);
+
+  --color-accent:      oklch(72% 0.132 165);
+  --color-accent-deep: oklch(65% 0.132 165);
+  --color-on-accent:   oklch(21% 0.030 165);
+
+  --color-flag:        oklch(62% 0.130 62);
+
+  --color-rule:        oklch(89% 0.010 150);
+  --color-speck:       oklch(45% 0.020 160);
+  --color-focus:       oklch(55% 0.140 165);
+
+  /* the dark proof band — the one place the page inverts */
+  --color-band:        oklch(19% 0.017 168);
+  --color-band-2:      oklch(24% 0.019 168);
+  --color-band-3:      oklch(29% 0.020 168);
+  --color-band-ink:    oklch(96% 0.006 110);
+  --color-band-muted:  oklch(74% 0.014 165);
+  --color-band-rule:   oklch(33% 0.016 168);
+
+  --font-display: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-body:    "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:    "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --text-xs:   0.75rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.1875rem;
+  --text-xl:   1.375rem;
+  --text-2xl:  1.75rem;
+  --text-3xl:  2.25rem;
+  /* Sized against viewport HEIGHT as well as width. Width alone is what made
+     the headline overflow the fold on a laptop: 7.6vw is fine at 1440×900 and
+     far too tall at 1440×700, because vw knows nothing about how much room is
+     left underneath. min(vw, vh) lets the shorter axis win, so the whole fold
+     — headline, sub, buttons, trust line — stays on one screen. */
+  --text-display: clamp(1.95rem, min(6.1vw, 7.4vh), 4.9rem);
+
+  --space-2xs: 0.25rem;
+  --space-xs:  0.5rem;
+  --space-sm:  0.75rem;
+  --space-md:  1rem;
+  --space-lg:  1.5rem;
+  --space-xl:  2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4.5rem;
+  --space-4xl: 7rem;
+
+  /* One rhythm for every section, so the page has a measurable beat instead
+     of five independently-guessed clamps. Deliberately short of a full
+     screen: a section that exactly fills the viewport reads as a slideshow,
+     and the top edge of the next one showing is what tells the eye there is
+     more page and keeps it moving. */
+  --pad-section:    clamp(2.6rem, 5.4vw, 4.4rem);
+  --pad-section-lg: clamp(3.2rem, 6.4vw, 5.4rem);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+
+  --rule-hair: 1px;
+
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 140ms;
+  --dur-mid:  320ms;
+  --dur-slow: 620ms;
+
+  --shadow-btn:  0 1px 2px oklch(21% 0.02 165 / 0.10), 0 6px 16px -8px oklch(21% 0.02 165 / 0.28);
+  --shadow-card: 0 30px 80px -40px oklch(21% 0.02 165 / 0.45);
+}
+
+/* ─── reset ──────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { overflow-x: clip; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3 { font-style: normal; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+a { color: inherit; }
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+/* ─── the fold's ground ──────────────────────────────────────────────
+   Two mint blooms weighted into the upper corners over warm cream, then a
+   speck field. The specks are the reference's signature — without them the
+   cream reads as an empty document; with them it reads as paper. Two tile
+   sizes at coprime dimensions so the repeat never lines up on screen.     */
+.fold {
+  position: relative;
+  isolation: isolate;
+  background: var(--color-paper);
+}
+
+/* The atmosphere. Everything in here is decorative and inert — it sits
+   behind the content, never intercepts a pointer, and animates transform
+   and opacity ONLY so it stays on the compositor and never triggers layout.
+   Three primitives, deliberately: blooms that drift, one light that sweeps,
+   and a speck field that falls. Any more and it stops reading as expensive
+   and starts reading as a screensaver. */
+.atmos {
+  position: absolute; inset: 0; z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* 1 · blooms — the mint wash, broken into bodies that move independently.
+   Long, prime-ish, mismatched durations so the three never resynchronise
+   into an obvious pulse. */
+.bloom {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(46px);
+  will-change: transform;
+}
+.bloom-a {
+  width: 62vw; height: 46vw; left: -16vw; top: -22vw;
+  background: radial-gradient(circle at 50% 50%, var(--color-wash) 0%, transparent 68%);
+  animation: drift-a 31s var(--ease-in-out) infinite;
+}
+.bloom-b {
+  width: 56vw; height: 42vw; right: -14vw; top: -18vw;
+  background: radial-gradient(circle at 50% 50%, var(--color-wash) 0%, transparent 66%);
+  animation: drift-b 43s var(--ease-in-out) infinite;
+}
+.bloom-c {
+  width: 84vw; height: 40vw; left: 8vw; bottom: -26vw;
+  background: radial-gradient(circle at 50% 50%, var(--color-wash-soft) 0%, transparent 70%);
+  animation: drift-c 37s var(--ease-in-out) infinite;
+}
+@keyframes drift-a {
+  0%,100% { transform: translate3d(0,0,0) scale(1); }
+  50%     { transform: translate3d(6vw,3vw,0) scale(1.12); }
+}
+@keyframes drift-b {
+  0%,100% { transform: translate3d(0,0,0) scale(1.06); }
+  50%     { transform: translate3d(-5vw,4vw,0) scale(1); }
+}
+@keyframes drift-c {
+  0%,100% { transform: translate3d(0,0,0) scale(1); }
+  50%     { transform: translate3d(-7vw,-2vw,0) scale(1.1); }
+}
+
+/* 2 · the sweep — a soft raking light that crosses, then rests. The pause
+   is the point: a light that sweeps continuously is a loading spinner, and
+   a loading spinner is the opposite of premium. It passes, then leaves the
+   page alone for nine seconds. */
+.sweep {
+  position: absolute;
+  top: -20%; bottom: -20%;
+  width: 38%;
+  background: linear-gradient(102deg,
+    transparent 0%,
+    oklch(99% 0.03 168 / 0.62) 44%,
+    oklch(99% 0.03 168 / 0.62) 56%,
+    transparent 100%);
+  filter: blur(34px);
+  will-change: transform, opacity;
+  animation: sweep 17s var(--ease-in-out) infinite;
+}
+@keyframes sweep {
+  0%      { transform: translate3d(-140%,0,0); opacity: 0; }
+  8%      { opacity: 1; }
+  38%     { opacity: 1; }
+  48%,100%{ transform: translate3d(340%,0,0); opacity: 0; }
+}
+
+/* 3 · signal — the line drawing itself in, on a deliberately uneven
+   envelope: it eases in slowly, breaks into a fast run, hangs almost still
+   through the middle, then snaps the last stretch and cuts out. That
+   unevenness is the whole effect — a constant-speed draw reads as a loading
+   bar, and a loading bar is the one thing a hero must never look like.
+   The timing lives in the keyframe PERCENTAGES rather than an easing curve,
+   because no single cubic-bezier has two separate fast phases.            */
+.wave { position: absolute; inset: 0; width: 100%; height: 100%; }
+.wave path {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 2400;
+  stroke-dashoffset: 2400;
+  opacity: 0;
+  will-change: stroke-dashoffset, opacity;
+  animation: signal 9s linear infinite;
+}
+.wave path:nth-child(2) { animation-delay: 3s;   stroke-width: 1.1; }
+.wave path:nth-child(3) { animation-delay: 6s;   stroke-width: 0.8; }
+@keyframes signal {
+  0%   { stroke-dashoffset: 2400; opacity: 0; }
+  4%   { opacity: 0.30; }
+  /* crawl */
+  16%  { stroke-dashoffset: 2160; opacity: 0.30; }
+  /* run */
+  40%  { stroke-dashoffset: 900;  opacity: 0.34; }
+  /* hang — barely moves, which is what makes the next burst read as fast */
+  66%  { stroke-dashoffset: 640;  opacity: 0.30; }
+  /* snap */
+  82%  { stroke-dashoffset: 0;    opacity: 0.26; }
+  /* cut */
+  90%, 100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
+/* a few specks stay, unanimated — they are texture, not motion */
+.specks {
+  position: absolute; inset: 0;
+  opacity: 0.34;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='317' height='293'%3E%3Cg fill='%23223a30'%3E%3Ccircle cx='23' cy='47' r='1.6'/%3E%3Ccircle cx='131' cy='19' r='1.1'/%3E%3Ccircle cx='268' cy='63' r='1.7'/%3E%3Ccircle cx='79' cy='121' r='1.2'/%3E%3Ccircle cx='201' cy='104' r='1.5'/%3E%3Ccircle cx='299' cy='158' r='1.2'/%3E%3Ccircle cx='47' cy='201' r='1.6'/%3E%3Ccircle cx='163' cy='188' r='1.1'/%3E%3Ccircle cx='241' cy='233' r='1.4'/%3E%3Ccircle cx='109' cy='262' r='1.3'/%3E%3Ccircle cx='9' cy='277' r='1.1'/%3E%3Crect x='186' y='51' width='5' height='1.6' rx='.8' transform='rotate(28 186 51)'/%3E%3Crect x='58' y='153' width='6' height='1.6' rx='.8' transform='rotate(-19 58 153)'/%3E%3Crect x='276' y='196' width='5' height='1.6' rx='.8' transform='rotate(41 276 196)'/%3E%3Crect x='137' y='227' width='6' height='1.6' rx='.8' transform='rotate(-8 137 227)'/%3E%3C/g%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='419' height='389'%3E%3Cg fill='%23223a30'%3E%3Ccircle cx='61' cy='83' r='1.3'/%3E%3Ccircle cx='214' cy='37' r='1.6'/%3E%3Ccircle cx='352' cy='128' r='1.2'/%3E%3Ccircle cx='117' cy='196' r='1.5'/%3E%3Ccircle cx='289' cy='251' r='1.3'/%3E%3Ccircle cx='38' cy='311' r='1.6'/%3E%3Ccircle cx='176' cy='344' r='1.2'/%3E%3Ccircle cx='398' cy='302' r='1.4'/%3E%3Crect x='247' y='163' width='6' height='1.6' rx='.8' transform='rotate(-33 247 163)'/%3E%3Crect x='92' y='271' width='5' height='1.6' rx='.8' transform='rotate(17 92 271)'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 317px 293px, 419px 389px;
+}
+
+/* A hairline of grain over the whole fold. Cream this clean reads as flat
+   digital paper without it; with it, it reads as stock. */
+.fold::after {
+  content: "";
+  position: absolute; inset: 0; z-index: -1;
+  pointer-events: none;
+  opacity: 0.032;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ─── shell ──────────────────────────────────────────────────────── */
+.shell {
+  position: relative; z-index: 1;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding-inline: var(--space-lg);
+}
+
+/* ─── nav · N9 edge-aligned, deliberately near-empty ─────────────── */
+.nav {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-md);
+  padding-block: var(--space-lg);
+}
+.mark {
+  display: inline-flex; align-items: center; gap: var(--space-xs);
+  text-decoration: none; white-space: nowrap;
+  font-family: var(--font-display);
+  font-weight: 800; font-size: var(--text-lg);
+  letter-spacing: -0.03em;
+}
+.mark-glyph {
+  width: 30px; height: 30px; flex: none;
+  border-radius: 9px;
+  background: linear-gradient(145deg, var(--color-accent), var(--color-accent-deep));
+  box-shadow: var(--shadow-btn);
+  display: grid; place-items: center;
+  color: var(--color-on-accent);
+  font-size: var(--text-sm); font-weight: 800;
+}
+.nav-actions { display: flex; align-items: center; gap: var(--space-sm); }
+.icon-btn {
+  width: 42px; height: 42px;
+  display: grid; place-items: center;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: var(--rule-hair) solid var(--color-rule);
+  box-shadow: var(--shadow-btn);
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.icon-btn:hover { transform: translateY(-1px); }
+.icon-btn:active { transform: translateY(1px); }
+.icon-btn svg { display: block; }
+
+/* ─── hero ───────────────────────────────────────────────────────── */
+/* The fold is exactly one screen. svh (not vh) so mobile browser chrome
+   can't push the trust line under the fold on first paint. */
+.fold-in {
+  min-height: 100svh;
+  display: flex; flex-direction: column;
+}
+.hero {
+  flex: 1;
+  text-align: center;
+  padding-block: clamp(var(--space-lg), 4vh, var(--space-2xl));
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: clamp(var(--space-md), 2.4vh, var(--space-xl));
+}
+h1 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-display);
+  line-height: 0.98;
+  letter-spacing: -0.045em;
+  /* Wide enough for the longest authored line. The masks below rely on each
+     .ln holding exactly ONE visual line — if a line wraps, half of it is
+     clipped by the mask's own overflow and the reveal breaks. */
+  max-width: 20ch;
+  min-width: 0;
+}
+h1 .accent { color: var(--color-accent-deep); }
+
+/* ── the reveal ──
+   Each line sits in its own overflow-hidden mask and rises out of it, so the
+   type appears to be uncovered rather than to fly in. Stagger is 90ms: fast
+   enough that the whole headline lands in well under a second, slow enough
+   that the eye reads it as one motion with direction, not four separate ones. */
+/* One authored line per mask. nowrap on desktop keeps the break points the
+   ones that were written, not ones the viewport chose; below 640px the copy
+   is allowed to reflow, since forcing it would overflow narrow screens. */
+.ln { display: block; overflow: hidden; padding-block: 0.04em; white-space: nowrap; }
+@media (max-width: 640px) { .ln { white-space: normal; } }
+.ln > span {
+  display: block;
+  transform: translateY(105%);
+  animation: uncover 1.05s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.ln:nth-child(1) > span { animation-delay: 0.10s; }
+.ln:nth-child(2) > span { animation-delay: 0.19s; }
+.ln:nth-child(3) > span { animation-delay: 0.28s; }
+.ln:nth-child(4) > span { animation-delay: 0.37s; }
+@keyframes uncover { to { transform: none; } }
+
+/* Everything below the headline shares one softer treatment — a short rise
+   with the blur clearing. Blur is what keeps it from reading as a slide:
+   the copy resolves into focus instead of arriving from off-screen. */
+.settle {
+  opacity: 0;
+  filter: blur(9px);
+  transform: translateY(15px);
+  animation: settle 0.95s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.settle-1 { animation-delay: 0.52s; }
+.settle-2 { animation-delay: 0.64s; }
+.settle-3 { animation-delay: 0.76s; }
+@keyframes settle { to { opacity: 1; filter: blur(0); transform: none; } }
+
+.lede {
+  max-width: 52ch;
+  font-size: var(--text-lg);
+  color: var(--color-ink-muted);
+}
+
+.cta-row {
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: var(--space-sm);
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: var(--space-xs);
+  padding: 0.85rem 1.4rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: var(--text-base); font-weight: 600;
+  text-decoration: none; white-space: nowrap; cursor: pointer;
+  border: var(--rule-hair) solid transparent;
+  box-shadow: var(--shadow-btn);
+  transition: transform var(--dur-fast) var(--ease-out),
+              background-color var(--dur-fast) var(--ease-out);
+}
+.btn-primary { background: var(--color-accent); color: var(--color-on-accent); }
+.btn-primary:hover { background: var(--color-accent-deep); transform: translateY(-1px); }
+.btn-primary:active { transform: translateY(1px); }
+.btn-secondary {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border-color: var(--color-rule);
+}
+.btn-secondary:hover { transform: translateY(-1px); }
+.btn-secondary:active { transform: translateY(1px); }
+
+/* dot-separated capability line — no invented metrics */
+.trust {
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: var(--space-2xs) var(--space-sm);
+  list-style: none; padding: 0;
+  font-size: var(--text-sm); color: var(--color-ink-faint);
+}
+.trust li { display: inline-flex; align-items: center; gap: var(--space-sm); }
+.trust li + li::before { content: "·"; color: var(--color-rule); }
+
+/* ─── proof band · the fold's inverse ────────────────────────────── */
+
+/* ─── growth ─────────────────────────────────────────────────────────
+   The chart is drawn FROM the messages: each column is a stack of message
+   bubbles, and the curve is the value riding on top of them. That is the
+   argument in one picture — the revenue is not a separate thing the product
+   adds, it is what answering the messages turns into.
+
+   No axis numbers anywhere. The shape is the claim ("it compounds, and the
+   biggest gap is the hours you are shut"); the CALCULATOR below is where a
+   pharmacist puts their own figures in. Printing an invented ₦ scale here
+   would be the one dishonest thing on the page.                            */
+.growth {
+  background: var(--color-band); color: var(--color-band-ink);
+  padding-block: var(--pad-section);
+  position: relative; isolation: isolate; overflow: hidden;
+}
+.growth::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background: radial-gradient(70% 55% at 80% 0%, oklch(29% 0.058 168) 0%, transparent 62%);
+}
+.growth-grid {
+  display: grid; grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+  gap: clamp(var(--space-xl), 4vw, var(--space-3xl));
+  align-items: center;
+}
+@media (max-width: 940px) { .growth-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.growth-k {
+  display: inline-flex; align-items: center; gap: var(--space-xs);
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-accent);
+  margin-bottom: var(--space-md);
+}
+.growth-k::before { content:""; width:7px; height:7px; border-radius:var(--radius-pill); background:var(--color-accent); }
+.growth h2 {
+  font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(1.9rem, 4vw, 3rem);
+  line-height: 1.03; letter-spacing: -0.042em;
+  max-width: 15ch; overflow-wrap: anywhere; min-width: 0;
+}
+.growth > .shell > .growth-grid p.lede { margin-top: var(--space-lg); max-width: 42ch; color: var(--color-band-muted); }
+
+/* legend doubles as the three mechanisms */
+.legend { margin-top: var(--space-xl); display: flex; flex-direction: column; gap: var(--space-sm); }
+.leg { display: flex; align-items: flex-start; gap: var(--space-sm); font-size: var(--text-sm); }
+.leg i {
+  width: 11px; height: 11px; border-radius: 3px; flex: none; margin-top: 4px;
+}
+.leg-1 i { background: oklch(78% 0.150 165); }
+.leg-2 i { background: oklch(60% 0.115 168); }
+.leg-3 i { background: oklch(43% 0.075 170); }
+.leg b { display: block; font-weight: 600; }
+/* block, or the description runs straight on from the label and the legend
+   reads as one long sentence per row */
+.leg span { display: block; font-weight: 400; color: var(--color-band-muted); }
+
+.chart-wrap {
+  background: oklch(23% 0.016 168);
+  border: var(--rule-hair) solid var(--color-band-rule);
+  border-radius: var(--radius-lg);
+  padding: clamp(var(--space-md), 2vw, var(--space-lg));
+  box-shadow: var(--shadow-card);
+  min-width: 0;
+}
+.chart-top {
+  display: flex; align-items: baseline; gap: var(--space-sm);
+  font-family: var(--font-mono); font-size: var(--text-xs); color: oklch(60% 0.014 165);
+  margin-bottom: var(--space-md);
+}
+.chart-top .live { margin-left: auto; color: var(--color-accent); }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+
+/* the wipe that reveals the whole plot left-to-right */
+#plotClip rect { transform-origin: left center; }
+.chart.go #plotClip rect { animation: wipe 1700ms var(--ease-out) forwards; }
+@keyframes wipe { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+.bub-unit { opacity: 0; }
+.chart.go .bub-unit { animation: unit 420ms var(--ease-out) forwards; }
+@keyframes unit { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+
+.curve {
+  fill: none; stroke: var(--color-accent); stroke-width: 2.5;
+  stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 620; stroke-dashoffset: 620;
+}
+.chart.go .curve { animation: drawc 1800ms var(--ease-out) 260ms forwards; }
+@keyframes drawc { to { stroke-dashoffset: 0; } }
+
+.curve-head { opacity: 0; }
+.chart.go .curve-head { animation: pop2 520ms var(--ease-out) 1900ms forwards; }
+@keyframes pop2 { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: none; } }
+.curve-head circle:first-child { animation: ping 2.6s var(--ease-out) infinite 2.2s; transform-origin: center; }
+@keyframes ping { 0% { r: 5; opacity: .55; } 70%,100% { r: 15; opacity: 0; } }
+
+.axis text { fill: oklch(52% 0.014 165); font-family: var(--font-mono); font-size: 9px; }
+.closed-band { fill: oklch(80% 0.135 78 / 0.10); }
+.closed-label { fill: var(--color-flag); font-family: var(--font-mono); font-size: 8.5px; letter-spacing: 0.06em; }
+
+.growth-note {
+  margin-top: var(--space-lg); font-size: var(--text-xs);
+  color: oklch(58% 0.014 165); max-width: 52ch;
+}
+
+/* ─── reveals ────────────────────────────────────────────────────── */
+.rise { animation: rise var(--dur-slow) var(--ease-out) both; }
+.rise-1 { animation-delay: 0.04s; }
+.rise-2 { animation-delay: 0.12s; }
+.rise-3 { animation-delay: 0.20s; }
+.rise-4 { animation-delay: 0.28s; }
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+/* ─── the loop ───────────────────────────────────────────────────── */
+.loop { padding-block: var(--pad-section); }
+.loop-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.92fr);
+  gap: clamp(var(--space-xl), 6vw, var(--space-4xl));
+  align-items: center;
+}
+@media (max-width: 940px) {
+  .loop-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.loop h2 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2.1rem, 4.6vw, 3.4rem);
+  line-height: 1.02;
+  letter-spacing: -0.042em;
+  max-width: 15ch;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.loop > .shell > div > p {
+  margin-top: var(--space-lg);
+  max-width: 48ch;
+  font-size: var(--text-lg);
+  color: var(--color-ink-muted);
+}
+
+/* ── the dial ──
+   A square stage: SVG track underneath, HTML labels on top so the type is
+   real text a screen reader and a translator can both read, rather than
+   <text> baked into the graphic. */
+.dial {
+  position: relative;
+  width: min(430px, 100%);
+  margin-inline: auto;
+  aspect-ratio: 1;
+}
+.dial svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+
+.track { fill: none; stroke: var(--color-rule); stroke-width: 1.5; stroke-dasharray: 2 7; stroke-linecap: round; }
+
+/* Each arc is drawn from nothing when its stage takes over. stroke-dashoffset
+   is a paint-only property — it never triggers layout — so this stays cheap
+   despite not being transform/opacity. */
+.arc {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 160;
+  stroke-dashoffset: 160;
+  animation: draw 13.2s var(--ease-in-out) infinite;
+}
+.arc-1 { animation-delay: 0s; }
+.arc-2 { animation-delay: 3.3s; }
+.arc-3 { animation-delay: 6.6s; }
+.arc-4 { animation-delay: 9.9s; }
+/* Draw, then STAY. Each arc holds its light for the rest of the cycle, so
+   the ring visibly completes a lap and resets — rather than each segment
+   fading to a ghost, which left the arrowheads reading as loose triangles
+   floating off the track. */
+@keyframes draw {
+  0%        { stroke-dashoffset: 160; opacity: 0; }
+  3%        { opacity: 1; }
+  17%       { stroke-dashoffset: 0;   opacity: 1; }
+  93%       { stroke-dashoffset: 0;   opacity: 1; }
+  100%      { stroke-dashoffset: 0;   opacity: 0; }
+}
+
+/* a slow rotating rake over the dotted track — the "scan" */
+.rake {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 26 900;
+  opacity: 0.32;
+  transform-origin: 200px 200px;
+  animation: rake 13.2s linear infinite;
+}
+@keyframes rake { from { transform: rotate(-90deg); } to { transform: rotate(270deg); } }
+
+.node {
+  position: absolute;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-base);
+  color: var(--color-ink-faint);
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+  transition: color var(--dur-mid) var(--ease-out);
+  animation: light 13.2s var(--ease-in-out) infinite;
+}
+.node-1 { left: 50%;  top: 2%;   animation-delay: 12.1s; }
+.node-2 { left: 100%; top: 50%;  animation-delay: 2.2s;  }
+.node-3 { left: 50%;  top: 98%;  animation-delay: 5.5s;  }
+.node-4 { left: 0%;   top: 50%;  animation-delay: 8.8s;  }
+@keyframes light {
+  0%,  2%   { color: var(--color-ink); }
+  22%       { color: var(--color-ink); }
+  34%, 100% { color: var(--color-ink-faint); }
+}
+/* the dot that sits on the track beside each label */
+.node::after {
+  content: "";
+  position: absolute; left: 50%; bottom: -14px;
+  width: 7px; height: 7px; margin-left: -3.5px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  opacity: 0;
+  animation: pip 13.2s var(--ease-in-out) infinite;
+  animation-delay: inherit;
+}
+.node-2::after, .node-4::after { display: none; }
+@keyframes pip { 0%,2%{opacity:1;} 22%{opacity:1;} 34%,100%{opacity:0;} }
+
+/* The left and right labels are centred ON the dial's edge, so half of each
+   sits outside its box. In a wide column that overhang lands in the gutter
+   and looks deliberate; once the dial is full-width it lands off-screen and
+   "Re-engage" renders as "-engage". Narrowing the ring — not the labels —
+   buys the overhang its margin back and keeps the type at a readable size. */
+@media (max-width: 700px) {
+  .dial { width: min(430px, 66%); }
+  .node { font-size: var(--text-sm); }
+}
+
+.hub {
+  position: absolute; left: 50%; top: 50%;
+  width: 84px; height: 84px;
+  margin: -42px 0 0 -42px;
+  border-radius: var(--radius-pill);
+  background: var(--color-band);
+  display: grid; place-items: center;
+  box-shadow: var(--shadow-card);
+}
+.hub svg { position: static; width: 30px; height: 30px; animation: spin 13.2s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── the reel ───────────────────────────────────────────────────────
+   A tall scroll track with a pinned stage inside it. Scrolling down drives
+   the cards sideways, so the page advances without appearing to move —
+   which is the whole illusion. The track's height IS the runway: four
+   panels need three full screens of scroll after the first.              */
+/* 100vh of pin + 60vh of travel per card. Was 300vh of travel for four
+   cards, which meant three-quarters of a screen of scrolling before anything
+   changed — the pin read as the page being stuck rather than as a sequence. */
+.reel { position: relative; height: calc(100vh + 200vh); background: var(--color-band); }
+.reel-stage {
+  position: sticky; top: 0;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 0.62fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(var(--space-lg), 3vw, var(--space-2xl));
+  padding-inline: clamp(var(--space-lg), 4vw, var(--space-3xl));
+  overflow: hidden;
+  color: var(--color-band-ink);
+}
+
+/* ── left · the standing panel ── */
+.reel-left { min-width: 0; }
+.reel-kicker {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs); letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--color-accent);
+  margin-bottom: var(--space-sm);
+}
+/* Titles are stacked in one cell and crossfaded, so the panel never
+   reflows as the words change length. */
+.reel-titles { position: relative; min-height: 4.6em; }
+.reel-title {
+  position: absolute; inset: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(1.5rem, 2.5vw, 2.15rem);
+  line-height: 1.1; letter-spacing: -0.035em;
+  opacity: 0; transform: translateY(10px);
+  transition: opacity var(--dur-mid) var(--ease-out), transform var(--dur-mid) var(--ease-out);
+  overflow-wrap: anywhere;
+}
+.reel-title.on { opacity: 1; transform: none; }
+
+/* ── the graph — what the assistant is standing on ──
+   Nodes light as the reel advances, so the left panel is a running tally
+   of everything it can answer from rather than decoration. */
+.graph { margin-top: var(--space-xl); width: 100%; }
+.graph svg { width: 100%; height: auto; display: block; overflow: visible; }
+.g-edge {
+  stroke: var(--color-accent); stroke-width: 1; opacity: 0;
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
+.g-edge.on { opacity: 0.45; }
+.g-node rect {
+  fill: oklch(30% 0.012 168); stroke: oklch(38% 0.014 168); stroke-width: 1;
+  transition: fill var(--dur-mid) var(--ease-out), stroke var(--dur-mid) var(--ease-out);
+}
+.g-node text {
+  fill: oklch(56% 0.012 168); font-size: 7px; font-family: var(--font-body);
+  transition: fill var(--dur-mid) var(--ease-out);
+}
+.g-node.on rect { fill: var(--color-accent); stroke: var(--color-accent); }
+.g-node.on text { fill: var(--color-band-ink); }
+.g-hub rect { fill: var(--color-accent); stroke: var(--color-accent); }
+.g-hub text { fill: var(--color-band-ink); font-weight: 600; }
+
+/* ── right · the moving cards ── */
+.reel-viewport { overflow: hidden; min-width: 0; }
+.reel-track {
+  display: flex;
+  gap: var(--space-lg);
+  will-change: transform;
+  transition: transform 620ms var(--ease-out);
+}
+.reel-card {
+  flex: 0 0 min(560px, 78vw);
+  min-width: 0;
+  border-radius: var(--radius-lg);
+  padding: clamp(var(--space-lg), 2.4vw, var(--space-xl));
+  background: var(--color-band-2);
+  border: var(--rule-hair) solid var(--color-band-rule);
+  color: var(--color-band-muted);
+  opacity: 0.4;
+  transition: opacity var(--dur-slow) var(--ease-out),
+              background-color var(--dur-slow) var(--ease-out),
+              border-color var(--dur-slow) var(--ease-out),
+              transform var(--dur-slow) var(--ease-out);
+}
+/* The lit card is the only bright surface on a dark stage — it reads as
+   lifted without needing a scale transform fighting the track's own. */
+.reel-card.on {
+  opacity: 1;
+  background:
+    linear-gradient(168deg, var(--color-wash) 0%, var(--color-surface) 46%, var(--color-surface) 100%);
+  border-color: var(--color-accent);
+  color: var(--color-ink);
+  box-shadow: 0 0 0 1px oklch(72% 0.132 165 / 0.35), var(--shadow-card);
+}
+.reel-num {
+  display: inline-flex; align-items: center; gap: var(--space-sm);
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--color-ink-faint);
+  margin-bottom: var(--space-md);
+}
+.reel-card.on .reel-num { color: var(--color-ink-muted); }
+.reel-num b {
+  font-weight: 500;
+  padding: 2px 7px; border-radius: var(--radius-sm);
+  background: oklch(72% 0.132 165 / 0.16); color: var(--color-accent-deep);
+}
+.reel-card h3 {
+  font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(1.35rem, 2.1vw, 1.75rem);
+  line-height: 1.12; letter-spacing: -0.032em;
+  overflow-wrap: anywhere;
+}
+.reel-card p.body { margin-top: var(--space-sm); font-size: var(--text-sm); }
+
+/* ── proof widgets inside the cards ── */
+.w {
+  margin-top: var(--space-lg);
+  border-radius: var(--radius-md);
+  border: var(--rule-hair) solid oklch(85% 0.012 150);
+  background: oklch(100% 0 0 / 0.62);
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--text-sm);
+}
+.reel-card:not(.on) .w { border-color: var(--color-band-rule); background: oklch(100% 0 0 / 0.03); }
+.w-row { display: flex; align-items: center; gap: var(--space-sm); }
+.w-row + .w-row { margin-top: var(--space-xs); padding-top: var(--space-xs); border-top: var(--rule-hair) solid oklch(88% 0.01 150); }
+.reel-card:not(.on) .w-row + .w-row { border-top-color: var(--color-band-rule); }
+.w-k { color: var(--color-ink-faint); }
+.reel-card:not(.on) .w-k { color: var(--color-band-muted); }
+.w-v { margin-left: auto; font-family: var(--font-mono); font-size: var(--text-xs); }
+.w-live {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-accent-deep);
+}
+.w-live::before {
+  content: ""; width: 6px; height: 6px; border-radius: var(--radius-pill);
+  background: var(--color-accent);
+}
+.w-bad, .w-good { border-radius: var(--radius-sm); padding: var(--space-sm) var(--space-md); font-size: var(--text-sm); }
+.w-bad {
+  border: var(--rule-hair) solid oklch(72% 0.10 25);
+  background: oklch(96% 0.03 25 / 0.5);
+  text-decoration: line-through;
+  color: oklch(48% 0.13 25);
+}
+.reel-card:not(.on) .w-bad { background: transparent; }
+.w-good {
+  border: var(--rule-hair) solid var(--color-accent);
+  background: oklch(95% 0.04 165 / 0.5);
+  margin-top: var(--space-xs);
+}
+.reel-card:not(.on) .w-good { background: transparent; }
+.w-label {
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.06em; text-transform: uppercase;
+  margin-bottom: 4px; display: block;
+}
+.w-label.bad  { color: oklch(52% 0.14 25); }
+.w-label.good { color: var(--color-accent-deep); }
+.w-bubble {
+  border-radius: var(--radius-md); padding: var(--space-xs) var(--space-sm);
+  font-size: var(--text-sm); max-width: 84%;
+}
+.w-bubble.in  { background: oklch(90% 0.008 150); }
+.w-bubble.out { background: oklch(88% 0.06 165); margin-left: auto; }
+.reel-card:not(.on) .w-bubble.in  { background: var(--color-band-3); }
+.reel-card:not(.on) .w-bubble.out { background: oklch(40% 0.06 165); margin-left: auto; }
+.w-stack { display: flex; flex-direction: column; gap: 6px; }
+
+/* progress rail under the left panel */
+.reel-rail { display: flex; gap: 6px; margin-top: var(--space-xl); }
+.reel-rail span {
+  height: 3px; flex: 1; border-radius: var(--radius-pill);
+  background: var(--color-band-rule);
+  transition: background-color var(--dur-mid) var(--ease-out);
+}
+.reel-rail span.on { background: var(--color-accent); }
+
+/* MOBILE — the pin is abandoned entirely.
+   A sticky horizontal reel on a phone fights the browser's own scroll and
+   traps the thumb. Below 940px this becomes what it always should be at
+   that width: an ordinary vertical stack of lit cards. */
+@media (max-width: 940px) {
+  .reel { height: auto; }
+  .reel-stage {
+    position: static; height: auto;
+    grid-template-columns: minmax(0, 1fr);
+    padding-block: var(--pad-section);
+  }
+  .reel-viewport { overflow: visible; }
+  .reel-track { flex-direction: column; transform: none !important; transition: none; }
+  .reel-card { flex: 1 1 auto; opacity: 1; }
+  .reel-titles { min-height: 0; margin-bottom: var(--space-md); }
+  .reel-title { position: static; opacity: 1; transform: none; }
+  .reel-title + .reel-title { display: none; }
+  .reel-rail { display: none; }
+}
+
+/* ─── the vault ──────────────────────────────────────────────────────
+   A living memory network, drawn on canvas: nodes drift, near ones link,
+   and signals travel the links. It is not decoration for its own sake —
+   the section is about what the assistant remembers, and the picture is
+   that memory, wiring itself while you read about it.                    */
+.vault {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% -10%, oklch(31% 0.070 168) 0%, transparent 58%),
+    radial-gradient(90%  70% at 10% 110%, oklch(26% 0.055 172) 0%, transparent 60%),
+    var(--color-band);
+  color: var(--color-band-ink);
+  padding-block: var(--pad-section-lg);
+}
+.vault-canvas {
+  position: absolute; inset: 0; z-index: -1;
+  width: 100%; height: 100%;
+  display: block;
+  pointer-events: none;
+}
+.vault-inner { text-align: center; display: flex; flex-direction: column; align-items: center; }
+
+/* the bright anchor node, echoed as a real element so it can carry the
+   label — the canvas field orbits around where this sits */
+.vault-seed {
+  width: 46px; height: 46px;
+  border-radius: 13px;
+  background: linear-gradient(150deg, oklch(86% 0.16 165), var(--color-accent));
+  box-shadow: 0 0 0 8px oklch(72% 0.132 165 / 0.10),
+              0 0 46px 6px oklch(72% 0.132 165 / 0.42);
+  animation: seed 6.5s var(--ease-in-out) infinite;
+}
+@keyframes seed {
+  0%,100% { transform: translateY(0)     scale(1);    }
+  50%     { transform: translateY(-7px)  scale(1.05); }
+}
+.vault-chip {
+  margin-top: var(--space-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs); letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--color-band-muted);
+}
+.vault-chip b { color: var(--color-band-ink); font-weight: 500; }
+.vault h2 {
+  margin-top: var(--space-lg);
+  font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(2.1rem, 5.4vw, 4rem);
+  line-height: 1.02; letter-spacing: -0.045em;
+  max-width: 17ch;
+  overflow-wrap: anywhere; min-width: 0;
+}
+.vault p {
+  margin-top: var(--space-lg);
+  max-width: 54ch;
+  color: var(--color-band-muted);
+  font-size: var(--text-lg);
+}
+
+/* ─── the stage ──────────────────────────────────────────────────────
+   One conversation, played out under a pin. Scrolling advances the thread
+   message by message while annotations arrive beside it, so the claims and
+   the evidence for them land together instead of in separate sections.   */
+.stage { position: relative; height: calc(100vh + 210vh); background: var(--color-paper); }
+.stage-pin {
+  position: sticky; top: 0;
+  height: 100vh;
+  overflow: hidden;
+  display: flex; flex-direction: column; align-items: center;
+  padding: clamp(var(--space-lg), 3vw, var(--space-2xl)) var(--space-lg) 0;
+  background:
+    radial-gradient(70% 46% at 50% 0%, var(--color-wash) 0%, transparent 62%),
+    var(--color-paper);
+}
+.stage-pin > h2 {
+  font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(1.6rem, 3.6vw, 2.9rem);
+  line-height: 1.05; letter-spacing: -0.04em;
+  text-align: center; max-width: 20ch;
+  overflow-wrap: anywhere; min-width: 0;
+}
+.stage-grid {
+  flex: 1; min-height: 0;
+  width: 100%; max-width: 1180px;
+  margin-top: var(--space-lg);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: clamp(var(--space-md), 2.4vw, var(--space-2xl));
+  align-items: center;
+}
+
+/* ── annotations ── */
+.notes { display: flex; flex-direction: column; gap: clamp(var(--space-lg), 3vh, var(--space-2xl)); min-width: 0; }
+.notes-right { text-align: right; }
+.note {
+  opacity: 0;
+  transform: translateX(-18px);
+  transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out);
+  min-width: 0;
+}
+.notes-right .note { transform: translateX(18px); }
+.note.on { opacity: 1; transform: none; }
+.note-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px; border-radius: var(--radius-sm);
+  background: oklch(72% 0.132 165 / 0.16);
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--color-accent-deep);
+  margin-bottom: var(--space-xs);
+}
+.note-tag::before {
+  content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--color-accent);
+}
+.note p { font-size: var(--text-sm); color: var(--color-ink-muted); max-width: 34ch; }
+.notes-right .note p { margin-left: auto; }
+
+/* ── the handset ── */
+/* Sized from HEIGHT, not width. Driving it off width meant a tall handset
+   in a short viewport ran straight off the bottom of the pin and into the
+   next section — the clipping had nothing to do with the phone's width and
+   so no width clamp could fix it. Height first, width derived. */
+.phone {
+  position: relative;
+  height: min(600px, 62vh);
+  width: auto;
+  aspect-ratio: 9 / 19;
+  border-radius: 44px;
+  padding: 11px;
+  background: linear-gradient(160deg, oklch(32% 0.010 168), oklch(19% 0.010 168));
+  box-shadow: 0 40px 90px -34px oklch(21% 0.02 165 / 0.62), 0 0 0 1px oklch(30% 0.01 168);
+  justify-self: center;
+}
+.phone-screen {
+  position: relative;
+  height: 100%; overflow: hidden;
+  border-radius: 34px;
+  background: oklch(95% 0.006 105);
+  display: flex; flex-direction: column;
+}
+.notch {
+  position: absolute; top: 9px; left: 50%; transform: translateX(-50%);
+  width: 84px; height: 23px; border-radius: var(--radius-pill);
+  background: oklch(16% 0.008 168); z-index: 3;
+}
+.wa-head {
+  flex: none;
+  background: oklch(46% 0.075 165);
+  color: oklch(99% 0.005 150);
+  padding: 34px var(--space-sm) 9px;
+  display: flex; align-items: center; gap: var(--space-xs);
+}
+.wa-av {
+  width: 27px; height: 27px; border-radius: var(--radius-pill);
+  background: oklch(88% 0.05 165); color: oklch(30% 0.06 165);
+  display: grid; place-items: center; font-size: 11px; font-weight: 700;
+}
+.wa-name { font-size: 12px; font-weight: 600; line-height: 1.15; }
+.wa-sub  { font-size: 9px; opacity: 0.8; }
+
+.wa-body {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  gap: 6px;
+  padding: var(--space-sm);
+  overflow: hidden;
+}
+.wa-day {
+  align-self: center; flex: none;
+  background: oklch(100% 0 0); border-radius: var(--radius-sm);
+  padding: 2px 9px; font-size: 9px; color: var(--color-ink-faint);
+}
+/* Hidden messages are display:none so the stack genuinely grows from the
+   bottom of the screen as they arrive, exactly as a real thread does —
+   rather than sitting invisible and reserving their space up front. */
+/* Arrival and the upward shift of everything above it are both animated in
+   JS (a FLIP pass — see the stage driver). No CSS keyframe here on purpose:
+   a declarative entrance can animate the NEW bubble but cannot animate the
+   older ones being pushed up to make room, which is the half that actually
+   reads as a live thread. */
+.wa-msg { display: none; }
+.wa-msg.on { display: block; }
+
+.bub {
+  max-width: 84%; padding: 6px 9px; border-radius: 9px;
+  font-size: 11px; line-height: 1.38;
+  box-shadow: 0 1px 1px oklch(21% 0.02 165 / 0.10);
+  overflow-wrap: anywhere;
+}
+.bub.them { background: oklch(100% 0 0); border-top-left-radius: 2px; }
+.bub.us   { background: oklch(89% 0.075 150); margin-left: auto; border-top-right-radius: 2px; }
+.bub.alert{ background: oklch(96% 0.055 78); margin-left: auto; border-top-right-radius: 2px; border-left: 3px solid var(--color-flag); }
+.bub .t { display: block; margin-top: 2px; font-size: 8px; color: var(--color-ink-faint); text-align: right; }
+.ai-tag {
+  display: inline-block; margin-bottom: 3px;
+  padding: 1px 6px; border-radius: 4px;
+  background: var(--color-accent); color: oklch(21% 0.03 165);
+  font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.05em;
+}
+.ai-tag.warn { background: var(--color-flag); }
+.prod { display: flex; gap: 7px; align-items: center; }
+.prod-img {
+  width: 34px; height: 34px; flex: none; border-radius: 5px;
+  background: oklch(84% 0.02 150); display: grid; place-items: center; font-size: 15px;
+}
+.prod b { display: block; font-size: 11px; }
+.prod .p { font-size: 11px; color: var(--color-accent-deep); font-weight: 600; }
+
+/* the receipt that lands last */
+/* A scrim under the receipt, so the thread reads as deliberately behind it
+   rather than accidentally obscured. Fades the conversation instead of
+   hiding it — the messages stay legible through the wash. */
+.scrim {
+  position: absolute; inset: auto 0 0 0; height: 46%;
+  background: linear-gradient(to top, oklch(95% 0.006 105) 34%, transparent 100%);
+  opacity: 0; pointer-events: none; z-index: 1;
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
+.scrim.on { opacity: 1; }
+
+.receipt {
+  position: absolute; left: 50%; bottom: 7%;
+  transform: translate(-50%, 16px) scale(0.94);
+  width: 76%;
+  background: oklch(100% 0 0);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  text-align: center;
+  box-shadow: 0 22px 50px -18px oklch(21% 0.02 165 / 0.5);
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out);
+  z-index: 2;
+}
+.receipt.on { opacity: 1; transform: translate(-50%, 0) scale(1); }
+.receipt .tick {
+  width: 40px; height: 40px; margin: 0 auto var(--space-xs);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent); color: oklch(100% 0 0);
+  display: grid; place-items: center; font-size: 21px;
+}
+.receipt b { display: block; font-size: 13px; }
+.receipt span { font-size: 10px; color: var(--color-ink-faint); font-family: var(--font-mono); }
+
+/* progress ticks */
+.stage-rail { display: flex; gap: 5px; margin: var(--space-md) 0 var(--space-lg); }
+.stage-rail span {
+  width: 26px; height: 3px; border-radius: var(--radius-pill);
+  background: oklch(86% 0.012 150);
+  transition: background-color var(--dur-mid) var(--ease-out);
+}
+.stage-rail span.on { background: var(--color-accent); }
+
+/* MOBILE — unpin. The annotations become a plain list under the handset,
+   which is the only honest shape for them at this width. */
+@media (max-width: 940px) {
+  .stage { height: auto; }
+  .stage-pin { position: static; height: auto; overflow: visible; padding-block: var(--space-3xl); }
+  .stage-grid {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+  }
+  .notes { order: 3; text-align: left; }
+  .notes-right { text-align: left; }
+  .notes-right .note p { margin-left: 0; }
+  .note { opacity: 1; transform: none; }
+  /* height:auto is load-bearing. The desktop rule sizes the handset from
+     height (to survive short viewports under the pin); leaving that in place
+     here fought this width and squashed the frame to 300x503 instead of its
+     9:19. Unpinned, there is no viewport to fit into — width leads and the
+     aspect-ratio derives the height. */
+  .phone { order: 1; width: min(300px, 82vw); height: auto; max-height: none; }
+  .wa-msg { display: block; }
+  /* `.receipt.on` must be named here too. It carries the centring transform
+     at specificity 0,2,0, which outranks a bare `.receipt` even inside this
+     media block — so the translate(-50%) survived into the static layout and
+     hung the card off the left edge of the screen. */
+  .receipt, .receipt.on {
+    position: static; transform: none; opacity: 1;
+    width: auto; margin: var(--space-md) var(--space-sm) var(--space-sm);
+  }
+  .scrim { display: none; }
+  .stage-rail { display: none; }
+}
+
+/* ─── onboarding ─────────────────────────────────────────────────────
+   The left column holds still while the steps pass it — a sticky column
+   rather than a pinned stage, so the page keeps scrolling normally and the
+   rail between them is what carries the sense of progress.               */
+.steps {
+  background: var(--color-paper);
+  padding-block: var(--pad-section);
+}
+.steps-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1.06fr);
+  gap: 0;
+  align-items: start;
+}
+.steps-left { position: sticky; top: 22vh; min-width: 0; padding-right: var(--space-xl); }
+.steps-eyebrow {
+  display: block;
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--color-ink-faint); margin-bottom: var(--space-md);
+}
+.steps-left h2 {
+  font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(2.2rem, 5vw, 3.9rem);
+  line-height: 0.98; letter-spacing: -0.048em;
+  max-width: 11ch; overflow-wrap: anywhere; min-width: 0;
+}
+.steps-left p {
+  margin-top: var(--space-lg); max-width: 38ch;
+  color: var(--color-ink-muted);
+}
+
+/* ── the rail ── */
+.rail { position: relative; justify-self: center; width: 100%; height: 100%; }
+.rail-track {
+  position: absolute; left: 50%; top: 0; bottom: 0;
+  width: 2px; margin-left: -1px;
+  background: oklch(89% 0.010 150);
+}
+/* Grows from the top as you descend. transform-origin + scaleY keeps this
+   on the compositor; animating `height` would relayout the column on every
+   frame of the scroll. */
+.rail-fill {
+  position: absolute; left: 50%; top: 0;
+  width: 2px; margin-left: -1px; height: 100%;
+  background: linear-gradient(to bottom, var(--color-accent), var(--color-accent-deep));
+  transform-origin: top center;
+  transform: scaleY(0);
+  transition: transform 420ms var(--ease-out);
+}
+.rail-chip {
+  position: absolute; left: 50%; top: 0;
+  width: 40px; height: 40px; margin-left: -20px;
+  border-radius: 11px;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-family: var(--font-display); font-weight: 800; font-size: var(--text-base);
+  display: grid; place-items: center;
+  box-shadow: 0 0 0 6px oklch(72% 0.132 165 / 0.14),
+              0 10px 24px -8px oklch(45% 0.13 165 / 0.7);
+  /* the spring is the whole point — it should arrive, not slide */
+  transition: transform 620ms cubic-bezier(0.34, 1.4, 0.42, 1);
+  will-change: transform;
+}
+.rail-chip span { display: block; animation: flip 420ms var(--ease-out) both; }
+@keyframes flip {
+  from { opacity: 0; transform: translateY(-9px) scale(0.82); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── the cards ── */
+.steps-cards { display: flex; flex-direction: column; gap: var(--space-md); padding-left: var(--space-xl); min-width: 0; }
+.step-card {
+  border-radius: var(--radius-lg);
+  border: var(--rule-hair) solid var(--color-rule);
+  background: var(--color-surface);
+  padding: clamp(var(--space-md), 1.7vw, var(--space-lg));
+  min-width: 0;
+  opacity: 0.55;
+  transform: translateY(6px);
+  transition: opacity var(--dur-slow) var(--ease-out),
+              transform var(--dur-slow) var(--ease-out),
+              border-color var(--dur-slow) var(--ease-out),
+              box-shadow var(--dur-slow) var(--ease-out);
+}
+.step-card.on {
+  opacity: 1; transform: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px oklch(72% 0.132 165 / 0.28), var(--shadow-card);
+}
+.step-k {
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--color-ink-faint); display: block; margin-bottom: var(--space-xs);
+}
+.step-card h3 {
+  font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(1.25rem, 2vw, 1.6rem);
+  letter-spacing: -0.03em; line-height: 1.14;
+  overflow-wrap: anywhere;
+}
+.step-card p { margin-top: var(--space-sm); font-size: var(--text-sm); color: var(--color-ink-muted); }
+
+/* proof panels */
+.sp { margin-top: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-xs); }
+.sp-row {
+  display: flex; align-items: center; gap: var(--space-sm);
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  background: oklch(99% 0.004 105);
+  font-size: var(--text-sm);
+}
+.sp-row.dark { background: var(--color-band); border-color: var(--color-band); color: var(--color-band-ink); }
+.sp-ico {
+  width: 30px; height: 30px; flex: none; border-radius: var(--radius-pill);
+  background: var(--color-accent); color: var(--color-on-accent);
+  display: grid; place-items: center; font-size: 14px; font-weight: 700;
+}
+.sp-t b { display: block; font-size: var(--text-sm); }
+.sp-t span { font-size: var(--text-xs); color: var(--color-ink-faint); }
+.sp-row.dark .sp-t span { color: var(--color-band-muted); }
+.sp-ok { margin-left: auto; color: var(--color-accent-deep); font-size: var(--text-base); }
+.sp-k { color: var(--color-ink-faint); }
+.sp-v { margin-left: auto; font-family: var(--font-mono); font-size: var(--text-xs); }
+
+@media (max-width: 940px) {
+  /* The rail is a two-column device; at this width the steps simply stack
+     and the numbers move onto the cards themselves. */
+  .steps-grid { grid-template-columns: minmax(0, 1fr); }
+  .steps-left { position: static; padding-right: 0; margin-bottom: var(--space-2xl); }
+  .rail { display: none; }
+  .steps-cards { padding-left: 0; }
+  .step-card { opacity: 1; transform: none; }
+}
+
+/* ─── the estimate ───────────────────────────────────────────────── */
+.calc { background: var(--color-paper); padding-block: var(--pad-section); }
+.calc > .shell > h2 {
+  font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(2.1rem, 5.4vw, 4rem);
+  line-height: 0.99; letter-spacing: -0.048em;
+  max-width: 16ch; overflow-wrap: anywhere; min-width: 0;
+}
+.calc > .shell > p.intro {
+  margin-top: var(--space-lg); max-width: 52ch; color: var(--color-ink-muted);
+}
+.calc-box {
+  margin-top: var(--space-2xl);
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: var(--rule-hair) solid var(--color-rule);
+  box-shadow: var(--shadow-card);
+}
+@media (max-width: 860px) { .calc-box { grid-template-columns: minmax(0, 1fr); } }
+
+.calc-in  { background: var(--color-surface); padding: clamp(var(--space-lg), 3vw, var(--space-2xl)); }
+.calc-out { background: var(--color-band); color: var(--color-band-ink); padding: clamp(var(--space-lg), 3vw, var(--space-2xl)); }
+.calc-k {
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-ink-faint);
+}
+.calc-out .calc-k { color: var(--color-band-muted); }
+
+.field { margin-top: var(--space-xl); }
+.field-top { display: flex; align-items: baseline; gap: var(--space-sm); }
+.field-top label { font-size: var(--text-sm); font-weight: 600; }
+.field-val {
+  margin-left: auto;
+  font-family: var(--font-display); font-weight: 800;
+  font-size: var(--text-xl); letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.field-ends {
+  display: flex; justify-content: space-between;
+  margin-top: 6px; font-size: var(--text-xs); color: var(--color-ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Range input, restyled but still a real <input type=range> — keyboard,
+   screen readers and touch all keep working, which a div-with-a-drag-handler
+   would have thrown away. */
+input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 22px; margin-top: var(--space-sm);
+  background: transparent; cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px; border-radius: var(--radius-pill);
+  background: linear-gradient(to right,
+    var(--color-accent) 0 var(--pct, 0%), oklch(89% 0.01 150) var(--pct, 0%) 100%);
+}
+input[type="range"]::-moz-range-track {
+  height: 4px; border-radius: var(--radius-pill);
+  background: linear-gradient(to right,
+    var(--color-accent) 0 var(--pct, 0%), oklch(89% 0.01 150) var(--pct, 0%) 100%);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 19px; height: 19px; margin-top: -7.5px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  border: 3px solid var(--color-accent);
+  box-shadow: 0 2px 7px oklch(21% 0.02 165 / 0.28);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 19px; height: 19px; border: 3px solid var(--color-accent);
+  border-radius: var(--radius-pill); background: var(--color-surface);
+  box-shadow: 0 2px 7px oklch(21% 0.02 165 / 0.28);
+}
+input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.14); }
+input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.02); }
+input[type="range"]:focus-visible { outline: none; }
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px oklch(72% 0.132 165 / 0.34);
+}
+
+.calc-figure {
+  font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(2.3rem, 5.6vw, 3.5rem);
+  line-height: 1; letter-spacing: -0.045em;
+  color: var(--color-accent);
+  font-variant-numeric: tabular-nums;
+  margin-top: var(--space-xs);
+}
+.calc-sub { margin-top: var(--space-md); font-size: var(--text-sm); color: var(--color-band-muted); }
+.calc-hr { height: 1px; background: var(--color-band-rule); margin: var(--space-lg) 0; border: 0; }
+.calc-second { font-family: var(--font-display); font-weight: 800; font-size: var(--text-2xl); font-variant-numeric: tabular-nums; }
+.calc-note {
+  margin-top: var(--space-lg); font-size: var(--text-xs); line-height: 1.55;
+  color: oklch(62% 0.014 165);
+}
+.calc-out .btn { margin-top: var(--space-lg); }
+
+/* ─── voices ─────────────────────────────────────────────────────────
+   A triangular prism rather than the reference's cube: three pharmacies,
+   three faces, so every face carries a name and a third of a turn lands
+   exactly on the next one. A cube would have left a blank side to explain. */
+.voices { background: var(--color-paper); padding-block: var(--pad-section); }
+.voices h2 {
+  font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(2.1rem, 5.2vw, 3.8rem);
+  line-height: 1; letter-spacing: -0.048em;
+  max-width: 17ch; overflow-wrap: anywhere; min-width: 0;
+}
+.voices > .shell > p.intro { margin-top: var(--space-lg); max-width: 50ch; color: var(--color-ink-muted); }
+
+.voices-grid {
+  margin-top: var(--space-3xl);
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(var(--space-xl), 5vw, var(--space-3xl));
+  align-items: center;
+}
+@media (max-width: 860px) { .voices-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.prism-stage {
+  perspective: 1000px;
+  display: grid; place-items: center;
+  min-height: 300px;
+}
+.prism {
+  position: relative;
+  width: 240px; height: 240px;
+  transform-style: preserve-3d;
+  /* the rotation is set from JS; the float is the ambient part */
+  transition: transform 900ms cubic-bezier(0.22, 1.1, 0.36, 1);
+  animation: hover 7s var(--ease-in-out) infinite;
+}
+@keyframes hover {
+  0%,100% { translate: 0 0; }
+  50%     { translate: 0 -13px; }
+}
+.face {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  border-radius: 16px;
+  /* 60.6px = 210 / (2·tan60°) — the apothem, i.e. how far each face must sit
+     from the axis for three of them to close into a solid prism. */
+  backface-visibility: hidden;
+  background: linear-gradient(155deg, oklch(99% 0.004 150), oklch(94% 0.018 160));
+  border: var(--rule-hair) solid oklch(88% 0.02 160);
+  box-shadow: inset 0 1px 0 oklch(100% 0 0), 0 22px 44px -26px oklch(30% 0.04 165 / 0.7);
+}
+/* 69.3px = 240 / (2·tan60°) — see the apothem note above. */
+.face-1 { transform: rotateY(0deg)   translateZ(69.3px); }
+.face-2 { transform: rotateY(120deg) translateZ(69.3px); }
+.face-3 { transform: rotateY(240deg) translateZ(69.3px); }
+.face b {
+  font-family: var(--font-display); font-weight: 800;
+  font-size: var(--text-xl); letter-spacing: -0.03em;
+  text-align: center; line-height: 1.1; padding: var(--space-md);
+}
+.face i {
+  display: block; margin-top: 6px;
+  font-style: normal;
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--color-accent-deep);
+}
+/* `auto` on the inline axis — it sat in normal flow before and hung to the
+   left of the object it was supposed to be cast by. */
+.prism-shadow {
+  width: 170px; height: 18px; margin: var(--space-lg) auto 0;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, oklch(50% 0.03 165 / 0.26), transparent 70%);
+  filter: blur(5px);
+  animation: shrink 7s var(--ease-in-out) infinite;
+}
+@keyframes shrink { 0%,100% { transform: scaleX(1); opacity: .55; } 50% { transform: scaleX(0.86); opacity: .38; } }
+
+.voice { position: relative; min-height: 240px; }
+.quote {
+  position: absolute; inset: 0;
+  opacity: 0; transform: translateY(12px);
+  transition: opacity 420ms var(--ease-out), transform 420ms var(--ease-out);
+  pointer-events: none;
+}
+.quote.on { opacity: 1; transform: none; pointer-events: auto; }
+.stars { color: var(--color-accent); letter-spacing: 2px; font-size: var(--text-sm); }
+.quote blockquote {
+  margin: var(--space-md) 0 0;
+  font-family: var(--font-display); font-weight: 700;
+  font-size: clamp(1.15rem, 2vw, 1.5rem);
+  line-height: 1.32; letter-spacing: -0.025em;
+  max-width: 30ch; overflow-wrap: anywhere;
+}
+.quote cite {
+  display: block; margin-top: var(--space-lg);
+  font-style: normal; font-weight: 600; font-size: var(--text-sm);
+}
+.quote cite span { display: block; font-weight: 400; color: var(--color-ink-faint); }
+
+.voice-dots { display: flex; gap: var(--space-xs); margin-top: var(--space-xl); }
+.voice-dots button {
+  width: 30px; height: 4px; padding: 0; border: 0; cursor: pointer;
+  border-radius: var(--radius-pill);
+  background: oklch(87% 0.012 150);
+  transition: background-color var(--dur-mid) var(--ease-out);
+}
+.voice-dots button[aria-selected="true"] { background: var(--color-accent); }
+.voice-dots button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
+
+/* ─── scroll reveal ──────────────────────────────────────────────────
+   Content is visible by DEFAULT and only hidden once JS has confirmed it can
+   reveal it again (the .rv-armed flag on <html>). Written the other way
+   round — hidden in CSS, shown by JS — a script error or a blocked file
+   would leave the entire page blank, which is a catastrophic failure mode
+   for a decorative effect. */
+.rv-armed [data-rv] {
+  opacity: 0;
+  transform: translateY(20px);
+  transition:
+    opacity 0.75s var(--ease-out),
+    transform 0.75s var(--ease-out);
+  transition-delay: var(--rv-d, 0ms);
+  will-change: opacity, transform;
+}
+.rv-armed [data-rv].rv-in { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rv-armed [data-rv] { opacity: 1; transform: none; transition: none; }
+}
+
+/* ─── the close ──────────────────────────────────────────────────────
+   Not "book a demo". The demo is four seconds long and the visitor can run
+   it here: pick a question, watch the assistant answer it — or refuse it.
+   The refusal is the strongest thing this product does, so it is the last
+   thing the page shows before asking for the sign-up.                     */
+.close {
+  position: relative; isolation: isolate; overflow: hidden;
+  background: var(--color-paper);
+  padding-block: var(--pad-section-lg);
+  text-align: center;
+}
+.close::before {
+  content: ""; position: absolute; inset: 0; z-index: -2;
+  background:
+    radial-gradient(62% 50% at 50% -8%, var(--color-wash) 0%, transparent 64%),
+    radial-gradient(70% 46% at 50% 108%, var(--color-wash-soft) 0%, transparent 62%);
+}
+.close-eyebrow {
+  display: inline-flex; align-items: center; gap: var(--space-xs);
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-ink-faint);
+}
+.close-eyebrow::before {
+  content: ""; width: 7px; height: 7px; border-radius: var(--radius-pill);
+  background: var(--color-accent);
+}
+.close h2 {
+  margin-top: var(--space-lg);
+  font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(2.2rem, 6vw, 4.4rem);
+  line-height: 0.98; letter-spacing: -0.05em;
+  max-width: 15ch; margin-inline: auto;
+  overflow-wrap: anywhere; min-width: 0;
+}
+.close > .shell > p.sub {
+  margin: var(--space-lg) auto 0; max-width: 46ch; color: var(--color-ink-muted);
+}
+
+/* ── the four-second demo ── */
+.try {
+  margin: var(--space-2xl) auto 0;
+  max-width: 620px;
+  background: var(--color-surface);
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  text-align: left;
+}
+.try-head {
+  display: flex; align-items: center; gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: var(--rule-hair) solid var(--color-rule);
+  font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-ink-faint);
+}
+.try-head .dot { width: 7px; height: 7px; border-radius: var(--radius-pill); background: var(--color-accent); }
+.try-body { padding: var(--space-md); min-height: 148px; display: flex; flex-direction: column; gap: var(--space-xs); justify-content: flex-end; }
+.try-q {
+  align-self: flex-end; max-width: 84%;
+  background: oklch(89% 0.075 150);
+  padding: var(--space-xs) var(--space-sm); border-radius: 11px; border-top-right-radius: 3px;
+  font-size: var(--text-sm);
+}
+.try-a {
+  align-self: flex-start; max-width: 88%;
+  background: oklch(95% 0.006 105);
+  padding: var(--space-xs) var(--space-sm); border-radius: 11px; border-top-left-radius: 3px;
+  font-size: var(--text-sm); line-height: 1.5;
+  min-height: 1.2em;
+}
+.try-a.flag { background: oklch(96% 0.05 78); border-left: 3px solid var(--color-flag); }
+.try-a .lab {
+  display: block; margin-bottom: 3px;
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--color-flag);
+}
+.caret {
+  display: inline-block; width: 2px; height: 1em; vertical-align: -2px;
+  background: var(--color-ink-muted); margin-left: 1px;
+  animation: blink 1s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+.dots-typing { display: inline-flex; gap: 4px; padding: 3px 0; }
+.dots-typing i {
+  width: 6px; height: 6px; border-radius: var(--radius-pill);
+  background: oklch(72% 0.012 160); display: block;
+  animation: bounce 1.1s var(--ease-in-out) infinite;
+}
+.dots-typing i:nth-child(2) { animation-delay: 0.16s; }
+.dots-typing i:nth-child(3) { animation-delay: 0.32s; }
+@keyframes bounce { 0%,60%,100% { transform: translateY(0); opacity: .55; } 30% { transform: translateY(-5px); opacity: 1; } }
+
+.try-foot {
+  display: flex; flex-wrap: wrap; gap: var(--space-xs);
+  padding: var(--space-md); border-top: var(--rule-hair) solid var(--color-rule);
+  background: oklch(98% 0.004 105);
+}
+.chip {
+  border: var(--rule-hair) solid var(--color-rule);
+  background: var(--color-surface);
+  border-radius: var(--radius-pill);
+  padding: 7px 13px;
+  font-family: var(--font-body); font-size: var(--text-sm);
+  cursor: pointer; white-space: nowrap;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              background-color var(--dur-fast) var(--ease-out),
+              transform var(--dur-fast) var(--ease-out);
+}
+.chip:hover { border-color: var(--color-accent); transform: translateY(-1px); }
+.chip:active { transform: translateY(1px); }
+.chip[aria-pressed="true"] { border-color: var(--color-accent); background: oklch(95% 0.04 165); }
+.chip:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+@media (max-width: 560px) { .chip { white-space: normal; } }
+
+.close-cta { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-sm); margin-top: var(--space-2xl); }
+.close-fine { margin-top: var(--space-md); font-size: var(--text-sm); color: var(--color-ink-faint); }
+
+/* ─── footer ─────────────────────────────────────────────────────────
+   The belief goes here, not a borrowed quote. Three beats — what we hold to
+   be true, how we act on it, what that turns out to be — set as one falling
+   statement rather than a paragraph, so it is read as a position and not as
+   copy at the bottom of a page.                                            */
+.foot {
+  position: relative; isolation: isolate; overflow: hidden;
+  background: var(--color-band); color: var(--color-band-muted);
+  padding-block: var(--pad-section);
+}
+.foot::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background:
+    radial-gradient(78% 60% at 12% -10%, oklch(30% 0.062 168) 0%, transparent 60%),
+    radial-gradient(60% 50% at 96% 6%,  oklch(26% 0.048 172) 0%, transparent 58%);
+}
+
+.creed-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.85fr);
+  gap: clamp(var(--space-lg), 3.4vw, var(--space-2xl));
+  align-items: start;
+}
+@media (max-width: 860px) { .creed-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.creed-k {
+  display: inline-flex; align-items: center; gap: var(--space-xs);
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.2em; text-transform: uppercase; color: var(--color-accent);
+  margin-bottom: var(--space-lg);
+}
+.creed-k::before { content: ""; width: 18px; height: 1px; background: var(--color-accent); }
+
+/* Measure lives on the paragraphs, never on this wrapper. `ch` resolves
+   against the element's OWN font-size, and the wrapper inherits 16px body
+   type while its children are set at ~31px display — so a `ch` cap here
+   silently squeezed a 662px column down to 260px and broke every beat into
+   four ragged lines. */
+.creed { max-width: none; }
+.creed p {
+  font-family: var(--font-display); font-weight: 700;
+  font-size: clamp(1.35rem, 2.5vw, 1.95rem);
+  line-height: 1.22; letter-spacing: -0.032em;
+  color: var(--color-band-ink);
+  overflow-wrap: anywhere; min-width: 0;
+  max-width: 21ch;          /* correct here: resolves against the display size */
+}
+/* Each beat lands a step further in — the argument physically descends from
+   belief to method to product. */
+.creed p + p { margin-top: var(--space-md); }
+.creed p:nth-child(2) { padding-left: clamp(0px, 2.4vw, 34px); }
+.creed p:nth-child(3) { padding-left: clamp(0px, 4.8vw, 68px); }
+.creed em { font-style: normal; color: var(--color-accent); }
+.creed-sig {
+  margin-top: var(--space-xl);
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.14em; text-transform: uppercase; color: oklch(58% 0.014 165);
+}
+
+/* try-it panel */
+.foot-try { }
+.foot-try .lab {
+  display: block;
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--color-band-ink); margin-bottom: var(--space-sm);
+}
+.foot-try input[type="tel"] {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-md);
+  border: var(--rule-hair) solid var(--color-band-rule);
+  background: oklch(100% 0 0 / 0.06);
+  color: var(--color-band-ink);
+  font-family: var(--font-body); font-size: var(--text-base);
+}
+.foot-try input::placeholder { color: oklch(58% 0.014 165); }
+.foot-try input:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.foot-try .btn { width: 100%; margin-top: var(--space-xs); justify-content: center; }
+.foot-try .hint { margin-top: var(--space-sm); font-size: var(--text-xs); color: oklch(56% 0.014 165); }
+
+.foot-hr { height: 1px; background: var(--color-band-rule); border: 0; margin: clamp(var(--space-xl), 5vw, var(--space-3xl)) 0; }
+
+.foot-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr));
+  gap: var(--space-xl);
+}
+@media (max-width: 780px) { .foot-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.foot .mark { color: var(--color-band-ink); }
+.foot-blurb { margin-top: var(--space-md); font-size: var(--text-sm); max-width: 30ch; }
+.foot-col h4 {
+  font-family: var(--font-mono); font-weight: 500; font-size: var(--text-xs);
+  letter-spacing: 0.14em; text-transform: uppercase; color: oklch(58% 0.014 165);
+  margin: 0 0 var(--space-md);
+}
+.foot-col a {
+  display: block; margin-bottom: var(--space-sm);
+  font-size: var(--text-sm); text-decoration: none; white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.foot-col a:hover { color: var(--color-band-ink); }
+.foot-base {
+  margin-top: clamp(var(--space-xl), 4vw, var(--space-2xl));
+  padding-top: var(--space-lg);
+  border-top: var(--rule-hair) solid var(--color-band-rule);
+  font-size: var(--text-xs); line-height: 1.65;
+  max-width: 78ch;
+  display: grid; gap: var(--space-sm);
+}
+/* The registered entity, a step brighter than the surrounding small print:
+   it is who the pharmacy is actually contracting with, not boilerplate. */
+.foot-entity { color: var(--color-band-ink); }
+.foot-entity b { font-weight: 600; }
+/* Separators sit in their own spans rather than in the sentence, so a narrow
+   screen wraps on words instead of stranding a floating "·" at line start. */
+.foot-entity .sep { color: var(--color-band-rule); padding-inline: 0.5em; }
+.foot-legal { color: oklch(58% 0.014 165); }
+.foot-legal a { color: var(--color-accent); text-decoration: none; margin-left: 0.5em; }
+.foot-legal a:hover { text-decoration: underline; }
+
+/* ─── the menu ───────────────────────────────────────────────────────
+   Four real extrusions, not four cards with a drop shadow: each tile has a
+   face standing 30px proud of its body on the Z axis, so when the whole rack
+   tilts toward the cursor the sides are revealed by actual geometry. That is
+   why the depth still looks right at any angle — nothing here is a painted
+   highlight that would break the moment the rack turns.                    */
+.menu {
+  position: fixed; inset: 0; z-index: 90;
+  background: oklch(14% 0.012 168);
+  color: oklch(94% 0.008 150);
+  display: flex; flex-direction: column;
+  padding: clamp(var(--space-md), 3vh, var(--space-xl)) clamp(var(--space-md), 4vw, var(--space-2xl));
+  overflow: hidden;
+  opacity: 0; pointer-events: none;
+  transition: opacity 420ms var(--ease-out);
+}
+.menu.open { opacity: 1; pointer-events: auto; }
+body.menu-lock { overflow: hidden; }
+
+/* the light the cursor carries with it */
+.menu-spot {
+  position: absolute; top: 0; left: 0;
+  width: 620px; height: 620px; margin: -310px 0 0 -310px;
+  border-radius: 50%;
+  background: radial-gradient(circle, oklch(72% 0.132 165 / 0.16), transparent 62%);
+  pointer-events: none;
+  will-change: transform;
+}
+.menu-grid-lines {
+  position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(oklch(100% 0 0 / 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(100% 0 0 / 0.028) 1px, transparent 1px);
+  background-size: 68px 68px;
+}
+
+.menu-bar {
+  position: relative; z-index: 2;
+  display: flex; align-items: center; justify-content: space-between;
+  flex: none;
+}
+.menu-chip {
+  display: inline-flex; align-items: center; gap: var(--space-xs);
+  padding: 9px 15px; border-radius: var(--radius-md);
+  border: var(--rule-hair) solid oklch(100% 0 0 / 0.14);
+  background: oklch(100% 0 0 / 0.03);
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: inherit; cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+.menu-chip:hover { border-color: var(--color-accent); background: oklch(72% 0.132 165 / 0.10); }
+.menu-chip .pip { width: 7px; height: 7px; border-radius: 2px; background: var(--color-accent); }
+
+/* the rack */
+.rack-wrap {
+  position: relative; z-index: 2;
+  flex: 1; min-height: 0;
+  display: grid; place-items: center;
+  perspective: 1400px;
+}
+.rack {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(var(--space-md), 3vw, var(--space-2xl));
+  width: min(760px, 100%);
+  transform-style: preserve-3d;
+  transition: transform 620ms var(--ease-out);
+  will-change: transform;
+}
+
+.cube {
+  position: relative;
+  /* Shallower than it looks in the reference, and sized so two rows plus the
+     bar and the footer line clear a 720px-tall laptop without colliding. */
+  aspect-ratio: 1 / 0.6;
+  transform-style: preserve-3d;
+  transition: transform 520ms var(--ease-out);
+  will-change: transform;
+  /* staggered arrival — set inline per index by JS-free nth-child below */
+  opacity: 0;
+  animation: cube-in 720ms var(--ease-out) forwards;
+}
+.menu.open .cube:nth-child(1) { animation-delay: 0.06s; }
+.menu.open .cube:nth-child(2) { animation-delay: 0.13s; }
+.menu.open .cube:nth-child(3) { animation-delay: 0.20s; }
+.menu.open .cube:nth-child(4) { animation-delay: 0.27s; }
+@keyframes cube-in {
+  from { opacity: 0; transform: translateY(34px) rotateX(-18deg) scale(0.94); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* The link fills the tile, but the sub-links must NOT live inside it: an
+   <a> nested in an <a> is invalid, and the browser silently auto-closes the
+   outer one — which threw the sub-panels out of their tile and laid them out
+   as siblings underneath. The anchor and the subs are siblings instead. */
+.cube-hit {
+  position: absolute; inset: 0;
+  transform-style: preserve-3d;
+  text-decoration: none; color: inherit;
+  border-radius: 14px;
+}
+.cube-hit:focus-visible { outline: none; }
+
+/* body — sits at Z 0 and reads as the block's sides */
+.cube-body {
+  position: absolute; inset: 0;
+  border-radius: 14px;
+  background: oklch(21% 0.014 168);
+  border: var(--rule-hair) solid oklch(100% 0 0 / 0.10);
+}
+/* face — stands proud, so the body shows as thickness when tilted */
+.cube-face {
+  position: absolute; inset: 6px;
+  transform: translateZ(30px);
+  border-radius: 11px;
+  background: linear-gradient(160deg, oklch(26% 0.016 168), oklch(20% 0.013 168));
+  border: var(--rule-hair) solid oklch(100% 0 0 / 0.09);
+  padding: var(--space-md);
+  display: flex; flex-direction: column; justify-content: space-between;
+  transition: background 320ms var(--ease-out), border-color 320ms var(--ease-out),
+              box-shadow 320ms var(--ease-out);
+}
+.cube-idx {
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.16em; color: oklch(62% 0.012 160);
+}
+.cube-name {
+  font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(1.25rem, 2.6vw, 1.95rem);
+  line-height: 1.02; letter-spacing: -0.035em;
+  text-transform: uppercase;
+  color: oklch(78% 0.010 150);
+  transition: color 320ms var(--ease-out);
+  overflow-wrap: anywhere;
+}
+
+/* the lit state — one tile at a time */
+.cube:hover .cube-face,
+.cube:focus-within .cube-face {
+  background: linear-gradient(160deg, oklch(58% 0.125 165), oklch(44% 0.105 165));
+  border-color: oklch(80% 0.13 165);
+  box-shadow: 0 0 0 1px oklch(72% 0.132 165 / .5), 0 26px 60px -22px oklch(72% 0.132 165 / .55);
+}
+.cube:hover .cube-name,
+.cube:focus-within .cube-name { color: oklch(99% 0.01 150); }
+.cube:hover .cube-idx,
+.cube:focus-within .cube-idx { color: oklch(92% 0.03 165); }
+.cube:hover, .cube:focus-within { transform: translateZ(46px); }
+
+/* sub-links, revealed beside their tile */
+.cube-subs {
+  position: absolute; top: 6px; left: calc(100% + 10px);
+  display: flex; flex-direction: column; gap: 8px;
+  width: 170px;
+  transform: translateZ(30px);
+  opacity: 0; pointer-events: none;
+  transition: opacity 300ms var(--ease-out);
+}
+.cube:hover .cube-subs, .cube:focus-within .cube-subs { opacity: 1; pointer-events: auto; }
+.cube-sub {
+  display: block;
+  padding: 9px 11px; border-radius: 9px;
+  background: oklch(20% 0.013 168);
+  border: var(--rule-hair) solid oklch(100% 0 0 / 0.11);
+  text-decoration: none; color: inherit;
+  transition: border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.cube-sub:hover { border-color: var(--color-accent); transform: translateX(3px); }
+.cube-sub b { display: block; font-size: var(--text-sm); font-weight: 600; }
+.cube-sub i {
+  font-style: normal; font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: oklch(60% 0.012 160);
+}
+@media (max-width: 900px) {
+  .cube-subs { display: none; }
+}
+
+.menu-foot {
+  position: relative; z-index: 2; flex: none;
+  text-align: center;
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: oklch(58% 0.012 160);
+}
+@media (max-width: 620px) {
+  .rack { grid-template-columns: minmax(0, 1fr); gap: var(--space-sm); }
+  .cube { aspect-ratio: 1 / 0.42; }
+  .menu-foot { letter-spacing: 0.08em; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .cube { opacity: 1; }
+  .menu-spot { display: none; }
+  .caret { animation: none; opacity: 0; }
+  /* These start hidden and are revealed BY animation, so zeroing the duration
+     is not enough — the end state has to be asserted or the hero would be
+     blank for anyone who asks for less motion. */
+  .ln > span { transform: none; }
+  .settle { opacity: 1; filter: none; transform: none; }
+  .wave { display: none; }
+  .prism { animation: none; }
+  .rail-chip, .rail-fill { transition: none; }
+  /* the reel still advances — it just snaps between panels rather than
+     gliding, which is the point of the preference */
+  .reel-track { transition: none; }
+  /* The dial's resting state is an undrawn, invisible ring. Freezing the
+     animation would leave an empty circle, so show the whole loop complete
+     and every stage lit — the diagram still reads, it just stops moving. */
+  .arc { stroke-dashoffset: 0; opacity: 1; }
+  .node { color: var(--color-ink); }
+  .node::after { opacity: 1; }
+  .rake { opacity: 0; }
+  /* The sweep's resting state is off-screen and transparent, so collapsing
+     its animation would leave the fold missing its light entirely. Park it
+     mid-page and still instead. */
+  .sweep { animation: none; opacity: 1; transform: translate3d(90%, 0, 0); }
+  .bloom, .specks { animation: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── fold ─────────────────────────────────────────────────────── -->
+<div class="fold">
+  <div class="atmos" aria-hidden="true">
+    <span class="bloom bloom-a"></span>
+    <span class="bloom bloom-b"></span>
+    <span class="bloom bloom-c"></span>
+    <span class="sweep"></span>
+    <span class="specks"></span>
+    <!-- preserveAspectRatio="none" lets one authored waveform stretch to any
+         viewport instead of being cropped at narrow widths -->
+    <svg class="wave" viewBox="0 0 1200 600" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M-40,300 C 90,300 150,298 210,300 C 260,302 280,240 310,300 C 330,340 350,180 380,300 C 400,384 420,120 450,300 C 470,420 495,150 520,300 C 545,430 570,170 600,300 C 625,405 650,205 680,300 C 705,378 730,215 760,300 C 785,362 810,258 840,300 C 875,346 905,288 940,300 C 1010,322 1120,300 1240,300"/>
+      <path d="M-40,190 C 120,190 200,188 280,190 C 330,192 350,150 380,190 C 400,218 425,105 455,190 C 478,256 505,110 535,190 C 560,258 585,128 615,190 C 640,240 668,148 698,190 C 725,228 755,168 790,190 C 850,226 930,192 1010,190 C 1090,188 1170,190 1240,190"/>
+      <path d="M-40,430 C 140,430 240,428 330,430 C 380,431 400,398 430,430 C 452,454 478,372 508,430 C 532,476 560,384 590,430 C 616,470 645,392 675,430 C 700,462 730,406 765,430 C 830,474 920,432 1010,430 C 1100,428 1180,430 1240,430"/>
+    </svg>
+  </div>
+
+  <div class="shell fold-in">
+
+    <nav class="nav">
+      <a class="mark" href="#"><span class="mark-glyph" aria-hidden="true">R</span>RxNaija</a>
+      <div class="nav-actions">
+        <a class="btn btn-secondary" href="/">Sign in</a>
+        <button class="icon-btn" type="button" id="menuOpen"
+                aria-label="Open menu" aria-expanded="false" aria-controls="menu">
+          <svg width="17" height="17" viewBox="0 0 17 17" fill="currentColor" aria-hidden="true">
+            <rect x="0" y="0" width="4.5" height="4.5" rx="1"/><rect x="6.25" y="0" width="4.5" height="4.5" rx="1"/><rect x="12.5" y="0" width="4.5" height="4.5" rx="1"/>
+            <rect x="0" y="6.25" width="4.5" height="4.5" rx="1"/><rect x="6.25" y="6.25" width="4.5" height="4.5" rx="1"/><rect x="12.5" y="6.25" width="4.5" height="4.5" rx="1"/>
+            <rect x="0" y="12.5" width="4.5" height="4.5" rx="1"/><rect x="6.25" y="12.5" width="4.5" height="4.5" rx="1"/><rect x="12.5" y="12.5" width="4.5" height="4.5" rx="1"/>
+          </svg>
+        </button>
+      </div>
+    </nav>
+
+    <main class="hero">
+      <h1>
+        <span class="ln"><span>The sales you're missing</span></span>
+        <span class="ln"><span>are sitting unread</span></span>
+        <span class="ln"><span>in <span class="accent">WhatsApp.</span></span></span>
+      </h1>
+
+      <p class="lede settle settle-1">
+        Every message answered the moment it lands — priced off your own shelf,
+        the order taken, ready at the counter. Anything clinical stops and comes
+        straight to you. It runs on the number you already use, and you pay out
+        of what it brings in.
+      </p>
+
+      <div class="cta-row settle settle-2">
+        <a class="btn btn-primary" href="/">Connect your WhatsApp</a>
+        <a class="btn btn-secondary" href="mailto:support@rxnaija.com?subject=RxNaija%20demo">Book a demo</a>
+      </div>
+
+      <ul class="trust settle settle-3">
+        <li>You pay from what it earns</li>
+        <li>Keeps your existing number</li>
+        <li>You stay the pharmacist</li>
+      </ul>
+    </main>
+
+  </div>
+</div>
+
+
+<!-- ── growth ───────────────────────────────────────────────────── -->
+<section class="growth" id="growth">
+  <div class="shell growth-grid">
+
+    <div>
+      <span class="growth-k">Where the money actually is</span>
+      <h2>Most of it arrives after you've locked up.</h2>
+      <p class="lede">
+        Pharmacy messages do not come at eleven in the morning when you are free.
+        They come at night, on Sunday, and in the four minutes you are already
+        serving someone. Each column below is a day's messages; the line is what
+        they are worth once they are answered.
+      </p>
+
+      <div class="legend">
+        <div class="leg leg-1"><i></i><b>Answered after hours<span>The band that used to sit until morning.</span></b></div>
+        <div class="leg leg-2"><i></i><b>Refills that came back<span>Repeat medicines it remembers are due.</span></b></div>
+        <div class="leg leg-3"><i></i><b>Already yours<span>The trade you were getting anyway.</span></b></div>
+      </div>
+    </div>
+
+    <div class="chart-wrap">
+      <div class="chart-top">
+        <span>A week of messages</span>
+        <span class="live">● compounding</span>
+      </div>
+      <div class="chart" id="chart">
+        <svg viewBox="0 0 520 260" role="img"
+             aria-label="A chart of one week. Each day is a column of message bubbles: the trade you already had, refills the assistant remembered, and messages answered outside opening hours. A rising line shows their combined value, with the largest gains in the evenings and on Sunday when the pharmacy is shut.">
+          <defs>
+            <clipPath id="plotClip"><rect x="0" y="0" width="520" height="260" /></clipPath>
+            <linearGradient id="curveGlow" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%"  stop-color="oklch(78% 0.15 165)" stop-opacity="0.30" />
+              <stop offset="100%" stop-color="oklch(78% 0.15 165)" stop-opacity="0" />
+            </linearGradient>
+          </defs>
+
+          <!-- closed hours, called out rather than implied -->
+          <!-- Sat + Sun. x = X0 + 5·COLW − 6 = 250, spanning the two columns
+               (each 46 apart, ~27 wide) rather than the dead margin to their
+               right, which is where an eyeballed 318 had put it. -->
+          <rect class="closed-band" x="250" y="0" width="86" height="228" rx="4" />
+          <text class="closed-label" x="293" y="14" text-anchor="middle">SHUT — AND STILL SELLING</text>
+
+          <g clip-path="url(#plotClip)">
+            <g id="cols"></g>
+            <path class="curve" id="curve" d="" />
+          </g>
+          <g class="curve-head" id="curveHead"></g>
+
+          <g class="axis" id="axis"></g>
+        </svg>
+      </div>
+      <p class="growth-note">
+        Shape, not a forecast — the columns are message volume across a week, and
+        the line is what answering them is worth. Put your own numbers in below.
+      </p>
+    </div>
+
+  </div>
+</section>
+
+<!-- ── the loop ─────────────────────────────────────────────────── -->
+<section class="loop">
+  <div class="shell loop-grid">
+
+    <div>
+      <h2>Answer, sell, remember, re-engage</h2>
+      <p>
+        One line handling the whole of it. Every message answered from the stock
+        you actually hold, every price read from your own catalogue as it is
+        spoken, every purchase remembered against the patient — so when a repeat
+        medicine is due, the next conversation starts itself instead of waiting
+        for them to remember you.
+      </p>
+    </div>
+
+    <div class="dial">
+      <svg viewBox="0 0 400 400" aria-hidden="true">
+        <circle class="track" cx="200" cy="200" r="150" />
+        <circle class="rake"  cx="200" cy="200" r="150" />
+        <defs>
+          <marker id="tip" viewBox="0 0 10 10" refX="7" refY="5"
+                  markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--color-accent)" />
+          </marker>
+        </defs>
+        <path class="arc arc-1" marker-end="url(#tip)" d="M 238.8 55.1  A 150 150 0 0 1 344.9 161.2" />
+        <path class="arc arc-2" marker-end="url(#tip)" d="M 344.9 238.8 A 150 150 0 0 1 238.8 344.9" />
+        <path class="arc arc-3" marker-end="url(#tip)" d="M 161.2 344.9 A 150 150 0 0 1 55.1 238.8" />
+        <path class="arc arc-4" marker-end="url(#tip)" d="M 55.1 161.2  A 150 150 0 0 1 161.2 55.1" />
+      </svg>
+
+      <span class="node node-1">Answer</span>
+      <span class="node node-2">Sell</span>
+      <span class="node node-3">Remember</span>
+      <span class="node node-4">Re-engage</span>
+
+      <div class="hub" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12a9 9 0 1 1-3.2-6.9" />
+          <path d="M21 3v5h-5" />
+        </svg>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ── the reel ─────────────────────────────────────────────────── -->
+<section class="reel" id="reel">
+  <div class="reel-stage">
+
+    <div class="reel-left">
+      <span class="reel-kicker">What it stands on</span>
+
+      <div class="reel-titles">
+        <h2 class="reel-title on" data-step="0">Priced from your shelf, not from memory</h2>
+        <h2 class="reel-title"    data-step="1">Reads how people actually type</h2>
+        <h2 class="reel-title"    data-step="2">It would rather refuse than guess</h2>
+        <h2 class="reel-title"    data-step="3">Nobody is left waiting on a reply</h2>
+      </div>
+
+      <div class="graph" aria-hidden="true">
+        <svg viewBox="0 0 300 210">
+          <g stroke-linecap="round">
+            <line class="g-edge" data-step="0" x1="150" y1="112" x2="72"  y2="62"  />
+            <line class="g-edge" data-step="0" x1="150" y1="112" x2="124" y2="42"  />
+            <line class="g-edge" data-step="0" x1="150" y1="112" x2="212" y2="56"  />
+            <line class="g-edge" data-step="1" x1="150" y1="112" x2="256" y2="98"  />
+            <line class="g-edge" data-step="1" x1="150" y1="112" x2="238" y2="152" />
+            <line class="g-edge" data-step="2" x1="150" y1="112" x2="176" y2="176" />
+            <line class="g-edge" data-step="2" x1="150" y1="112" x2="96"  y2="170" />
+            <line class="g-edge" data-step="3" x1="150" y1="112" x2="40"  y2="128" />
+            <line class="g-edge" data-step="3" x1="150" y1="112" x2="60"  y2="106" />
+          </g>
+
+          <g class="g-node g-hub">
+            <rect x="132" y="102" width="36" height="20" rx="4" />
+            <text x="150" y="115" text-anchor="middle">RxNaija</text>
+          </g>
+
+          <g class="g-node" data-step="0"><rect x="52"  y="52"  width="40" height="16" rx="3" /><text x="72"  y="63"  text-anchor="middle">Catalogue</text></g>
+          <g class="g-node" data-step="0"><rect x="106" y="32"  width="36" height="16" rx="3" /><text x="124" y="43"  text-anchor="middle">Stock</text></g>
+          <g class="g-node" data-step="0"><rect x="192" y="46"  width="40" height="16" rx="3" /><text x="212" y="57"  text-anchor="middle">Prices</text></g>
+          <g class="g-node" data-step="1"><rect x="236" y="88"  width="40" height="16" rx="3" /><text x="256" y="99"  text-anchor="middle">Pidgin</text></g>
+          <g class="g-node" data-step="1"><rect x="216" y="142" width="44" height="16" rx="3" /><text x="238" y="153" text-anchor="middle">Shorthand</text></g>
+          <g class="g-node" data-step="2"><rect x="154" y="166" width="44" height="16" rx="3" /><text x="176" y="177" text-anchor="middle">Red flags</text></g>
+          <g class="g-node" data-step="2"><rect x="72"  y="160" width="48" height="16" rx="3" /><text x="96"  y="171" text-anchor="middle">Pharmacist</text></g>
+          <g class="g-node" data-step="3"><rect x="18"  y="118" width="44" height="16" rx="3" /><text x="40"  y="129" text-anchor="middle">Handover</text></g>
+          <g class="g-node" data-step="3"><rect x="38"  y="96"  width="44" height="16" rx="3" /><text x="60"  y="107" text-anchor="middle">History</text></g>
+        </svg>
+      </div>
+
+      <div class="reel-rail" aria-hidden="true">
+        <span class="on"></span><span></span><span></span><span></span>
+      </div>
+    </div>
+
+    <div class="reel-viewport">
+      <div class="reel-track">
+
+        <article class="reel-card on">
+          <div class="reel-num"><b>01</b> Live catalogue</div>
+          <h3>Priced from your shelf, not from memory</h3>
+          <p class="body">
+            Change a price, sell the last pack, add a line — it answers from that,
+            not from what was true this morning. Every figure it says out loud is
+            read at the moment it speaks.
+          </p>
+          <div class="w">
+            <div class="w-row"><span class="w-k">Folic Acid 5&nbsp;mg</span><span class="w-live">in stock</span></div>
+            <div class="w-row"><span class="w-k">Card price</span><span class="w-v">₦440</span></div>
+            <div class="w-row"><span class="w-k">Read at</span><span class="w-v">time of reply</span></div>
+          </div>
+        </article>
+
+        <article class="reel-card">
+          <div class="reel-num"><b>02</b> Real language</div>
+          <h3>Reads how people actually type</h3>
+          <p class="body">
+            Nobody messages a pharmacy in full sentences. It takes the shorthand,
+            the pidgin and the one-word reply, and still gets to the right product
+            and the right quantity.
+          </p>
+          <div class="w">
+            <div class="w-stack">
+              <span class="w-bubble in">abeg u get something for malaria</span>
+              <span class="w-bubble in">give me 1</span>
+              <span class="w-bubble out">Coartem, ₦1,970 a pack — sending 1 to the pharmacy now.</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="reel-card">
+          <div class="reel-num"><b>03</b> Refuses to guess</div>
+          <h3>It would rather refuse than guess</h3>
+          <p class="body">
+            A general assistant will answer a dosing question confidently and
+            wrongly. This one cannot: the question is intercepted before a reply is
+            ever drafted, and routed to a person.
+          </p>
+          <div class="w">
+            <span class="w-label bad">A general assistant</span>
+            <div class="w-bad">Give 5&nbsp;ml of paracetamol every 4 hours.</div>
+            <span class="w-label good" style="margin-top:10px">RxNaija</span>
+            <div class="w-good">That one I won't guess at — a pharmacist is looking at it now.</div>
+          </div>
+        </article>
+
+        <article class="reel-card">
+          <div class="reel-num"><b>04</b> Never dropped</div>
+          <h3>Nobody is left waiting on a reply</h3>
+          <p class="body">
+            When it hands over, the pharmacist arrives with the whole thread already
+            summarised. And if they step away, the assistant quietly resumes the
+            ordinary questions rather than leaving the customer in silence.
+          </p>
+          <div class="w">
+            <div class="w-row"><span class="w-k">Waiting on a pharmacist</span><span class="w-v">1</span></div>
+            <div class="w-row"><span class="w-k">Thread summarised</span><span class="w-live">ready</span></div>
+            <div class="w-row"><span class="w-k">If nobody answers</span><span class="w-v">assistant resumes</span></div>
+          </div>
+        </article>
+
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ── voices ───────────────────────────────────────────────────── -->
+<section class="voices" id="voices">
+  <div class="shell">
+    <h2>What changes at the counter, from the people behind it.</h2>
+    <p class="intro">
+      Three pharmacies running it on the number they already had.
+    </p>
+
+    <div class="voices-grid">
+
+      <div>
+        <div class="prism-stage">
+          <div class="prism" id="prism" aria-hidden="true">
+            <div class="face face-1"><b>JosyAde<i>Pharmacy</i></b></div>
+            <div class="face face-2"><b>WeCare<i>Pharmacy</i></b></div>
+            <div class="face face-3"><b>PrimeCure<i>Pharmacy</i></b></div>
+          </div>
+        </div>
+        <div class="prism-shadow" aria-hidden="true"></div>
+      </div>
+
+      <div>
+        <div class="voice" id="voice">
+          <div class="quote on" data-i="0">
+            <span class="stars" aria-label="5 out of 5">★★★★★</span>
+            <blockquote>
+              The night messages used to sit until morning. Now they are answered
+              when they are sent, and the order is waiting when we open.
+            </blockquote>
+            <cite>JosyAde Pharmacy<span>Community pharmacy</span></cite>
+          </div>
+
+          <div class="quote" data-i="1">
+            <span class="stars" aria-label="5 out of 5">★★★★★</span>
+            <blockquote>
+              It quotes from our own list, so there is no argument at the counter.
+              What it says on WhatsApp is what we charge.
+            </blockquote>
+            <cite>WeCare Pharmacy<span>Community pharmacy</span></cite>
+          </div>
+
+          <div class="quote" data-i="2">
+            <span class="stars" aria-label="5 out of 5">★★★★★</span>
+            <blockquote>
+              It knows when to stop. Anything about a child or a dose comes to me
+              instead of being guessed at — that is why I trust it on the line.
+            </blockquote>
+            <cite>PrimeCure Pharmacy<span>Community pharmacy</span></cite>
+          </div>
+        </div>
+
+        <div class="voice-dots" id="voiceDots" role="tablist" aria-label="Choose a pharmacy">
+          <button type="button" role="tab" aria-selected="true"  aria-label="JosyAde Pharmacy"></button>
+          <button type="button" role="tab" aria-selected="false" aria-label="WeCare Pharmacy"></button>
+          <button type="button" role="tab" aria-selected="false" aria-label="PrimeCure Pharmacy"></button>
+        </div>
+
+        <a class="btn btn-primary" href="/" style="margin-top:var(--space-xl)">Start with your number</a>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── the estimate ─────────────────────────────────────────────── -->
+<section class="calc" id="calc">
+  <div class="shell">
+    <h2>What is going unanswered right now?</h2>
+    <p class="intro">
+      Move these to your own numbers. Nothing here is a claim about what RxNaija
+      will earn you — it is your figures, multiplied, so you can see the size of
+      what is currently walking past the counter.
+    </p>
+
+    <div class="calc-box">
+
+      <div class="calc-in">
+        <span class="calc-k">Your numbers</span>
+
+        <div class="field">
+          <div class="field-top">
+            <label for="cMsgs">Customers who message a week</label>
+            <span class="field-val" id="vMsgs">120</span>
+          </div>
+          <input type="range" id="cMsgs" min="10" max="600" step="5" value="120" />
+          <div class="field-ends"><span>10</span><span>600</span></div>
+        </div>
+
+        <div class="field">
+          <div class="field-top">
+            <label for="cValue">Average order value</label>
+            <span class="field-val" id="vValue">₦4,000</span>
+          </div>
+          <input type="range" id="cValue" min="500" max="20000" step="250" value="4000" />
+          <div class="field-ends"><span>₦500</span><span>₦20,000</span></div>
+        </div>
+
+        <div class="field">
+          <div class="field-top">
+            <label for="cMiss">Share you cannot get to</label>
+            <span class="field-val" id="vMiss">30%</span>
+          </div>
+          <input type="range" id="cMiss" min="5" max="70" step="1" value="30" />
+          <div class="field-ends"><span>5%</span><span>70%</span></div>
+        </div>
+      </div>
+
+      <div class="calc-out">
+        <span class="calc-k">At stake each month</span>
+        <div class="calc-figure" id="vTotal">₦0</div>
+        <p class="calc-sub">
+          Orders that get no reply, at the value you just set.
+        </p>
+
+        <hr class="calc-hr" />
+
+        <span class="calc-k">If you answered half of them</span>
+        <div class="calc-second" id="vHalf">₦0</div>
+
+        <a class="btn btn-primary" href="/">Connect your WhatsApp</a>
+
+        <p class="calc-note">
+          Arithmetic only: your weekly messages × 4.33 weeks × the share you set,
+          multiplied by your own average order value. It assumes nothing about how
+          many the assistant converts, because we have not measured that for your
+          shop — and a number we made up would be worth less than none.
+        </p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── onboarding ───────────────────────────────────────────────── -->
+<section class="steps" id="steps">
+  <div class="shell steps-grid">
+
+    <div class="steps-left">
+      <span class="steps-eyebrow">Start now</span>
+      <h2>Three steps. Then it runs itself.</h2>
+      <p>
+        No new number, no app for your customers, nothing to migrate. You can be
+        answering on WhatsApp before the shop closes today.
+      </p>
+    </div>
+
+    <div class="rail" aria-hidden="true">
+      <span class="rail-track"></span>
+      <span class="rail-fill" id="railFill"></span>
+      <span class="rail-chip" id="railChip"><span>1</span></span>
+    </div>
+
+    <div class="steps-cards">
+
+      <article class="step-card on" data-step="0">
+        <span class="step-k">Step 01</span>
+        <h3>Create your account</h3>
+        <p>
+          Your email, your pharmacy's name, and that is the whole of it. No card,
+          nothing to download, no one to get on a call with first.
+        </p>
+        <div class="sp">
+          <div class="sp-row">
+            <span class="sp-ico" aria-hidden="true">✓</span>
+            <span class="sp-t"><b>Sterling Pharmacy</b><span>Account created</span></span>
+            <span class="sp-ok" aria-hidden="true">✓</span>
+          </div>
+          <div class="sp-row"><span class="sp-k">Card required</span><span class="sp-v">none</span></div>
+        </div>
+      </article>
+
+      <article class="step-card" data-step="1">
+        <span class="step-k">Step 02</span>
+        <h3>Link your WhatsApp</h3>
+        <p>
+          Scan one code from the number your customers already message. Same line,
+          same chat history — it simply starts answering on it.
+        </p>
+        <div class="sp">
+          <div class="sp-row">
+            <span class="sp-ico" aria-hidden="true">✆</span>
+            <span class="sp-t"><b>+234 803 •• •• ••</b><span>Your existing number</span></span>
+            <span class="sp-ok" aria-hidden="true">✓</span>
+          </div>
+          <div class="sp-row"><span class="sp-k">New number needed</span><span class="sp-v">no</span></div>
+          <div class="sp-row"><span class="sp-k">Customers install</span><span class="sp-v">nothing</span></div>
+        </div>
+      </article>
+
+      <article class="step-card" data-step="2">
+        <span class="step-k">Step 03</span>
+        <h3>It starts answering</h3>
+        <p>
+          Upload your product list and it goes live — quoting from your stock and
+          your prices, taking orders, and passing anything clinical to you.
+        </p>
+        <div class="sp">
+          <div class="sp-row"><span class="sp-k">Catalogue</span><span class="sp-v">synced</span></div>
+          <div class="sp-row"><span class="sp-k">Prices</span><span class="sp-v">read live</span></div>
+          <div class="sp-row dark">
+            <span class="sp-ico" aria-hidden="true">●</span>
+            <span class="sp-t"><b>Answering now</b><span>Clinical questions routed to you</span></span>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── the stage ────────────────────────────────────────────────── -->
+<section class="stage" id="stage">
+  <div class="stage-pin">
+    <h2>All of it, in one real conversation.</h2>
+    <div class="stage-rail" aria-hidden="true">
+      <span class="on"></span><span></span><span></span><span></span><span></span>
+    </div>
+
+    <div class="stage-grid">
+
+      <div class="notes">
+        <div class="note on" data-at="0">
+          <span class="note-tag">Patients</span>
+          <p>Knows who is writing on the first line — what they take, what they last collected, what they asked before.</p>
+        </div>
+        <div class="note" data-at="2">
+          <span class="note-tag">Refills</span>
+          <p>Notices when a repeat medicine is due and says so, at nine in the evening if that is when they wrote.</p>
+        </div>
+        <div class="note" data-at="4">
+          <span class="note-tag">Safety</span>
+          <p>Answers only what it can verify. Anything clinical stops here and comes to you instead.</p>
+        </div>
+      </div>
+
+      <div class="phone">
+        <div class="phone-screen">
+          <span class="notch" aria-hidden="true"></span>
+
+          <div class="wa-head">
+            <span class="wa-av">SP</span>
+            <span>
+              <span class="wa-name">Sterling Pharmacy</span>
+              <span class="wa-sub">online</span>
+            </span>
+          </div>
+
+          <div class="wa-body"
+               role="img"
+               aria-label="A WhatsApp conversation: the pharmacy assistant reminds Mrs Adeyemi her amlodipine refill is due, shows it in stock at 1,480 naira a card, takes an order for two cards, and then declines to answer a question about a child's fever dose, passing it to the pharmacist.">
+            <span class="wa-day">TODAY</span>
+
+            <div class="wa-msg on" data-at="0">
+              <div class="bub them">
+                <span class="ai-tag">RXNAIJA</span>
+                Good evening Mrs Adeyemi — your amlodipine is due for a refill this week.
+                <span class="t">18:04</span>
+              </div>
+            </div>
+
+            <div class="wa-msg" data-at="1">
+              <div class="bub them">
+                <span class="ai-tag">RXNAIJA</span>
+                <span class="prod">
+                  <span class="prod-img" aria-hidden="true">💊</span>
+                  <span><b>Amlodipine 10&nbsp;mg</b><span class="p">₦1,480 a card</span></span>
+                </span>
+                <span class="t">18:04</span>
+              </div>
+            </div>
+
+            <div class="wa-msg" data-at="2">
+              <div class="bub us">Is it in stock?<span class="t">18:05</span></div>
+            </div>
+
+            <div class="wa-msg" data-at="2">
+              <div class="bub them">
+                <span class="ai-tag">RXNAIJA</span>
+                Yes — 6 cards on the shelf right now. How many should I send over?
+                <span class="t">18:05</span>
+              </div>
+            </div>
+
+            <div class="wa-msg" data-at="3">
+              <div class="bub us">2 please<span class="t">18:06</span></div>
+            </div>
+
+            <div class="wa-msg" data-at="3">
+              <div class="bub them">
+                <span class="ai-tag">RXNAIJA</span>
+                Done — 2 cards, ₦2,960. Sent to the pharmacy to confirm.
+                <span class="t">18:06</span>
+              </div>
+            </div>
+
+            <div class="wa-msg" data-at="4">
+              <div class="bub us">And how much fever syrup for my son, he's 3?<span class="t">18:07</span></div>
+            </div>
+
+            <div class="wa-msg" data-at="4">
+              <div class="bub alert">
+                <span class="ai-tag warn">TO THE PHARMACIST</span>
+                That one I won't guess at — a pharmacist has it now and will reply here.
+                <span class="t">18:07</span>
+              </div>
+            </div>
+          </div>
+
+          <span class="scrim" data-at="4" aria-hidden="true"></span>
+          <div class="receipt" data-at="4" aria-hidden="true">
+            <span class="tick">✓</span>
+            <b>Order confirmed</b>
+            <span>97G-YX4 · ₦2,960</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="notes notes-right">
+        <div class="note" data-at="1">
+          <span class="note-tag">Catalogue</span>
+          <p>Stock, price and pack size as they are at this moment — not as they were when the day started.</p>
+        </div>
+        <div class="note" data-at="3">
+          <span class="note-tag">Voice</span>
+          <p>Speaks the way your counter speaks, so nobody has to work out where you end and it begins.</p>
+        </div>
+        <div class="note" data-at="4">
+          <span class="note-tag">Records</span>
+          <p>Every order is logged against the patient, and what they collect builds the history you review later.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── the vault ────────────────────────────────────────────────── -->
+<section class="vault" id="vault">
+  <canvas class="vault-canvas" id="vaultCanvas" aria-hidden="true"></canvas>
+  <div class="shell vault-inner">
+    <div class="vault-seed" aria-hidden="true"></div>
+    <span class="vault-chip"><b>RxNaija</b> · Memory</span>
+    <h2>It remembers every patient. And never invents one.</h2>
+    <p>
+      Every order, every repeat, every medicine collected builds a picture your
+      pharmacist can act on — assembled only from what was genuinely bought here.
+      Nothing inferred, nothing filled in, nothing that did not happen.
+    </p>
+  </div>
+</section>
+
+<!-- ── the close ────────────────────────────────────────────────── -->
+<section class="close" id="close">
+  <div class="shell">
+    <span class="close-eyebrow">The demo takes four seconds</span>
+    <h2>Ask it something. Especially something it shouldn't answer.</h2>
+    <p class="sub">
+      Every assistant looks good until a customer asks about a child's dose.
+      Try that one — it is the whole reason this is safe to put on your line.
+    </p>
+
+    <div class="try">
+      <div class="try-head">
+        <span class="dot" aria-hidden="true"></span>
+        Sterling Pharmacy · sample thread
+      </div>
+
+      <div class="try-body">
+        <div class="try-q" id="tryQ">Do you have folic acid?</div>
+        <div class="try-a" id="tryA" aria-live="polite"></div>
+      </div>
+
+      <div class="try-foot" id="tryChips">
+        <button class="chip" type="button" aria-pressed="true"
+          data-q="Do you have folic acid?"
+          data-a="We do — Folic Acid 5&nbsp;mg, ₦440 a card. How many would you like?">Do you have folic acid?</button>
+
+        <button class="chip" type="button" aria-pressed="false"
+          data-q="abeg how much for malaria drug"
+          data-a="Coartem is ₦1,970 a pack. Want me to send one to the pharmacy for you?">“abeg how much for malaria drug”</button>
+
+        <button class="chip" type="button" aria-pressed="false"
+          data-flag="1"
+          data-q="How much paracetamol for my 2 year old?"
+          data-a="That one I won't guess at — a pharmacist has it now and will reply here.">How much for my 2 year old?</button>
+      </div>
+    </div>
+
+    <div class="close-cta">
+      <a class="btn btn-primary" href="/">Connect your WhatsApp</a>
+      <a class="btn btn-secondary" href="mailto:support@rxnaija.com?subject=RxNaija%20demo">Talk to a pharmacist first</a>
+    </div>
+    <p class="close-fine">Your existing number · nothing for customers to install · you stay the pharmacist</p>
+  </div>
+</section>
+
+<!-- ── menu ─────────────────────────────────────────────────────── -->
+<div class="menu" id="menu" role="dialog" aria-modal="true" aria-label="Menu">
+  <div class="menu-grid-lines" aria-hidden="true"></div>
+  <div class="menu-spot" id="menuSpot" aria-hidden="true"></div>
+
+  <div class="menu-bar">
+    <span class="menu-chip"><span class="pip" aria-hidden="true"></span>EN</span>
+    <button class="menu-chip" type="button" id="menuClose">
+      <span class="pip" aria-hidden="true"></span>Close · Esc
+    </button>
+  </div>
+
+  <div class="rack-wrap">
+    <nav class="rack" id="rack" aria-label="Main">
+
+      <div class="cube">
+        <a class="cube-hit" href="#">
+          <span class="cube-body" aria-hidden="true"></span>
+          <span class="cube-face">
+            <span class="cube-idx">01 / Face</span>
+            <span class="cube-name">Home</span>
+          </span>
+        </a>
+      </div>
+
+      <div class="cube">
+        <a class="cube-hit" href="#">
+          <span class="cube-body" aria-hidden="true"></span>
+          <span class="cube-face">
+            <span class="cube-idx">02 / Face</span>
+            <span class="cube-name">Product</span>
+          </span>
+        </a>
+        <span class="cube-subs">
+          <a class="cube-sub" href="#"><i>Sub</i><b>How it works</b></a>
+          <a class="cube-sub" href="#"><i>Sub</i><b>Safety &amp; limits</b></a>
+        </span>
+      </div>
+
+      <div class="cube">
+        <a class="cube-hit" href="#">
+          <span class="cube-body" aria-hidden="true"></span>
+          <span class="cube-face">
+            <span class="cube-idx">03 / Face</span>
+            <span class="cube-name">Pricing</span>
+          </span>
+        </a>
+      </div>
+
+      <div class="cube">
+        <a class="cube-hit" href="#">
+          <span class="cube-body" aria-hidden="true"></span>
+          <span class="cube-face">
+            <span class="cube-idx">04 / Face</span>
+            <span class="cube-name">Download</span>
+          </span>
+        </a>
+        <span class="cube-subs">
+          <a class="cube-sub" href="#"><i>Sub</i><b>For pharmacies</b></a>
+          <a class="cube-sub" href="#"><i>Sub</i><b>Help centre</b></a>
+        </span>
+      </div>
+
+    </nav>
+  </div>
+
+  <p class="menu-foot">Move the mouse · every face is a page · Esc to close</p>
+</div>
+
+<!-- ── footer ───────────────────────────────────────────────────── -->
+<footer class="foot">
+  <div class="shell">
+
+    <div class="creed-grid">
+      <div>
+        <span class="creed-k">What we believe</span>
+        <div class="creed">
+          <p>A pharmacy is only ever as strong as its <em>bond with the people it serves</em>.</p>
+          <p>So we build intelligence that is simple, flexible and <em>knows its limits</em>.</p>
+          <p>What that becomes is the sharpest <em>CRM a pharmacy can own</em>.</p>
+        </div>
+        <p class="creed-sig">RxNaija · built for the Nigerian counter</p>
+      </div>
+
+      <div class="foot-try">
+        <span class="lab">See it answer →</span>
+        <label for="waNum" class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Your WhatsApp number</label>
+        <input id="waNum" type="tel" inputmode="tel" placeholder="e.g. 0803 123 4567" autocomplete="tel" />
+        <a class="btn btn-primary" id="waGo" href="#">Open WhatsApp →</a>
+        <p class="hint">Opens a chat with our demo line. Ask it anything — including something it should refuse.</p>
+      </div>
+    </div>
+
+    <hr class="foot-hr" />
+
+    <div class="foot-cols">
+      <div>
+        <a class="mark" href="#"><span class="mark-glyph" aria-hidden="true">R</span>RxNaija</a>
+        <p class="foot-blurb">
+          The right answer, from your own shelf, on the line your customers already use.
+        </p>
+      </div>
+
+      <div class="foot-col">
+        <h4>Product</h4>
+        <a href="#">How it works</a>
+        <a href="#">Safety model</a>
+        <a href="#">Catalogue sync</a>
+        <a href="#">Pricing</a>
+      </div>
+
+      <div class="foot-col">
+        <h4>Resources</h4>
+        <a href="#">Getting started</a>
+        <a href="#">FAQ</a>
+        <a href="mailto:support@rxnaija.com">Contact</a>
+      </div>
+
+      <div class="foot-col">
+        <h4>Company</h4>
+        <a href="./about.html">About</a>
+        <a href="#">Partners</a>
+        <a href="#">Careers</a>
+      </div>
+    </div>
+
+    <div class="foot-base">
+      <p class="foot-entity">
+        A product of <b>RXNAIJA HEALTH LTD</b><span class="sep">·</span>CAC Registration
+        No. 8345514<span class="sep">·</span>Nigeria
+      </p>
+      <p>
+        RxNaija supports a pharmacy's own staff with enquiries and ordering on WhatsApp.
+        It does not provide clinical advice: questions involving doses, children, pregnancy,
+        adverse reactions or drug interactions are passed to a registered pharmacist rather
+        than answered.
+      </p>
+      <p class="foot-legal">
+        © <span id="yr">2026</span> RXNAIJA HEALTH LTD. All rights reserved.
+        <a href="mailto:support@rxnaija.com">support@rxnaija.com</a>
+      </p>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* ── scroll reveal ──
+   Targets are chosen here rather than hand-tagged in the markup: annotating
+   forty nodes by hand guarantees one gets missed on the next edit, and a
+   single un-tagged sibling in a staggered group is instantly visible as a
+   mistake. Pinned sections are excluded — they already animate against
+   scroll position, and a second reveal on top of that fights it. */
+(function () {
+  if (!('IntersectionObserver' in window)) return;
+
+  var groups = [
+    '.band-grid > div',
+    '.loop-grid > div',
+    '.steps .shell > *',
+    '.calc .shell > *',
+    '.voices .shell > h2, .voices .shell > p.intro, .voices-grid > div',
+    '.close .shell > *'
+  ];
+
+  var seen = [];
+  groups.forEach(function (sel) {
+    [].slice.call(document.querySelectorAll(sel)).forEach(function (el, i) {
+      if (seen.indexOf(el) > -1) return;
+      seen.push(el);
+      el.setAttribute('data-rv', '');
+      // Stagger within a group only, capped so a long group's last item is
+      // never left waiting on a visibly late cue.
+      el.style.setProperty('--rv-d', Math.min(i * 90, 360) + 'ms');
+    });
+  });
+  if (!seen.length) return;
+
+  // Armed only now that the targets exist and the observer is about to run.
+  document.documentElement.classList.add('rv-armed');
+
+  var pending = seen.slice();
+
+  function reveal(el) {
+    el.classList.add('rv-in');
+    var i = pending.indexOf(el);
+    if (i > -1) pending.splice(i, 1);
+    io.unobserve(el);           // reveal once — re-animating every pass is nausea, not polish
+  }
+
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) { if (e.isIntersecting) reveal(e.target); });
+  }, { rootMargin: '0px 0px -12% 0px', threshold: 0.06 });
+
+  seen.forEach(function (el) { io.observe(el); });
+
+  /* THE SAFETY NET, and the reason it is not optional.
+     IntersectionObserver reports what is intersecting when it samples. A fast
+     flick, a jump to an anchor, or a restored scroll position can carry the
+     viewport past an element between samples — the callback never fires for
+     it, and because these elements start at opacity 0, that content is then
+     invisible FOREVER. Measured on this page: a scripted jump to the bottom
+     left 16 of 18 blocks permanently hidden.
+     So the observer is treated as the fast path, not the source of truth.
+     This sweep re-checks whatever is still pending against the real viewport
+     and is cheap — it only ever walks the not-yet-revealed remainder, and
+     detaches itself the moment that list is empty. */
+  var ticking = false;
+  function sweep() {
+    ticking = false;
+    for (var i = pending.length - 1; i >= 0; i--) {
+      // No lower bound on purpose. `r.bottom > 0` would restrict this to
+      // things currently on screen, which means anything the viewport has
+      // already travelled PAST stays hidden — jump to the footer, scroll
+      // back up, and you meet blank space. Once an element is at or above
+      // the reveal line it has been reached, so it shows.
+      if (pending[i].getBoundingClientRect().top < innerHeight * 0.94) reveal(pending[i]);
+    }
+    if (!pending.length) {
+      removeEventListener('scroll', onScroll);
+      removeEventListener('resize', onScroll);
+    }
+  }
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(sweep);
+  }
+  addEventListener('scroll', onScroll, { passive: true });
+  addEventListener('resize', onScroll);
+  requestAnimationFrame(sweep);   // catch whatever is on screen at load
+})();
+
+/* ── the menu ──
+   The whole rack turns toward the cursor as ONE object, which is what sells
+   the four tiles as a single physical rack rather than four hovering cards.
+   Position is read in the pointermove listener and written inside rAF, so a
+   fast mouse queues one paint per frame instead of one per event. */
+(function () {
+  var menu = document.getElementById('menu');
+  if (!menu) return;
+  var rack  = document.getElementById('rack');
+  var spot  = document.getElementById('menuSpot');
+  var open  = document.getElementById('menuOpen');
+  var close = document.getElementById('menuClose');
+  var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var mx = 0, my = 0, tick = null, last = null;
+
+  function frame() {
+    tick = null;
+    var nx = (mx / innerWidth) * 2 - 1;     // -1 .. 1 from centre
+    var ny = (my / innerHeight) * 2 - 1;
+    // Ceilings stay low deliberately: past ~10° the tiles read as falling
+    // over and the type on them stops being comfortably readable.
+    rack.style.transform =
+      'rotateX(' + (-ny * 8).toFixed(2) + 'deg) rotateY(' + (nx * 10).toFixed(2) + 'deg)';
+    spot.style.transform = 'translate3d(' + mx + 'px,' + my + 'px,0)';
+  }
+  function onMove(e) {
+    mx = e.clientX; my = e.clientY;
+    if (!tick) tick = requestAnimationFrame(frame);
+  }
+
+  function show() {
+    last = document.activeElement;
+    menu.classList.add('open');
+    document.body.classList.add('menu-lock');
+    if (open) open.setAttribute('aria-expanded', 'true');
+    if (!still) menu.addEventListener('pointermove', onMove);
+    close.focus();
+  }
+  function hide() {
+    menu.classList.remove('open');
+    document.body.classList.remove('menu-lock');
+    if (open) open.setAttribute('aria-expanded', 'false');
+    menu.removeEventListener('pointermove', onMove);
+    rack.style.transform = '';
+    if (last && last.focus) last.focus();
+  }
+
+  if (open) open.addEventListener('click', show);
+  close.addEventListener('click', hide);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && menu.classList.contains('open')) hide();
+  });
+
+  // Keep Tab inside the sheet while it is up — a dialog you can tab out of
+  // leaves the reader driving a page they cannot see.
+  menu.addEventListener('keydown', function (e) {
+    if (e.key !== 'Tab') return;
+    var f = menu.querySelectorAll('a[href], button');
+    if (!f.length) return;
+    var first = f[0], lastEl = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); lastEl.focus(); }
+    else if (!e.shiftKey && document.activeElement === lastEl) { e.preventDefault(); first.focus(); }
+  });
+})();
+
+/* ── growth ──
+   Columns are built here rather than hand-written as 200 <rect>s: the bubble
+   grid has to stay square and aligned at any width, and generating it keeps
+   the geometry in one place. Nothing here invents a number — the three bands
+   are proportions of a shape, and no ₦ scale is ever printed. */
+(function () {
+  var host = document.getElementById('chart');
+  if (!host) return;
+  var cols = document.getElementById('cols');
+  var axis = document.getElementById('axis');
+  var curve = document.getElementById('curve');
+  var head = document.getElementById('curveHead');
+  var NS = 'http://www.w3.org/2000/svg';
+
+  var DAYS = ['MON','TUE','WED','THU','FRI','SAT','SUN'];
+  // [already yours, refills, after-hours] — the weekend is where the third
+  // band dominates, which is the whole point the picture has to make.
+  var DATA = [
+    [5, 1, 2], [5, 2, 2], [6, 2, 3], [6, 2, 3],
+    [7, 3, 4], [4, 3, 6], [2, 3, 8]
+  ];
+
+  var BASE = 228, UNIT = 13, GAP = 3, COLW = 46, X0 = 26;
+
+  function mk(tag, attrs) {
+    var el = document.createElementNS(NS, tag);
+    for (var k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+
+  var pts = [], delay = 0;
+
+  DATA.forEach(function (day, d) {
+    var x = X0 + d * COLW;
+    var stacked = 0;
+    day.forEach(function (n, band) {
+      for (var i = 0; i < n; i++) {
+        var y = BASE - (stacked + 1) * (UNIT + GAP);
+        var r = mk('rect', {
+          x: x, y: y, width: UNIT * 2.1, height: UNIT, rx: 4,
+          fill: ['oklch(43% 0.075 170)', 'oklch(60% 0.115 168)', 'oklch(78% 0.150 165)'][band],
+          'class': 'bub-unit'
+        });
+        r.style.animationDelay = (delay += 16) + 'ms';
+        cols.appendChild(r);
+        stacked++;
+      }
+    });
+    pts.push({ x: x + UNIT * 1.05, y: BASE - stacked * (UNIT + GAP) - 12 });
+
+    var t = mk('text', { x: x + UNIT * 1.05, y: BASE + 18, 'text-anchor': 'middle' });
+    t.textContent = DAYS[d];
+    axis.appendChild(t);
+  });
+
+  // a smooth curve through the column tops
+  var d = 'M ' + pts[0].x + ' ' + pts[0].y;
+  for (var i = 1; i < pts.length; i++) {
+    var p0 = pts[i - 1], p1 = pts[i], mx = (p0.x + p1.x) / 2;
+    d += ' C ' + mx + ' ' + p0.y + ', ' + mx + ' ' + p1.y + ', ' + p1.x + ' ' + p1.y;
+  }
+  curve.setAttribute('d', d);
+
+  var last = pts[pts.length - 1];
+  head.appendChild(mk('circle', { cx: last.x, cy: last.y, r: 5, fill: 'oklch(78% 0.15 165)' }));
+  head.appendChild(mk('circle', { cx: last.x, cy: last.y, r: 5, fill: 'var(--color-accent)',
+                                  stroke: 'oklch(23% 0.016 168)', 'stroke-width': 3 }));
+
+  // Draw only once it is actually looked at — a chart that has already
+  // finished animating before you scroll to it has wasted its one trick.
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (es) {
+      if (es[0].isIntersecting) { host.classList.add('go'); io.disconnect(); }
+    }, { threshold: 0.3 });
+    io.observe(host);
+  } else { host.classList.add('go'); }
+})();
+
+/* ── footer odds ──
+   The button builds a real wa.me link rather than pretending to submit a
+   form to something that isn't there. DEMO_LINE must be replaced with the
+   pharmacy's actual WhatsApp number before this page goes anywhere near a
+   customer — as written it is a placeholder and will open a dead chat. */
+(function () {
+  var DEMO_LINE = '2348000000000';           // ← REPLACE ME
+  var go = document.getElementById('waGo');
+  var num = document.getElementById('waNum');
+  var yr = document.getElementById('yr');
+  if (yr) yr.textContent = new Date().getFullYear();
+  if (!go) return;
+
+  function sync() {
+    var typed = (num.value || '').replace(/\D/g, '');
+    var text = typed
+      ? 'Hello — I run a pharmacy and I would like to see RxNaija on my line.'
+      : 'Hello — I would like to try RxNaija.';
+    go.href = 'https://wa.me/' + DEMO_LINE + '?text=' + encodeURIComponent(text);
+    go.target = '_blank';
+    go.rel = 'noopener';
+  }
+  num.addEventListener('input', sync);
+  sync();
+})();
+
+/* ── the four-second demo ──
+   A typewriter, but the point is not the effect: a canned answer that simply
+   appears reads as marketing copy, while one that arrives at typing speed
+   reads as the thing actually replying. The third sample is the refusal, and
+   it is the reason the whole control exists. */
+(function () {
+  var chips = [].slice.call(document.querySelectorAll('#tryChips .chip'));
+  if (!chips.length) return;
+  var q = document.getElementById('tryQ'), a = document.getElementById('tryA');
+  var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var run = null;
+
+  function stop() { if (run) { clearTimeout(run); run = null; } }
+
+  function play(chip) {
+    stop();
+    chips.forEach(function (c) { c.setAttribute('aria-pressed', String(c === chip)); });
+
+    var flag = chip.hasAttribute('data-flag');
+    q.innerHTML = chip.getAttribute('data-q');
+    a.className = 'try-a' + (flag ? ' flag' : '');
+    var text = chip.getAttribute('data-a');
+    var label = flag ? '<span class="lab">Passed to the pharmacist</span>' : '';
+
+    if (still) { a.innerHTML = label + text; return; }
+
+    // beat one: it is reading
+    a.innerHTML = '<span class="dots-typing"><i></i><i></i><i></i></span>';
+    run = setTimeout(function () {
+      a.innerHTML = label + '<span id="tw"></span><span class="caret"></span>';
+      var tw = document.getElementById('tw'), i = 0;
+      (function type() {
+        // step 2 chars a tick: one-at-a-time is slower to read than to write
+        i = Math.min(text.length, i + 2);
+        tw.innerHTML = text.slice(0, i);
+        if (i < text.length) { run = setTimeout(type, 18); }
+        else { var c = a.querySelector('.caret'); if (c) c.remove(); }
+      })();
+    }, 620);
+  }
+
+  chips.forEach(function (c) { c.addEventListener('click', function () { play(c); }); });
+  play(chips[0]);
+})();
+
+/* ── the memory field ──────────────────────────────────────────────
+   Canvas, not DOM: forty-odd nodes with pairwise link tests is far past the
+   point where animating elements would cost layout on every frame.
+
+   Three behaviours, all cheap:
+     · drift      — each node on its own slow vector, bouncing the bounds
+     · linking    — a line between any two nodes closer than LINK_DIST,
+                    faded by distance so links dissolve rather than blink
+     · signals    — a travelling dot along a live link, which is the bit
+                    that makes the field read as *thinking* rather than
+                    floating
+
+   Guarded: paused entirely while off-screen (IntersectionObserver), frozen
+   under prefers-reduced-motion, and never a pointer target.               */
+(function () {
+  var cv = document.getElementById('vaultCanvas');
+  if (!cv || !cv.getContext) return;
+  var ctx = cv.getContext('2d');
+  var host = document.getElementById('vault');
+
+  var LINK_DIST = 132, MAX_SIGNALS = 7;
+  var nodes = [], signals = [], w = 0, h = 0, dpr = 1, raf = null, visible = false;
+  var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var pointer = { x: -9999, y: -9999 };
+
+  function size() {
+    var r = host.getBoundingClientRect();
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    w = r.width; h = r.height;
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    build();
+  }
+
+  function build() {
+    // Count scales with area so a phone doesn't render a desktop's worth of
+    // nodes into a quarter of the space and read as soup.
+    var n = Math.max(16, Math.min(46, Math.round((w * h) / 26000)));
+    nodes = [];
+    for (var i = 0; i < n; i++) {
+      nodes.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 0.18,
+        vy: (Math.random() - 0.5) * 0.18,
+        // A wide size range on purpose: a field of same-sized dots reads as
+        // noise, while a few large squares among many small ones reads as
+        // depth. Every fifth node is allowed to be a big one.
+        s: (i % 5 === 0 ? 15 : 5) + Math.random() * 11,
+        a: 0.22 + Math.random() * 0.54
+      });
+    }
+    signals = [];
+  }
+
+  function roundedSquare(x, y, s, r) {
+    ctx.beginPath();
+    if (ctx.roundRect) { ctx.roundRect(x - s / 2, y - s / 2, s, s, r); }
+    else { ctx.rect(x - s / 2, y - s / 2, s, s); }
+    ctx.fill();
+  }
+
+  function step() {
+    ctx.clearRect(0, 0, w, h);
+
+    var i, j, a, b, dx, dy, d;
+
+    for (i = 0; i < nodes.length; i++) {
+      a = nodes[i];
+      if (!still) {
+        a.x += a.vx; a.y += a.vy;
+        if (a.x < 0 || a.x > w) a.vx *= -1;
+        if (a.y < 0 || a.y > h) a.vy *= -1;
+      }
+      // a soft push away from the cursor — presence, not a physics toy
+      dx = a.x - pointer.x; dy = a.y - pointer.y;
+      d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 130 && d > 0.01) {
+        a.x += (dx / d) * (130 - d) * 0.010;
+        a.y += (dy / d) * (130 - d) * 0.010;
+      }
+    }
+
+    // links
+    ctx.lineWidth = 1;
+    for (i = 0; i < nodes.length; i++) {
+      for (j = i + 1; j < nodes.length; j++) {
+        a = nodes[i]; b = nodes[j];
+        dx = a.x - b.x; dy = a.y - b.y;
+        d = Math.sqrt(dx * dx + dy * dy);
+        if (d < LINK_DIST) {
+          ctx.strokeStyle = 'rgba(74, 222, 168,' + (0.16 * (1 - d / LINK_DIST)).toFixed(3) + ')';
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        }
+      }
+    }
+
+    // nodes
+    for (i = 0; i < nodes.length; i++) {
+      a = nodes[i];
+      ctx.fillStyle = 'rgba(60, 200, 150,' + a.a.toFixed(3) + ')';
+      roundedSquare(a.x, a.y, a.s, Math.max(1, a.s * 0.28));
+    }
+
+    // signals — spawn on a live link, travel it, expire
+    if (!still && signals.length < MAX_SIGNALS && Math.random() < 0.05) {
+      i = (Math.random() * nodes.length) | 0;
+      j = (Math.random() * nodes.length) | 0;
+      if (i !== j) {
+        a = nodes[i]; b = nodes[j];
+        dx = a.x - b.x; dy = a.y - b.y;
+        if (Math.sqrt(dx * dx + dy * dy) < LINK_DIST) signals.push({ a: a, b: b, t: 0 });
+      }
+    }
+    for (i = signals.length - 1; i >= 0; i--) {
+      var sg = signals[i];
+      sg.t += 0.014;
+      if (sg.t >= 1) { signals.splice(i, 1); continue; }
+      var px = sg.a.x + (sg.b.x - sg.a.x) * sg.t;
+      var py = sg.a.y + (sg.b.y - sg.a.y) * sg.t;
+      var fade = Math.sin(sg.t * Math.PI);
+      ctx.fillStyle = 'rgba(150, 255, 214,' + (0.85 * fade).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(px, py, 2.1, 0, Math.PI * 2); ctx.fill();
+    }
+
+    raf = visible && !still ? requestAnimationFrame(step) : null;
+  }
+
+  function start() { if (!raf) { if (still) { step(); } else { raf = requestAnimationFrame(step); } } }
+  function stop()  { if (raf) { cancelAnimationFrame(raf); raf = null; } }
+
+  addEventListener('resize', function () { size(); if (still) step(); });
+  host.addEventListener('pointermove', function (e) {
+    var r = host.getBoundingClientRect();
+    pointer.x = e.clientX - r.left; pointer.y = e.clientY - r.top;
+  });
+  host.addEventListener('pointerleave', function () { pointer.x = pointer.y = -9999; });
+
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (es) {
+      visible = es[0].isIntersecting;
+      if (visible) start(); else stop();
+    }, { threshold: 0 }).observe(host);
+  } else { visible = true; start(); }
+
+  size();
+  if (still) step();
+})();
+
+/* ── voices ──
+   The prism and the quotes are driven from one index, so the face you are
+   looking at is always the pharmacy you are reading. Rotation accumulates
+   (-120° per step, never reset to 0) — snapping back to zero on the wrap
+   would spin the prism two full turns backwards in front of the reader. */
+(function () {
+  var prism = document.getElementById('prism');
+  if (!prism) return;
+  var quotes = [].slice.call(document.querySelectorAll('#voice .quote'));
+  var dots   = [].slice.call(document.querySelectorAll('#voiceDots button'));
+  var i = 0, turns = 0, timer = null;
+
+  function show(next) {
+    // shortest signed distance, so 2 -> 0 turns forward by one, not back by two
+    var delta = ((next - i + 1 + 3) % 3) - 1;
+    turns += delta;
+    i = next;
+    // The -22° resting offset is what makes it read as a solid: square-on,
+    // a prism shows one rectangle and looks like a flat card. Turned slightly,
+    // the neighbouring face catches light and the object has depth — while
+    // the name on the front stays perfectly legible.
+    prism.style.transform = 'rotateX(-11deg) rotateY(' + (turns * -120 - 22) + 'deg)';
+    quotes.forEach(function (q, n) { q.classList.toggle('on', n === i); });
+    dots.forEach(function (d, n) { d.setAttribute('aria-selected', n === i ? 'true' : 'false'); });
+  }
+
+  function play() { timer = setInterval(function () { show((i + 1) % 3); }, 5200); }
+  function pause() { clearInterval(timer); timer = null; }
+
+  dots.forEach(function (d, n) {
+    d.addEventListener('click', function () { pause(); show(n); play(); });
+  });
+
+  // Don't animate a carousel nobody is looking at, and stop while hovered so
+  // a quote can't slide away mid-sentence.
+  var host = document.getElementById('voices');
+  host.addEventListener('pointerenter', pause);
+  host.addEventListener('pointerleave', function () { if (!timer) play(); });
+
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (es) {
+      if (es[0].isIntersecting) { if (!timer) play(); } else pause();
+    }, { threshold: 0.25 }).observe(host);
+  } else { play(); }
+
+  show(0);
+})();
+
+/* ── the estimate ──
+   Pure arithmetic on the visitor's own three inputs. Deliberately no
+   conversion-rate constant anywhere in here: the honest output is "this much
+   is going unanswered", not "you will recover this much", because nobody has
+   measured the second number for their shop. */
+(function () {
+  var msgs = document.getElementById('cMsgs');
+  if (!msgs) return;
+  var value = document.getElementById('cValue');
+  var miss  = document.getElementById('cMiss');
+  var vMsgs = document.getElementById('vMsgs');
+  var vValue= document.getElementById('vValue');
+  var vMiss = document.getElementById('vMiss');
+  var vTotal= document.getElementById('vTotal');
+  var vHalf = document.getElementById('vHalf');
+
+  var WEEKS = 4.33;
+  var naira = function (n) { return '₦' + Math.round(n).toLocaleString('en-NG'); };
+  var shown = { total: 0, half: 0 };
+  var tween = null;
+
+  function paintTrack(el) {
+    var pct = ((el.value - el.min) / (el.max - el.min)) * 100;
+    el.style.setProperty('--pct', pct.toFixed(2) + '%');
+  }
+
+  // Counts to the new figure rather than snapping. Eased, and short enough
+  // that dragging a slider still feels immediate — a long tween on a live
+  // control reads as lag, not polish.
+  function countTo(total, half) {
+    if (tween) cancelAnimationFrame(tween);
+    var from = { total: shown.total, half: shown.half };
+    var t0 = performance.now(), D = 420;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      shown = { total: total, half: half };
+      vTotal.textContent = naira(total); vHalf.textContent = naira(half);
+      return;
+    }
+    (function frame(now) {
+      var k = Math.min(1, (now - t0) / D);
+      var e = 1 - Math.pow(1 - k, 3);
+      shown.total = from.total + (total - from.total) * e;
+      shown.half  = from.half  + (half  - from.half)  * e;
+      vTotal.textContent = naira(shown.total);
+      vHalf.textContent  = naira(shown.half);
+      if (k < 1) tween = requestAnimationFrame(frame);
+    })(t0);
+  }
+
+  function update() {
+    [msgs, value, miss].forEach(paintTrack);
+    var perWeek = +msgs.value, avg = +value.value, share = +miss.value / 100;
+    vMsgs.textContent  = perWeek.toLocaleString('en-NG');
+    vValue.textContent = naira(avg);
+    vMiss.textContent  = miss.value + '%';
+    var total = perWeek * WEEKS * share * avg;
+    countTo(total, total / 2);
+  }
+
+  [msgs, value, miss].forEach(function (el) {
+    el.addEventListener('input', update);
+  });
+  update();
+})();
+
+/* ── the onboarding rail ──
+   The chip is positioned from the CARDS, not from raw scroll percentage:
+   it parks at the vertical centre of whichever step is active, so it always
+   lines up with the card it refers to no matter how the cards reflow. The
+   fill is then drawn to wherever the chip ended up, which keeps line and
+   marker in agreement by construction rather than by two tuned constants. */
+(function () {
+  var sec = document.getElementById('steps');
+  if (!sec) return;
+  var rail  = sec.querySelector('.rail');
+  var fill  = document.getElementById('railFill');
+  var chip  = document.getElementById('railChip');
+  var cards = [].slice.call(sec.querySelectorAll('.step-card'));
+  var last = -1, ticking = false;
+
+  function wide() { return window.matchMedia('(min-width: 941px)').matches; }
+
+  function frame() {
+    ticking = false;
+    if (!wide()) { cards.forEach(function (c) { c.classList.add('on'); }); return; }
+
+    // Active = the last card whose top has passed the reading line.
+    var line = window.innerHeight * 0.42, i = 0;
+    cards.forEach(function (c, n) {
+      if (c.getBoundingClientRect().top <= line) i = n;
+    });
+
+    var railR = rail.getBoundingClientRect();
+    var cardR = cards[i].getBoundingClientRect();
+    var y = (cardR.top - railR.top) + cardR.height / 2 - 20;   // 20 = half the chip
+
+    chip.style.transform = 'translateY(' + y + 'px)';
+    fill.style.transform = 'scaleY(' + Math.max(0, Math.min(1, (y + 20) / railR.height)) + ')';
+
+    if (i !== last) {
+      last = i;
+      cards.forEach(function (c, n) { c.classList.toggle('on', n === i); });
+      // re-trigger the numeral's flip by replacing the node
+      chip.innerHTML = '<span>' + (i + 1) + '</span>';
+    }
+  }
+
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(frame);
+  }
+
+  addEventListener('scroll', onScroll, { passive: true });
+  addEventListener('resize', onScroll);
+  frame();
+})();
+
+/* ── the stage driver ──
+   Same pin-and-progress idea as the reel, but everything ACCUMULATES: a
+   conversation that dropped its earlier messages as you scrolled would stop
+   being a conversation. Elements carry data-at = the step they arrive on. */
+(function () {
+  var stage = document.getElementById('stage');
+  if (!stage) return;
+  var steps = [].slice.call(stage.querySelectorAll('[data-at]'));
+  var pips  = [].slice.call(stage.querySelectorAll('.stage-rail span'));
+  var COUNT = 5, last = -1, ticking = false;
+
+  function pinned() { return window.matchMedia('(min-width: 941px)').matches; }
+
+  var body = stage.querySelector('.wa-body');
+  var msgs = [].slice.call(stage.querySelectorAll('.wa-msg'));
+  var canAnimate = !!document.body.animate
+    && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var SPRING = 'cubic-bezier(0.16, 1, 0.3, 1)';
+
+  function apply(i) {
+    if (i === last) return;
+    var forward = i > last;
+    last = i;
+
+    // ── FLIP ──
+    // First: where is every visible bubble right now.
+    var first = null;
+    if (canAnimate) {
+      first = new Map();
+      msgs.forEach(function (m) {
+        if (m.classList.contains('on')) first.set(m, m.getBoundingClientRect().top);
+      });
+    }
+
+    // Last: mutate to the new state.
+    steps.forEach(function (el) {
+      el.classList.toggle('on', Number(el.getAttribute('data-at')) <= i);
+    });
+    pips.forEach(function (p, n) { p.classList.toggle('on', n <= i); });
+
+    // Invert + Play.
+    if (!canAnimate || !forward) return;
+    var arriving = 0;
+    msgs.forEach(function (m) {
+      if (!m.classList.contains('on')) return;
+      var now = m.getBoundingClientRect().top;
+      var was = first.get(m);
+
+      if (was === undefined) {
+        // New bubble: rises into place, slightly under-scaled so it reads as
+        // landing rather than merely fading. Staggered when several arrive
+        // on the same step, so a step never dumps two at once.
+        m.animate(
+          [ { opacity: 0, transform: 'translateY(16px) scale(0.965)' },
+            { opacity: 1, transform: 'none' } ],
+          { duration: 460, delay: arriving * 130, easing: SPRING, fill: 'both' }
+        );
+        arriving++;
+      } else if (Math.abs(was - now) > 0.5) {
+        // Existing bubble displaced by the new one: carry it from where it
+        // was to where it now is. This is the half that sells the illusion.
+        m.animate(
+          [ { transform: 'translateY(' + (was - now) + 'px)' },
+            { transform: 'none' } ],
+          { duration: 520, easing: SPRING }
+        );
+      }
+    });
+  }
+
+  function frame() {
+    ticking = false;
+    if (!pinned()) { apply(COUNT - 1); return; }
+    var runway = stage.offsetHeight - window.innerHeight;
+    var p = runway > 0 ? (-stage.getBoundingClientRect().top) / runway : 0;
+    p = Math.max(0, Math.min(1, p));
+    apply(Math.round(p * (COUNT - 1)));
+  }
+
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(frame);
+  }
+
+  addEventListener('scroll', onScroll, { passive: true });
+  addEventListener('resize', onScroll);
+  frame();
+})();
+
+(function () {
+  var reel  = document.getElementById('reel');
+  if (!reel) return;
+  var track = reel.querySelector('.reel-track');
+  var cards = [].slice.call(reel.querySelectorAll('.reel-card'));
+  var titles= [].slice.call(reel.querySelectorAll('.reel-title'));
+  var pips  = [].slice.call(reel.querySelectorAll('.reel-rail span'));
+  // Scoped to the graph deliberately. The titles also carry data-step, and
+  // an unscoped selector caught them here too — so a title was both swapped
+  // (one at a time) and accumulated (all up to i), leaving two headlines
+  // rendered on top of each other in the same absolutely-positioned cell.
+  var steps = [].slice.call(reel.querySelectorAll('.graph [data-step]'));
+  var last  = -1, ticking = false;
+
+  // The pin only exists on wide screens; below that the section is an
+  // ordinary stack and this driver must not touch transforms at all.
+  function pinned() { return window.matchMedia('(min-width: 941px)').matches; }
+
+  function apply(i) {
+    if (i === last) return;
+    last = i;
+    cards.forEach(function (c, n) { c.classList.toggle('on', n === i); });
+    titles.forEach(function (t, n) { t.classList.toggle('on', n === i); });
+    pips.forEach(function (p, n) { p.classList.toggle('on', n <= i); });
+    // graph nodes accumulate rather than swap — the point is that it keeps
+    // gaining ground it can answer from, not that it trades one for another
+    steps.forEach(function (el) {
+      el.classList.toggle('on', Number(el.getAttribute('data-step')) <= i);
+    });
+  }
+
+  function frame() {
+    ticking = false;
+    if (!pinned()) { track.style.transform = ''; apply(0); return; }
+
+    var runway = reel.offsetHeight - window.innerHeight;
+    var p = runway > 0 ? (-reel.getBoundingClientRect().top) / runway : 0;
+    p = Math.max(0, Math.min(1, p));
+
+    var i = Math.round(p * (cards.length - 1));
+    // Shift by one card's own width + the gap, so a step always lands a card
+    // flush at the left edge regardless of viewport width.
+    var gap = parseFloat(getComputedStyle(track).columnGap || track.style.gap || 24) || 24;
+    var step = cards[0].getBoundingClientRect().width + gap;
+    track.style.transform = 'translate3d(' + (-i * step) + 'px,0,0)';
+    apply(i);
+  }
+
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(frame);
+  }
+
+  addEventListener('scroll', onScroll, { passive: true });
+  addEventListener('resize', onScroll);
+  frame();
+})();
+</script>
+
+</body>
+</html>

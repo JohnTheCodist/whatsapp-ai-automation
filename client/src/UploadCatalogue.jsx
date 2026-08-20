@@ -28,7 +28,18 @@ async function api(path, options = {}) {
   return body;
 }
 
-export default function UploadCatalogue() {
+/**
+ * @param {object} props
+ * @param {'all'|'upload'|'products'} [props.view]
+ *   Which half to render. Defaults to 'all' so the original single-screen
+ *   usage is unchanged — the Inventory tab passes 'upload' or 'products' to
+ *   split the same component across two segments rather than duplicating the
+ *   product list (and its inline editing) into a second file that would then
+ *   have to be kept in step with this one.
+ */
+export default function UploadCatalogue({ view = 'all' }) {
+  const showUpload = view === 'all' || view === 'upload';
+  const showProducts = view === 'all' || view === 'products';
   const [meta, setMeta] = useState(null);        // field labels + warnings
   const [analysis, setAnalysis] = useState(null); // current proposal
   const [uploadId, setUploadId] = useState(null);
@@ -105,7 +116,9 @@ export default function UploadCatalogue() {
   return (
     <section className="rounded-lg border border-slate-200 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-medium">Upload catalogue</h2>
+        <h2 className="text-lg font-medium">
+          {view === 'products' ? 'Your catalogue' : 'Upload catalogue'}
+        </h2>
         {products?.counts && (
           <span className="font-mono text-xs text-slate-500 tabular-nums">
             {products.counts.sellable} sellable · {products.counts.total} products
@@ -115,7 +128,7 @@ export default function UploadCatalogue() {
       </div>
 
       {/* ---- pick a file ---- */}
-      {!analysis && !report && (
+      {showUpload && !analysis && !report && (
         <div className="mt-4">
           <p className="text-sm text-slate-600">
             Excel or CSV. Nothing is saved until you have checked the columns on the next screen.
@@ -303,7 +316,7 @@ export default function UploadCatalogue() {
       )}
 
       {/* ---- what the assistant will see ---- */}
-      {products?.products?.length > 0 && !analysis && (
+      {showProducts && products?.products?.length > 0 && !analysis && (
         <div className="mt-6 border-t border-slate-100 pt-4">
           <h3 className="text-xs font-medium uppercase tracking-wide text-slate-400">
             In the catalogue

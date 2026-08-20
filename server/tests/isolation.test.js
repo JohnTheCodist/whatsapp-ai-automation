@@ -154,7 +154,12 @@ test('a partial profile update does not blank the fields it omits', { skip: SKIP
   await pharmacies.updateProfile(ctx.b.id, { city: 'Kano' });
   const b = await pharmacies.getProfile(ctx.b.id);
   assert.equal(b.city, 'Kano');
-  assert.equal(b.phone, '+2348000000002', 'phone must survive a patch that did not mention it');
+  // Bare digits, not '+2348000000002' as typed — updateProfile normalises
+  // phone the same way wa_phone/notify_phone already are, so a local and an
+  // international-format entry for the same number collapse to one stored
+  // value (see pharmacyContactPhone.test.js). This still proves the point
+  // the test name makes: the field survived an unrelated patch.
+  assert.equal(b.phone, '2348000000002', 'phone must survive a patch that did not mention it');
 });
 
 // ---- the guard actually fires against a live connection ----

@@ -177,9 +177,34 @@ test('the timeline is sorted newest first', { skip: SKIP && skipReason }, async 
 
 test('the response has no clinical fields anywhere — this is a CRM, not an EHR', { skip: SKIP && skipReason }, async () => {
   const profile = await getCustomerProfile(ctx.a.id, ctx.customer.id);
-  const flat = JSON.stringify(profile).toLowerCase();
+
+  // KEYS, NOT VALUES — and that distinction is the point of this test.
+  //
+  // This used to scan JSON.stringify(profile), which conflated the schema
+  // with the words people type into it. It passed only because the profile
+  // exposed inbound message text and nothing else; once activeConversation
+  // began previewing the last message in EITHER direction, a real assistant
+  // reply containing "diagnostic" failed it. Nothing was wrong with the
+  // response — a pharmacy conversation may legitimately contain clinical
+  // words, and a test that forbids the CUSTOMER from saying "allergy" is
+  // testing the wrong thing.
+  //
+  // What must never appear is a clinical FIELD: a diagnosis, an allergy
+  // list, vitals. That is a claim about shape, so it is checked against the
+  // shape.
+  const keys = [];
+  (function walk(node) {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    for (const [k, v] of Object.entries(node)) {
+      keys.push(k.toLowerCase());
+      walk(v);
+    }
+  }(profile));
+
   for (const banned of ['diagnos', 'allerg', 'vital', 'labresult', 'treatmentplan', 'clinicalnote']) {
-    assert.ok(!flat.includes(banned), `found forbidden clinical term "${banned}" in the profile response`);
+    const hit = keys.find((k) => k.includes(banned));
+    assert.ok(!hit, `profile exposes a clinical field "${hit}" — this is a CRM, not an EHR`);
   }
 });
 

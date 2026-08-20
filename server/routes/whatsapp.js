@@ -53,18 +53,39 @@ async function getOrCreateAccount(pharmacyId) {
  * added a column later and the response happened to include everything.
  */
 function present(account, live) {
+  const isLive = Boolean(live?.live);
+
+  // THE STORED STATUS CAN LIE, SO IT IS NOT REPORTED ON ITS OWN.
+  //
+  // account.status is written on transition, so it keeps saying 'connected'
+  // long after a socket has died without a clean disconnect — exactly what a
+  // failed session restore leaves behind. That combination cost a long
+  // debugging session: the dashboard read "connected", the phone showed
+  // messages delivered, and nothing arrived, because the socket the row
+  // described no longer existed.
+  //
+  // The in-memory session is the only thing that actually knows. When the two
+  // disagree, the live view wins and the disagreement is named rather than
+  // hidden, so "connected but nothing works" can never look healthy again.
+  const stale = account.status === 'connected' && !isLive;
+
   return {
     id: account.id,
-    status: account.status,
-    statusDetail: account.status_detail,
+    status: stale ? 'disconnected' : account.status,
+    statusDetail: stale
+      ? 'Stored status says connected but no live socket — the session did not restore.'
+      : account.status_detail,
     phoneNumber: account.display_phone_number,
     pairingCode: account.pairing_code,
     pairingExpiresAt: account.pairing_expires_at,
     lastConnectedAt: account.last_connected_at,
     disconnectReason: account.disconnect_reason,
     hasCredentials: Boolean(account.creds_encrypted),
-    live: Boolean(live?.live),
+    live: isLive,
     registered: Boolean(live?.registered),
+    // Explicit rather than inferred from the pair above: a dashboard should
+    // not have to know that status='connected' plus live=false means trouble.
+    staleStatus: stale,
   };
 }
 

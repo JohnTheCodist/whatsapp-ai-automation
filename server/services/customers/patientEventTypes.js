@@ -32,12 +32,24 @@ const PATIENT_EVENTS = Object.freeze({
   MESSAGE_SENT: 'MESSAGE_SENT',
   CONVERSATION_STARTED: 'CONVERSATION_STARTED',
   CONVERSATION_RESOLVED: 'CONVERSATION_RESOLVED',
+  // Every workflow_state move, recorded by conversationService. Carries
+  // {from, to, reason} so "why did this thread jump to the top of the inbox"
+  // is answerable after the fact, not just at the moment it happened.
+  CONVERSATION_STATE_CHANGED: 'CONVERSATION_STATE_CHANGED',
 
   // ---- catalogue ----
   PRODUCT_VIEWED: 'PRODUCT_VIEWED',
 
   // ---- orders ----
   ORDER_CREATED: 'ORDER_CREATED',
+  // A second (or third) product added to the SAME cart within one
+  // conversation, rather than a separate order being created — see
+  // orderService.createOrder's merge-into-open-cart behaviour.
+  ORDER_ITEMS_ADDED: 'ORDER_ITEMS_ADDED',
+  // A quantity changed, or a line removed, on an order the pharmacy had not
+  // yet confirmed — orderService.amendPendingOrder. Removing the LAST line
+  // records ORDER_CANCELLED instead, because that is what it is.
+  ORDER_ITEMS_AMENDED: 'ORDER_ITEMS_AMENDED',
   ORDER_STOCK_HELD: 'ORDER_STOCK_HELD',
   ORDER_SENT_TO_PHARMACY: 'ORDER_SENT_TO_PHARMACY',
   ORDER_CONFIRMED: 'ORDER_CONFIRMED',
@@ -50,6 +62,15 @@ const PATIENT_EVENTS = Object.freeze({
   // ---- pharmacist ----
   PHARMACIST_HANDOFF: 'PHARMACIST_HANDOFF',
   PHARMACIST_RESPONDED: 'PHARMACIST_RESPONDED',
+
+  // Fired ONLY by the contact_pharmacy tool (catalogueTools.js) — the
+  // deliberate "I've exhausted what I can do automatically" moment, never
+  // by get_pharmacy_info's routine "are you open" lookup, which also
+  // returns the phone but is not an escalation. Keeping this narrow is
+  // what makes it usable later for "how often does automation give up",
+  // per Segment's own stated purpose — a broader trigger would count every
+  // hours-and-address question as a failure.
+  PHARMACY_CONTACT_PROVIDED: 'PHARMACY_CONTACT_PROVIDED',
 
   // ---- profile ----
   CUSTOMER_NAME_CAPTURED: 'CUSTOMER_NAME_CAPTURED',
@@ -69,6 +90,90 @@ const PATIENT_EVENTS = Object.freeze({
 
   // ---- communication preferences ----
   COMMUNICATION_OPTED_OUT: 'COMMUNICATION_OPTED_OUT',
+
+  // ---- clinical foundation (Stage 1 — structure only, no treatment logic) --
+  //
+  // These are the audit trail for the clinical tables added in 0029. No new
+  // event table: customer_events already has everything this needs —
+  // actor_type distinguishes ai/pharmacist/staff/customer/system, and every
+  // one of these is recorded visibility:'internal' by clinicalAudit.js,
+  // never customer-facing.
+  //
+  // Split the same way the module header above explains: an event with a
+  // real writer in Stage 1 is listed plainly. One reserved for a LATER
+  // stage (Stage 2's protocol matching, Stage 3's questioning, Stage 4's
+  // red-flag detection) is marked so, because nothing may emit it yet —
+  // recording it early would be the treatment-intelligence line this stage
+  // is explicitly told not to cross.
+  PATIENT_PROFILE_CREATED: 'PATIENT_PROFILE_CREATED',
+  PATIENT_PROFILE_UPDATED: 'PATIENT_PROFILE_UPDATED',
+  CLINICAL_FACT_RECORDED: 'CLINICAL_FACT_RECORDED',
+  // reported -> confirmed only. Never emitted for anything the AI decided on
+  // its own — see patientProfileService.confirmFact's actorType requirement.
+  CLINICAL_FACT_CONFIRMED: 'CLINICAL_FACT_CONFIRMED',
+
+  ENCOUNTER_CREATED: 'ENCOUNTER_CREATED',
+  ENCOUNTER_STATUS_CHANGED: 'ENCOUNTER_STATUS_CHANGED',
+  ENCOUNTER_COMPLETED: 'ENCOUNTER_COMPLETED',
+  ENCOUNTER_CANCELLED: 'ENCOUNTER_CANCELLED',
+
+  // NOT listed here: PROTOCOL_CREATED / PROTOCOL_ACTIVATED / PROTOCOL_RETIRED
+  // / RED_FLAG_RULE_*. A protocol being configured has no patient attached —
+  // customer_events.customer_id is NOT NULL, correctly, since every OTHER
+  // row here is a fact about a specific person. Forcing pharmacy-level
+  // configuration through this table would mean either violating that
+  // constraint or weakening it for everyone else. Those events go through
+  // clinicalAudit.recordAdminAudit() instead, backed by the pre-existing
+  // `audit_logs` table (pharmacy-scoped, had zero writers before this
+  // stage) — see clinicalAudit.js's header for the full reasoning.
+
+  // The gap this closes: POST /:id/takeover (routes/conversations.js) has
+  // set handoffs.accepted_at since the hybrid-handoff segment, but recorded
+  // no event when it happened — "a pharmacist notified" (PHARMACIST_HANDOFF)
+  // and "a pharmacist actually took the conversation" were indistinguishable
+  // in the audit trail. pharmacistHandoffService.acceptHandoff() emits this.
+  HANDOFF_ACCEPTED: 'HANDOFF_ACCEPTED',
+
+  // These four were RESERVED by Stage 1 with no writer. Stage 2's protocol
+  // engine is the writer — which is exactly what reserving them was for: the
+  // stage that needed them added a caller, not a migration and not a new
+  // registry entry. Stage 2's spec names two of them differently
+  // ("QUESTION_PRESENTED", "ANSWER_RECORDED"); they are the same events and
+  // are NOT duplicated under new names.
+  PATIENT_INFORMATION_CAPTURED: 'PATIENT_INFORMATION_CAPTURED',
+  PROTOCOL_SELECTED: 'PROTOCOL_SELECTED',
+  QUESTION_ASKED: 'QUESTION_ASKED',          // spec: QUESTION_PRESENTED
+  PATIENT_RESPONSE_RECEIVED: 'PATIENT_RESPONSE_RECEIVED', // spec: ANSWER_RECORDED
+
+  // ---- Stage 2 protocol engine ----
+  PROTOCOL_STARTED: 'PROTOCOL_STARTED',
+  PROTOCOL_STATE_CHANGED: 'PROTOCOL_STATE_CHANGED',
+  PROTOCOL_COMPLETED: 'PROTOCOL_COMPLETED',
+  FACT_CREATED: 'FACT_CREATED',
+  // A fact is never edited in place — "updated" means a NEW row superseded an
+  // older one, and this event records that succession.
+  FACT_UPDATED: 'FACT_UPDATED',
+  // The one that must never be silently swallowed: two sources disagree and a
+  // human has to decide. Recorded, surfaced, never auto-resolved.
+  FACT_CONFLICT_DETECTED: 'FACT_CONFLICT_DETECTED',
+
+  // ---- Stage 2 Part 2: evidence and the safety gate ----
+  // Recorded on EVERY gate run, pass or fail. An eligible recommendation is
+  // as much a clinical decision as a blocked one, and both must be
+  // reconstructable later.
+  RECOMMENDATION_EVALUATED: 'RECOMMENDATION_EVALUATED',
+  RECOMMENDATION_DELIVERED: 'RECOMMENDATION_DELIVERED',
+
+  // STILL RESERVED — Stage 4 (red-flag detection) is the writer.
+  RED_FLAG_DETECTED: 'RED_FLAG_DETECTED',
+
+  // Pharmacist-only decision support (post Stage 2). A pharmacist asked the
+  // LLM for a ranked list of possible causes on an escalated case. This is
+  // NOT a recommendation and NOT evidence-gated — it never reaches a
+  // patient, is pulled on demand rather than pushed, and exists purely so
+  // "who asked for an AI opinion and when" is reconstructable later, the
+  // same as every other clinical action in this system.
+  DIFFERENTIAL_SUGGESTED: 'DIFFERENTIAL_SUGGESTED',
 
   // ---- RESERVED: no writer exists yet -------------------------------------
   //
@@ -131,6 +236,22 @@ const ENTITY_TABLES = Object.freeze({
   // would make it impossible to record the deletion that just happened.
   note: null,
   tag: 'tags',
+  // Clinical foundation (0029).
+  patient_profile: 'patient_profiles',
+  clinical_fact: 'patient_clinical_facts',
+  clinical_encounter: 'clinical_encounters',
+  clinical_protocol: 'clinical_protocols',
+  red_flag_rule: 'protocol_red_flags',
+  // Stage 2 protocol engine (0032).
+  protocol_execution: 'protocol_executions',
+  protocol_question: 'protocol_questions',
+  encounter_answer: 'encounter_answers',
+  encounter_fact: 'encounter_facts',
+  // Stage 2 Part 2 (0033).
+  evidence_source: 'evidence_sources',
+  evidence_reference: 'evidence_references',
+  protocol_recommendation: 'protocol_recommendations',
+  recommendation_evaluation: 'recommendation_evaluations',
   // reserved, no table yet
   medication_journey: null,
   refill: null,

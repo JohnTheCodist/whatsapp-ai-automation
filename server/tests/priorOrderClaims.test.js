@@ -21,9 +21,15 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { validateReply } = require('../services/ai/replyValidator');
 
+// Flat, matching what runTool (catalogueTools.js) actually returns — the
+// tool's own run() result, unwrapped. This exact fixture, nested under a
+// `.result` key, is what let the "order created THIS turn" case below pass
+// while orderWasCreated() checked a shape nothing in production ever
+// produces — the bug this file's own header describes as already fixed was
+// still live for every real order, caught only by tracing a live handoff.
 const ORDER_RESULT = [{
   tool: 'create_order',
-  result: { created: true, reference: 'GRW-YT4', status: 'pending' },
+  created: true, reference: 'GRW-YT4', status: 'pending',
 }];
 
 test('recapping an order placed earlier in the conversation is allowed', () => {

@@ -103,6 +103,16 @@ const env = {
       // machine signature; this is a safety control, not a UX nicety.
       minReplyDelayMs: parseInt(process.env.BAILEYS_MIN_REPLY_DELAY_MS || '1000', 10),
       maxReplyDelayMs: parseInt(process.env.BAILEYS_MAX_REPLY_DELAY_MS || '3000', 10),
+      // Baileys' sendMessage has no timeout of its own. On a half-open socket
+      // — one that still reports `connected` because the TCP connection was
+      // never cleanly torn down — it waits forever. That hung one worker on a
+      // single reply and, because nothing reclaims a job stuck in 'running',
+      // silently stopped every reply for that pharmacy with no error logged.
+      //
+      // 30s: comfortably longer than a healthy send (sub-second) plus the
+      // human-latency delay above, short enough that a dead socket surfaces
+      // while the customer is still in the conversation.
+      sendTimeoutMs: parseInt(process.env.BAILEYS_SEND_TIMEOUT_MS || '30000', 10),
     },
     twilio: {
       accountSid: process.env.TWILIO_ACCOUNT_SID || '',

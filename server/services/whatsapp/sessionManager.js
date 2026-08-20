@@ -40,6 +40,7 @@ const { createAuthStore } = require('./authStore');
 const { classifyDisconnect, backoffMs, MAX_RECONNECT_ATTEMPTS } = require('./disconnectPolicy');
 const { isDirectUserChat } = require('./jidPolicy');
 const { resolveSender } = require('./senderIdentity');
+const { formatForWhatsApp } = require('./messageFormat');
 
 // Baileys is chatty at info level and every line is protocol noise. Warnings
 // and errors are worth having; the rest is not, and drowning real problems is
@@ -179,16 +180,56 @@ class SessionManager extends EventEmitter {
    * an unusual burst from one IP at exactly the moment we would rather look
    * unremarkable.
    */
-  async start({ staggerMs = 750 } = {}) {
-    const db = getSql();
-    const rows = await db`
-      select id, pharmacy_id
-      from whatsapp_accounts
-      where provider = 'baileys'
-        and status in ('connected', 'connecting', 'disconnected')
-        and creds_encrypted is not null
-      order by last_connected_at asc nulls last
-    `;
+  // `db` is an injection seam for tests. getSql is destructured at module
+  // load, so a test cannot stub it afterwards — without this parameter the
+  // only way to exercise the retry below is against the real database, which
+  // opens real sockets and (found the hard way) kills the live session.
+  async start({ staggerMs = 750, retries = 5, db = getSql() } = {}) {
+
+    // RETRIED, BECAUSE FAILING HERE USED TO MEAN SILENTLY OFFLINE FOREVER.
+    //
+    // Observed in production: this query — `select id, pharmacy_id`, trivial
+    // and indexed — died with "canceling statement due to statement timeout"
+    // during a slow spell on the Supabase pooler. start() returned, nothing
+    // retried, and the pharmacy's WhatsApp stayed dead for hours. The status
+    // ROW still read 'connected' (it is only written on transition), so the
+    // dashboard showed a healthy connection over a socket that did not exist.
+    //
+    // Nothing about that failure was permanent — a restart fixed it instantly.
+    // Retrying is what turns a transient network blip back into the
+    // non-event it should always have been.
+    let rows = null;
+    for (let attempt = 1; attempt <= retries; attempt += 1) {
+      if (this.stopping) return 0;
+      try {
+        rows = await db`
+          select id, pharmacy_id
+          from whatsapp_accounts
+          where provider = 'baileys'
+            and status in ('connected', 'connecting', 'disconnected')
+            and creds_encrypted is not null
+          order by last_connected_at asc nulls last
+        `;
+        break;
+      } catch (err) {
+        // Surfaced on every attempt, not just the last. A restore that
+        // succeeded on attempt 4 still means the database was unhealthy, and
+        // that is worth seeing before it becomes an outage.
+        this.emit('session-error', {
+          accountId: null, phase: 'restore-query', attempt, error: err,
+        });
+        if (attempt === retries) {
+          // Deliberately rethrown rather than returning 0. index.js logs this,
+          // and "restore failed after N attempts" is a real operational fact —
+          // reporting zero sessions would read as "there were none to restore".
+          throw err;
+        }
+        // 2s, 4s, 8s, 16s — long enough to outlast a pooler hiccup without
+        // holding boot hostage if the database is genuinely gone.
+        const backoffMs = 2000 * 2 ** (attempt - 1);
+        await new Promise((r) => setTimeout(r, backoffMs));
+      }
+    }
 
     this.emit('starting', { count: rows.length });
 
@@ -413,6 +454,109 @@ class SessionManager extends EventEmitter {
    * is enforced upstream in the assistant, not here, but it is the same
    * concern.
    */
+  /**
+   * Show "typing…" in one chat while the assistant works.
+   *
+   * WHY THIS IS WORTH THE COMPLEXITY
+   * A reply here is not instant: the model runs, tools query the catalogue,
+   * and the send carries a deliberate human-pacing delay on top. From the
+   * customer's side that is several seconds of nothing, which reads as a
+   * dead number — and the most common response to a silent chat is to send
+   * the message again, which produces exactly the duplicate-order and
+   * repeat-question traffic this system then has to handle.
+   *
+   * NARROWER THAN GOING ONLINE, DELIBERATELY.
+   * markOnlineOnConnect is false above because the pharmacy may still use
+   * WhatsApp Business on this number, and a persistent "available" presence
+   * would make their own app look like someone else was using it. A
+   * per-chat `composing` is a different thing: transient, scoped to a
+   * conversation we are genuinely replying in, and gone the moment we stop.
+   *
+   * WhatsApp expires a typing indicator on its own after roughly ten
+   * seconds, so a long turn has to refresh it. The refresh is bounded — a
+   * bug that left this running would otherwise show a pharmacy typing
+   * forever, which is worse than showing nothing.
+   *
+   * Best-effort throughout: every failure is swallowed. A presence update is
+   * decoration, and it must never be the reason a customer does not get an
+   * answer.
+   *
+   * @returns {() => void} stop function. Always call it — a `finally` is the
+   *   right home — or the indicator lingers until its own cap expires.
+   */
+  startTyping(accountId, jid) {
+    const session = this.sessions.get(accountId);
+    if (!session || !session.sock || !jid) return () => {};
+
+    let stopped = false;
+    let timer = null;
+
+    const send = async (state) => {
+      try {
+        // subscribe first: some clients ignore a composing update for a chat
+        // the sender has never subscribed to.
+        if (state === 'composing') await session.sock.presenceSubscribe(jid);
+        await session.sock.sendPresenceUpdate(state, jid);
+      } catch (err) {
+        // Still best-effort — never retried, never thrown — but no longer
+        // invisible. Swallowing this completely meant "typing does not show"
+        // had no evidence anywhere, and the first attempt to debug it had to
+        // start by adding this line. Logged once per session so a failing
+        // presence path cannot flood the log on every refresh tick.
+        if (!session._presenceWarned) {
+          session._presenceWarned = true;
+          console.warn(JSON.stringify({
+            level: 'warn',
+            msg: 'presence update failed — typing indicator will not show',
+            accountId,
+            state,
+            error: err?.message || String(err),
+          }));
+        }
+      }
+    };
+
+    // Refresh comfortably inside WhatsApp's ~10s expiry, and cap the whole
+    // thing well past a normal turn but far short of "forever".
+    const REFRESH_MS = 7000;
+    const MAX_MS = 90000;
+    const startedAt = Date.now();
+
+    const tick = () => {
+      if (stopped || Date.now() - startedAt > MAX_MS) return;
+      send('composing');
+      timer = setTimeout(tick, REFRESH_MS);
+      // Do not hold the process open for a typing indicator.
+      if (timer.unref) timer.unref();
+    };
+
+    // WhatsApp only delivers a typing indicator from a device that is
+    // currently AVAILABLE. markOnlineOnConnect is false above — deliberately,
+    // so the bot does not sit permanently online and make the pharmacy's own
+    // WhatsApp Business app look like someone else is using it — and the
+    // consequence is that `composing` alone is accepted by the socket and
+    // then shown to nobody. That is exactly the "no typing appears" symptom.
+    //
+    // So availability is announced HERE and withdrawn again when the turn
+    // ends: online for the few seconds a reply is being written, not for the
+    // hours between. That keeps the original concern intact — no permanent
+    // presence — while making the indicator actually reach the customer.
+    send('available');
+    tick();
+
+    return () => {
+      if (stopped) return;
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      // 'paused' clears it immediately rather than leaving the customer
+      // watching a bubble for the remaining seconds of its expiry.
+      send('paused');
+      // ...and hand presence back, so the pharmacy's own app owns it again
+      // the moment the assistant has finished.
+      send('unavailable');
+    };
+  }
+
   async sendText(accountId, jid, text, { delay = true } = {}) {
     const session = this.sessions.get(accountId);
     if (!session || !session.sock) {
@@ -422,14 +566,60 @@ class SessionManager extends EventEmitter {
       throw new Error('Refusing to send an empty message.');
     }
 
+    // Formatted HERE, at the one place every outbound message passes through,
+    // rather than at each of the half-dozen call sites. A formatter that has
+    // to be remembered is one that eventually is not — and the failure mode
+    // is silent: a single unformatted reply among formatted ones, which the
+    // customer reads as two different senders.
+    //
+    // Presentational only, and applied AFTER replyValidator has approved the
+    // draft — see messageFormat's header for why that order matters.
+    const body = formatForWhatsApp(String(text));
+
     if (delay) {
       const { minReplyDelayMs: min, maxReplyDelayMs: max } = env.channel.baileys;
       const ms = min + Math.floor(Math.random() * Math.max(0, max - min));
-      await new Promise((r) => setTimeout(r, ms));
+      // Typing THROUGH the pause, not silence during it. This delay exists so
+      // a reply does not arrive at machine speed; without an indicator it
+      // just reads as a slower dead number, which is the opposite of the
+      // intent. Cleared in `finally` so a failed send cannot leave the chat
+      // showing a pharmacy that is permanently typing.
+      const stopTyping = this.startTyping(accountId, jid);
+      try {
+        await new Promise((r) => setTimeout(r, ms));
+      } finally {
+        stopTyping();
+      }
     }
 
-    const sent = await session.sock.sendMessage(jid, { text: String(text) });
-    return { providerMessageId: sent?.key?.id || null, jid };
+    // BOUNDED, because Baileys' sendMessage is not.
+    //
+    // A socket can be half-open — TCP never cleanly closed, so the session
+    // still reports `connected` — and a send against it never settles. There
+    // is no AbortController on this API, so the race is the only lever: the
+    // send genuinely keeps running in the background, but the CALLER stops
+    // waiting and gets a real error it can retry or escalate on.
+    //
+    // Failing loudly matters more than the wasted socket call. A silent hang
+    // held a job in 'running' indefinitely, and since claimJob only ever
+    // looked at 'queued' rows, nothing recovered it — one stuck send stopped
+    // every reply for that pharmacy, with nothing in the logs to say so.
+    const timeoutMs = env.channel.baileys.sendTimeoutMs;
+    let timer;
+    try {
+      const sent = await Promise.race([
+        session.sock.sendMessage(jid, { text: body }),
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`WhatsApp send did not complete within ${timeoutMs}ms — the socket may be half-open.`)),
+            timeoutMs,
+          );
+        }),
+      ]);
+      return { providerMessageId: sent?.key?.id || null, jid };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   getStatus(accountId) {

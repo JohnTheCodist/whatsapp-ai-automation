@@ -16,10 +16,32 @@ const { saleUnit, unitForForm, isWrongUnit } = require('../services/ai/saleUnit'
 
 // ---- the bug itself ----
 
-test('a tablet is a card, not a sachet — the exact case from real traffic', () => {
+test('a tablet is sold as a card, and the assistant says so', () => {
   const product = { form: 'tablet' };
   assert.equal(saleUnit(product), 'card');
-  assert.equal(isWrongUnit('sachet', product), true, 'a customer calling tablets "sachet" must be corrected');
+});
+
+test('"sachet" for a card is Nigerian usage, NOT a mistake to correct', () => {
+  // This reverses what this file previously asserted. The old expectation —
+  // that a customer saying "sachet" about tablets "must be corrected" — was
+  // wrong about the market: a strip of tablets is widely called a sachet
+  // here, and the pharmacy itself does not draw the distinction. Correcting
+  // it made the assistant sound foreign and faintly condescending about the
+  // customer's own vocabulary.
+  //
+  // The assistant still STATES the price in the catalogue's unit; it simply
+  // no longer treats these words as errors.
+  const card = { form: 'tablet' };
+  for (const said of ['sachet', 'satchet', 'strip', 'packet', 'card']) {
+    assert.equal(isWrongUnit(said, card), false, `"${said}" should be accepted for a card product`);
+  }
+});
+
+test('a unit that would make someone expect the WRONG OBJECT is still corrected', () => {
+  // The line worth holding. Synonyms are free; a bottle is not a card, and a
+  // customer told "bottle" arrives expecting one.
+  assert.equal(isWrongUnit('bottle', { form: 'tablet' }), true);
+  assert.equal(isWrongUnit('tube', { form: 'syrup' }), true);
 });
 
 // ---- form -> unit mapping ----

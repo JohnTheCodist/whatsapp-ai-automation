@@ -13,7 +13,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  buildMenu, menuItems, isMenuRequest, parseSelection, cleanName,
+  buildMenu, buildWelcome, menuItems, isMenuRequest, isGreeting, parseSelection, cleanName,
 } = require('../services/ai/menu');
 
 const P = { pharmacyName: 'Sterling Pharmacy', botName: 'Ada' };
@@ -133,4 +133,66 @@ test('the menu tells people they can just type instead', () => {
   const text = buildMenu({ ...P, customerName: 'John' });
   assert.match(text, /just type your question/i);
   assert.match(text, /type \*menu\*/i);
+});
+
+// ---- isGreeting: the classifier that decides welcome vs. straight-to-AI ----
+
+test('bare greetings, with the decorations people actually send, are recognised', () => {
+  for (const text of [
+    'Good morning', 'good morning', 'Good  morning', 'Good morning!', 'Good morning 👋',
+    'Hi', 'hi', 'Hello', 'hello!', 'Hey', 'Hiya', 'Yo', 'Howdy',
+    'Good afternoon', 'Good evening', 'Good day', 'Morning', 'Evening',
+  ]) {
+    assert.equal(isGreeting(text), true, `missed a bare greeting: "${text}"`);
+  }
+});
+
+test('a greeting that also asks for something is NOT a bare greeting', () => {
+  // The whole reason this function exists: "I need paracetamol" must reach
+  // the AI directly, and "Hi, do you have paracetamol" must not be
+  // downgraded into a one-line welcome just because it opens politely.
+  for (const text of [
+    'Hi, do you have paracetamol', 'good morning, is amoxicillin available',
+    'hello I need panadol', 'hi there, how much is coartem',
+  ]) {
+    assert.equal(isGreeting(text), false, `wrongly treated as bare: "${text}"`);
+  }
+});
+
+test('an ordinary request with no greeting at all is not one', () => {
+  for (const text of ['I need paracetamol', 'do you have amoxicillin', 'how much is panadol']) {
+    assert.equal(isGreeting(text), false, `wrongly matched: "${text}"`);
+  }
+});
+
+test('isGreeting does not throw on non-string input', () => {
+  for (const v of [null, undefined, 42, {}]) {
+    assert.equal(isGreeting(v), false);
+  }
+});
+
+// ---- buildWelcome: the short first-ever-contact reply ----
+
+test('the welcome is short — no itemized menu in it', () => {
+  const text = buildWelcome(P);
+  for (const item of menuItems(P)) {
+    assert.ok(!text.includes(item.title), `welcome leaked a menu item: "${item.title}"`);
+  }
+});
+
+test('the welcome introduces the bot and points to *menu*, same as the menu\'s own intro', () => {
+  const text = buildWelcome({ ...P, customerName: 'John' });
+  assert.match(text, /Hi John/);
+  assert.match(text, /I'm Ada from Sterling Pharmacy/);
+  assert.match(text, /type \*menu\*/i);
+});
+
+test('the welcome asks how it can help, matching the ticket\'s expected wording', () => {
+  const text = buildWelcome(P);
+  assert.match(text, /how may I assist you today/i);
+});
+
+test('the welcome degrades the same way the menu does when the push name is unusable', () => {
+  const text = buildWelcome({ ...P, customerName: '👑' });
+  assert.match(text, /^Hi, I'm Ada from Sterling Pharmacy\./m);
 });

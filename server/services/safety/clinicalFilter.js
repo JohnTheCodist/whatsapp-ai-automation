@@ -141,6 +141,36 @@ const RULES = [
       /\b(chest|stomach|belle|throat|eye|ear|back|joint)\b.{0,15}\bdey pain\b/i,
       /\b(i think i have|i suspect i have|maybe i have|i might have)\b/i,
       /\b(diagnos(e|ed|is)|test result|my result)\b/i,
+
+      // ---- plain symptom descriptions, no "what should I take" needed ----
+      //
+      // The rules above mostly require a symptom AND a request for advice, so
+      // "my throat hurts" and "I have been coughing" were classified as
+      // ordinary conversation and never reached a pharmacist. That was a gap
+      // on the filter's own terms — its stated line is that describing
+      // symptoms is clinical — and it is the reason the sore-throat protocol
+      // could never trigger.
+      //
+      // Scoped deliberately to the three complaints RxNaija has protocols
+      // for. Widening only ADDS escalation, which is the safe direction, but
+      // it is not a licence to catch everything: a symptom with no protocol
+      // behind it gains nothing from being caught here.
+      /\b(sore|scratchy|itchy|painful|swollen)\s+throat\b/i,
+      /\bmy throat\b.{0,20}\b(hurt|hurts|pain|paining|sore|swollen|scratchy|closing)\b/i,
+      // "to swallow" AND "when I swallow" — the second is the more natural
+      // phrasing and was the one this missed on first pass.
+      /\b(hurts?|pain|painful|difficult|hard)\b.{0,20}\b(to|when i|when)\s+swallow(ing)?\b/i,
+      /\b(painful|difficulty|trouble)\s+swallow(ing)?\b/i,
+      /\bswollen tonsils?\b/i,
+      /\bi (have|get) (a )?(sore throat|cough|catarrh)\b/i,
+      /\b(i'?ve|i have) been (cough|sneez|vomit)(ing)?\b/i,
+      /\bcough(ing)?\b.{0,25}\b(at night|for|since|since last|all night|badly|blood|phlegm|mucus)\b/i,
+      /\b(dry|wet|persistent|bad|chesty|productive)\s+cough\b/i,
+      /\b(feeling|feel|felt)\s+(hot|feverish|feverishness)\b/i,
+      /\bmy body is (hot|burning)\b/i,
+      /\b(body|temperature)\b.{0,15}\b(is|dey)\s+hot\b/i,
+      /\bi (have|get|dey with)\b.{0,15}\b(fever|temperature)\b/i,
+      /\b(shivering|chills|rigors)\b/i,
     ],
   },
   {

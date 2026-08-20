@@ -33,6 +33,47 @@ export const IconOverview = (p) => (
   </svg>
 );
 
+/**
+ * A handshake-over-counter, reduced: two halves meeting.
+ * Not a shopping cart — this group is the whole exchange (asked, ordered,
+ * couldn't supply), and a cart would claim it is only the buying part.
+ */
+export const IconDeals = (p) => (
+  <svg {...base} {...p}>
+    <path d="M3 8h4l3 3-2 2 4 4 2-2 3 3v3" />
+    <path d="M21 8h-4l-3 3" />
+    <path d="M3 8V6a1 1 0 0 1 1-1h3M21 8V6a1 1 0 0 0-1-1h-3" />
+  </svg>
+);
+
+/**
+ * A rising bar with a spark — the assistant's output, not a robot face.
+ * A robot would say "this screen is about the AI"; the point of the screen is
+ * what the AI produced, which is a trend.
+ */
+export const IconAi = (p) => (
+  <svg {...base} {...p}>
+    <path d="M4 20V10M9.5 20V5M15 20v-7" />
+    <path d="M18.5 4.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" />
+  </svg>
+);
+
+/** Shelved boxes — stock on a shelf, which is what a catalogue really is. */
+export const IconInventory = (p) => (
+  <svg {...base} {...p}>
+    <path d="M3 7h18M3 12h18M3 17h18" />
+    <path d="M7 7v5M14 12v5" />
+  </svg>
+);
+
+/** Tray with an arrow going in. */
+export const IconUpload = (p) => (
+  <svg {...base} {...p}>
+    <path d="M12 15V3M8 7l4-4 4 4" />
+    <path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4" />
+  </svg>
+);
+
 /** Stethoscope — a pharmacist, not a chat. */
 export const IconConsultations = (p) => (
   <svg {...base} {...p}>

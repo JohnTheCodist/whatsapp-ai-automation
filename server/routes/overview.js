@@ -58,12 +58,30 @@ router.get('/', requireAuth, async (req, res, next) => {
         -- Counted per conversation rather than per message, because three
         -- messages answered by one reply is not three failures — someone
         -- whose last word went unanswered is.
-        (select count(*)::int from conversations c
-           where c.pharmacy_id = ${pid}
-             and exists (select 1 from messages m where m.conversation_id = c.id)
-             and (select direction from messages m
-                    where m.conversation_id = c.id
-                    order by m.id desc limit 1) = 'inbound') as awaiting_reply,
+        --
+        -- The status = 'open' filter is load-bearing and was missing. Note
+        -- for future edits: this comment lives INSIDE a JS template literal,
+        -- so a backtick here would end the string and break the file.
+        -- Without that filter this
+        -- counted CLOSED threads too, and a closed thread's last message is
+        -- very often inbound — "Hello", "No need", a name, a goodbye. The
+        -- live dashboard read 8 people waiting when every one of them was a
+        -- dead thread aged 3-9 days that the idle sweep had already closed.
+        -- A number that says 8 when the answer is 0 is worse than no number:
+        -- it is a queue nobody can ever clear, so staff learn to ignore it.
+        --
+        -- The correlated "last message" subquery it used to run was also the
+        -- slowest thing on this page — one extra index scan per conversation,
+        -- on an endpoint the dashboard polls. DISTINCT ON resolves every
+        -- conversation's last message in a single ordered pass instead.
+        (select count(*)::int from (
+           select distinct on (m.conversation_id) m.conversation_id, m.direction
+           from messages m
+           join conversations c on c.id = m.conversation_id
+           where m.pharmacy_id = ${pid} and c.status = 'open'
+           order by m.conversation_id, m.id desc
+         ) last_msg
+         where last_msg.direction = 'inbound') as awaiting_reply,
 
         -- ---- today ----
         (select count(*)::int from messages

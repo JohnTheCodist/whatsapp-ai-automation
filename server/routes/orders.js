@@ -17,44 +17,15 @@ const { listOrders, updateStatus } = require('../services/orders/orderService');
 const { sendAndRecordOutbound } = require('../services/whatsapp/outboundMessage');
 const { CATEGORIES } = require('../services/whatsapp/communicationPolicy');
 const { sessionManager } = require('../services/whatsapp/sessionManager');
+// One copy of the customer-facing wording, shared with the staff WhatsApp
+// path in worker.js — see orderMessages.js for why it is not defined here.
+const { customerMessage } = require('../services/orders/orderMessages');
+const { evaluateAndStore } = require('../services/clinical/conditionProfileService');
 
 const router = express.Router();
 
 const naira = (kobo) => (kobo === null || kobo === undefined ? null : kobo / 100);
-const money = (kobo) => `₦${Number(naira(kobo)).toLocaleString('en-NG')}`;
 
-/**
- * What the customer is told for each transition.
- *
- * Written out rather than generated, because these are the sentences a
- * pharmacy is accountable for. 'confirmed' deliberately does NOT say "ready
- * to collect" — those are different states and conflating them sends people
- * to the shop too early.
- */
-function customerMessage(order, toStatus) {
-  const ref = order.reference;
-  switch (toStatus) {
-    case 'confirmed':
-      // The ONLY place the word "reserved" is used to a customer, and it is
-      // true here for the first time: stock was held at order creation, and
-      // a pharmacist has now agreed to supply it. Saying this any earlier
-      // would promise something no human had approved — which is why the
-      // assistant is blocked from saying it at all.
-      return order.stock_held
-        ? `Your order ${ref} is confirmed and reserved for you. Total ${money(order.total_kobo)}. We'll let you know when it's ready to collect.`
-        : `Your order ${ref} has been confirmed by the pharmacy. Total ${money(order.total_kobo)}. We'll let you know when it's ready.`;
-    case 'ready':
-      return `Your order ${ref} is ready for collection. Total ${money(order.total_kobo)}.`;
-    case 'completed':
-      return `Thank you — order ${ref} is complete. We hope to see you again.`;
-    case 'rejected':
-      return `We're sorry — the pharmacy can't fulfil order ${ref} right now. Please call or come in and we'll help.`;
-    case 'cancelled':
-      return `Order ${ref} has been cancelled. If that wasn't expected, please get in touch.`;
-    default:
-      return null;
-  }
-}
 
 router.get('/', requireAuth, async (req, res, next) => {
   try {
@@ -173,6 +144,24 @@ router.post('/:id/status', requireAuth, async (req, res, next) => {
       } catch (err) {
         notifyError = err.message;
       }
+    }
+
+    // A completed order is the point the pharmacy actually dispensed the
+    // medicine — real purchase evidence, not a pending request that might
+    // still be rejected. Re-evaluate this customer's condition profile now
+    // rather than waiting for someone to hit the API by hand.
+    //
+    // Best-effort and non-fatal, same reasoning as the customer message
+    // above: the order already completed and must not be undone because the
+    // condition engine hit a snag. A failure here is logged, not surfaced to
+    // the pharmacist as an order problem.
+    if (toStatus === 'completed') {
+      evaluateAndStore(req.pharmacyId, result.order.customer_id).catch((err) => {
+        console.error(JSON.stringify({
+          level: 'warn', msg: 'condition evaluation failed after order completion',
+          orderId: req.params.id, error: err.message,
+        }));
+      });
     }
 
     res.json({

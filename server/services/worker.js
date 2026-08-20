@@ -25,6 +25,10 @@ const { getSql } = require('./db');
 const { sessionManager } = require('./whatsapp/sessionManager');
 const { evaluateOutbound, isOptOutRequest } = require('./whatsapp/conductPolicy');
 const { shouldClose, IDLE_HOURS } = require('./whatsapp/conversationPolicy');
+// Every workflow_state write goes through this service — see conversationState.js
+// for the transition matrix it enforces.
+const { onAssistantReplied } = require('./whatsapp/conversationService');
+const { raiseOrConsolidateHandoff } = require('./whatsapp/handoffService');
 const { evaluateWarmup } = require('./whatsapp/warmupPolicy');
 const { normalizeMsisdn } = require('./whatsapp/senderIdentity');
 const { expireStaleHolds } = require('./orders/orderService');
@@ -34,7 +38,10 @@ const { CATEGORIES } = require('./whatsapp/communicationPolicy');
 const { recordEvent } = require('./customers/customerEvents');
 const { PATIENT_EVENTS } = require('./customers/patientEventTypes');
 const { respond } = require('./ai/assistant');
-const { buildMenu, isMenuRequest, parseSelection, intentBriefing } = require('./ai/menu');
+const { screenMessage } = require('./safety/clinicalFilter');
+const clinicalRouter = require('./clinical/clinicalRouter');
+const { handleTurn, isClinicalWorkflowEnabled } = require('./clinical/clinicalWorkflow');
+const { buildMenu, buildWelcome, isMenuRequest, isGreeting, parseSelection, intentBriefing } = require('./ai/menu');
 const { env } = require('../config/env');
 
 /**
@@ -103,6 +110,98 @@ let timer = null;
  * Claim one job. `skip locked` lets several workers coexist without any of
  * them waiting on a row another has taken.
  */
+/**
+ * How long a job may sit in 'running' before another worker may take it.
+ *
+ * Longer than any legitimate job: the slowest path is an LLM turn (20s
+ * timeout) plus a WhatsApp send (30s timeout) plus database work, so a real
+ * job finishes well inside a minute. Five minutes means a reclaim is
+ * genuinely a stuck worker, not a slow one — reclaiming too eagerly would
+ * double-send a reply that was merely taking its time.
+ */
+const STALE_LOCK_MINUTES = 5;
+
+/**
+ * How long one job may take before the loop gives up on it.
+ *
+ * Generous, because a legitimate inbound turn can involve several model
+ * round-trips plus a WhatsApp send. It is not a performance budget — it is
+ * the line past which "slow" is indistinguishable from "hung", and a hung
+ * job costs every LATER message for that pharmacy, not just its own.
+ *
+ * Comfortably above the send timeout (30s) and the LLM timeout, so a normal
+ * inner failure surfaces as itself rather than as this.
+ */
+const JOB_TIMEOUT_MS = parseInt(process.env.WORKER_JOB_TIMEOUT_MS || '120000', 10);
+
+/** The same idea for the periodic scans, which are much shorter. */
+const SWEEP_TIMEOUT_MS = parseInt(process.env.WORKER_SWEEP_TIMEOUT_MS || '60000', 10);
+
+/**
+ * Bound a promise that might never settle.
+ *
+ * THE FAILURE THIS EXISTS FOR
+ * The worker loop awaits its sweeps and its job handler, then reschedules
+ * itself on the last line. A promise that REJECTS is fine — the catch runs
+ * and the loop continues. A promise that never settles at all is fatal: the
+ * loop never reaches setTimeout, no further tick is ever scheduled, and the
+ * worker is dead while the process keeps happily serving HTTP. Nothing logs,
+ * because nothing failed.
+ *
+ * Measured in production: one job left locked for 17 hours, an inbound
+ * message queued behind it and never answered, and /api/health returning 200
+ * the entire time. From the outside the assistant had simply stopped
+ * replying.
+ *
+ * A rejection is recoverable; a hang is not. This converts the second into
+ * the first.
+ */
+function withTimeout(promise, ms, label) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} exceeded ${ms}ms — treating as failed`)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Give up on jobs whose worker never came back AND whose attempts are spent.
+ *
+ * claimJob reclaims an abandoned `running` job only while `attempts <
+ * max_attempts`, which is right — a job that hangs repeatedly should stop
+ * being retried. But nothing then finished the story: `fail()` only runs for
+ * a job this process actually claimed, so when a worker dies mid-job on its
+ * final attempt the row stays `running` forever. It is not reclaimable, not
+ * dead, and not visible as a problem anywhere.
+ *
+ * That row is harmless to the queue itself — claimJob skips it — but it hides
+ * the fact that a message was never processed, which is the part that matters
+ * to the pharmacy.
+ */
+async function sweepAbandonedJobs(db) {
+  const abandoned = await db`
+    update jobs
+    set status = 'dead',
+        last_error = coalesce(last_error, '') ||
+          ' [dead-lettered: worker never returned and attempts were exhausted]',
+        updated_at = now()
+    where status = 'running'
+      and attempts >= max_attempts
+      and locked_at < now() - make_interval(mins => ${STALE_LOCK_MINUTES})
+    returning id, kind, attempts, locked_by
+  `;
+  for (const j of abandoned) {
+    console.error(JSON.stringify({
+      level: 'error',
+      msg: 'job dead-lettered — its worker never returned',
+      jobId: j.id, kind: j.kind, attempts: j.attempts, lockedBy: j.locked_by,
+    }));
+  }
+  return abandoned.length;
+}
+
 async function claimJob(db) {
   const [job] = await db`
     update jobs
@@ -113,7 +212,26 @@ async function claimJob(db) {
         updated_at = now()
     where id = (
       select id from jobs
-      where status = 'queued' and run_after <= now()
+      -- Two kinds of claimable work:
+      --   1. queued, due now — the ordinary case.
+      --   2. RUNNING but abandoned. A worker that is killed mid-job, or that
+      --      blocks forever inside one (a half-open WhatsApp socket did
+      --      exactly this), leaves its row locked with no owner coming back.
+      --      Nothing used to reclaim those: claimJob only ever looked at
+      --      'queued', so a single stuck job silently ended every reply for
+      --      that pharmacy — no error, no retry, no alert.
+      --
+      -- The attempts < max_attempts guard keeps the existing give-up rule
+      -- intact, so a job that hangs repeatedly still dead-letters rather
+      -- than being reclaimed forever.
+      where (
+        (status = 'queued' and run_after <= now())
+        or (
+          status = 'running'
+          and locked_at < now() - make_interval(mins => ${STALE_LOCK_MINUTES})
+          and attempts < max_attempts
+        )
+      )
       order by id
       for update skip locked
       limit 1
@@ -167,6 +285,200 @@ async function fail(db, job, err) {
  * may need to explain to a customer, so it is written down rather than
  * inferred from an absence.
  */
+/**
+ * Is this inbound message from the pharmacy's own alert number?
+ *
+ * Compared on digits only. The two values reach the database by different
+ * routes — notify_phone is typed into a settings form, wa_phone is derived
+ * from a WhatsApp JID — so one may carry a +, spaces or a leading 0 that the
+ * other does not, and a string compare would silently never match. A staff
+ * number that fails to be recognised is not a quiet failure: it means the
+ * pharmacist gets sold to by their own assistant.
+ */
+function isStaffNumber(waPhone, notifyPhone) {
+  if (!waPhone || !notifyPhone) return false;
+  const digits = (s) => String(s).replace(/\D/g, '');
+  const a = digits(waPhone);
+  const b = digits(notifyPhone);
+  if (!a || !b) return false;
+  // Suffix match, because 2348036607553 and 08036607553 are the same phone
+  // written two ways. Bounded to 9 digits so two short or malformed values
+  // cannot collide into a false positive.
+  const tail = (s) => s.slice(-9);
+  return a === b || (a.length >= 9 && b.length >= 9 && tail(a) === tail(b));
+}
+
+/**
+ * Staff acting on orders from their own WhatsApp.
+ *
+ * Deliberately narrow: it recognises order commands and otherwise says so.
+ * It does NOT hand unrecognised text to the assistant, because the assistant
+ * is a shop front and this person is not shopping — an unhandled "morning"
+ * from the pharmacist should be a quiet hint about the commands, not a
+ * product recommendation.
+ */
+async function handleStaffMessage(db, job, row) {
+  const { parseStaffCommand, helpText } = require('./orders/staffCommands');
+  const { updateStatus, listOrders } = require('./orders/orderService');
+
+  const reply = async (body) => {
+    if (!row.account_id || !row.wa_jid) return;
+    // No delay: this is an internal exchange with the pharmacy's own staff,
+    // not a customer reply that should look human-paced.
+    await sessionManager.sendText(row.account_id, row.wa_jid, body, { delay: false })
+      .catch((err) => console.error(JSON.stringify({
+        level: 'warn', msg: 'staff reply failed', error: err.message,
+      })));
+  };
+
+  // `let`, because a reference-less command ("1", "ok") is resolved into a
+  // concrete one below once we know which order it can only have meant.
+  let cmd = parseStaffCommand(row.body);
+
+  if (!cmd) {
+    await reply(`This number is set as ${row.pharmacy_name}'s alert line, so I don't sell to it.\n\n${helpText()}`);
+    return { sent: true, reason: 'staff:not_a_command' };
+  }
+
+  if (cmd.kind === 'help') {
+    await reply(helpText());
+    return { sent: true, reason: 'staff:help' };
+  }
+
+  // "1", "ok", "reject" — an instruction with no order named.
+  //
+  // Resolved ONLY when there is exactly one order waiting, which is the
+  // common case in a single-counter pharmacy and is unambiguous. With two or
+  // more, this asks instead of guessing: the last order the system saw and
+  // the last one the pharmacist read are different things, and picking the
+  // wrong one confirms stock for the wrong customer.
+  if (cmd.kind === 'needs_reference') {
+    const pending = await listOrders(job.pharmacy_id, { status: 'pending', limit: 10 });
+
+    if (pending.length === 0) {
+      await reply('Nothing is waiting for a decision right now.');
+      return { sent: true, reason: 'staff:nothing_pending' };
+    }
+
+    if (pending.length > 1) {
+      const lines = pending.map((o) => {
+        const items = (o.items || []).map((i) => `${i.quantity} x ${i.name_snapshot}`).join(', ');
+        return `${o.reference} — ${items || 'no items'}`;
+      });
+      await reply(
+        `${pending.length} orders are waiting, so I need to know which one:\n\n${lines.join('\n')}\n\n` +
+        `Reply with the reference, e.g. "1 ${pending[0].reference}".`,
+      );
+      return { sent: true, reason: 'staff:ambiguous' };
+    }
+
+    cmd = { kind: 'act', action: cmd.action, reference: pending[0].reference.toUpperCase() };
+  }
+
+  if (cmd.kind === 'list') {
+    const orders = await listOrders(job.pharmacy_id, { status: 'pending', limit: 10 });
+    if (orders.length === 0) {
+      await reply('Nothing waiting — every order has been dealt with.');
+      return { sent: true, reason: 'staff:list_empty' };
+    }
+    const lines = orders.map((o) => {
+      const items = (o.items || []).map((i) => `${i.quantity} x ${i.name_snapshot}`).join(', ');
+      return `${o.reference} — ${items || 'no items'} — ₦${Number(o.total_kobo / 100).toLocaleString('en-NG')}`;
+    });
+    await reply(`${orders.length} waiting:\n\n${lines.join('\n')}\n\nReply e.g. "OK ${orders[0].reference}".`);
+    return { sent: true, reason: 'staff:list' };
+  }
+
+  // ---- act on one named order ----
+  const [order] = await db`
+    select id, reference, status from orders
+    where pharmacy_id = ${job.pharmacy_id} and upper(reference) = ${cmd.reference}
+  `;
+  if (!order) {
+    await reply(`I can't find order ${cmd.reference} for this pharmacy. Send LIST to see what is waiting.`);
+    return { sent: true, reason: 'staff:unknown_reference' };
+  }
+
+  // Goes through the same service the dashboard uses, so ALLOWED_TRANSITIONS,
+  // the stock commit, the audit trail and the customer notification all
+  // behave identically. A second path that "just updates the row" is how the
+  // two surfaces drift until one of them is wrong.
+  const result = await updateStatus(job.pharmacy_id, order.id, cmd.action, {
+    actorType: 'staff',
+    note: 'Actioned from WhatsApp',
+  });
+
+  if (!result.ok) {
+    await reply(
+      result.code === 'INSUFFICIENT_STOCK'
+        ? `Could not confirm ${order.reference} — ${result.error}`
+        : `Could not do that: ${result.error}`,
+    );
+    return { sent: true, reason: `staff:refused:${result.code}` };
+  }
+
+  // Telling the customer is the caller's job on this path — the dashboard
+  // route does it in routes/orders.js, and skipping it here would mean an
+  // order confirmed from WhatsApp left the customer waiting in silence.
+  const notified = await notifyCustomerOfStatus(db, job.pharmacy_id, order.id, cmd.action);
+
+  await reply(
+    `${order.reference} is now ${cmd.action}.` +
+    (notified ? ' The customer has been told.' : ' NOTE: the customer could NOT be messaged — please call them.'),
+  );
+
+  console.log(JSON.stringify({
+    level: 'info', msg: 'order actioned from staff whatsapp',
+    reference: order.reference, to: cmd.action, notified,
+  }));
+  return { sent: true, reason: `staff:${cmd.action}` };
+}
+
+/**
+ * Tell the customer their order moved. Shared shape with routes/orders.js.
+ *
+ * Best-effort by design: the status change is a fact about the pharmacy's own
+ * records and must not be rolled back because WhatsApp happened to be down.
+ * The boolean is returned so staff can be told to phone instead.
+ */
+async function notifyCustomerOfStatus(db, pharmacyId, orderId, toStatus) {
+  try {
+    const { customerMessage } = require('./orders/orderMessages');
+    const [target] = await db`
+      select o.*, c.id as customer_id, c.wa_jid, c.wa_phone, o.conversation_id
+      from orders o join customers c on c.id = o.customer_id
+      where o.id = ${orderId} and o.pharmacy_id = ${pharmacyId}
+    `;
+    const body = target ? customerMessage(target, toStatus) : null;
+    if (!body) return false;
+
+    const [account] = await db`
+      select id from whatsapp_accounts
+      where pharmacy_id = ${pharmacyId} and provider = 'baileys' and status = 'connected'
+      limit 1
+    `;
+    if (!account) return false;
+
+    if (target.conversation_id) {
+      await sendAndRecordOutbound(db, {
+        pharmacyId, customerId: target.customer_id, conversationId: target.conversation_id,
+        accountId: account.id, to: target.wa_jid || `${target.wa_phone}@s.whatsapp.net`,
+        body, author: 'system', delay: false, category: CATEGORIES.ORDER_NOTIFICATION,
+      });
+    } else {
+      await sessionManager.sendText(
+        account.id, target.wa_jid || `${target.wa_phone}@s.whatsapp.net`, body, { delay: false },
+      );
+    }
+    return true;
+  } catch (err) {
+    console.error(JSON.stringify({
+      level: 'warn', msg: 'could not tell customer about staff action', error: err.message,
+    }));
+    return false;
+  }
+}
+
 async function processInbound(db, job) {
   const { messageId, conversationId } = job.payload || {};
   if (!messageId || !conversationId) {
@@ -175,11 +487,13 @@ async function processInbound(db, job) {
 
   const [row] = await db`
     select m.id, m.body,
-           conv.id as conversation_id, conv.mode, conv.context, conv.greeted_at,
+           conv.id as conversation_id, conv.mode, conv.context, conv.last_menu_choice,
            cust.id as customer_id, cust.wa_phone, cust.wa_jid, cust.display_name, cust.full_name,
+           cust.onboarded_at,
            ph.name as pharmacy_name, ph.reply_mode, ph.sending_paused,
+           ph.notify_phone,
            (select phone from pharmacy_profile pp where pp.pharmacy_id = ph.id) as pharmacy_phone,
-           ph.bot_name, ph.menu_enabled, ph.welcome_note,
+           ph.bot_name, ph.assistant_tone, ph.menu_enabled, ph.welcome_note,
            ph.daily_reply_cap, ph.hourly_conversation_cap,
            ph.quiet_hours_enabled, ph.quiet_hours_start, ph.quiet_hours_end,
            ph.warmup_started_at, ph.warmup_enabled, ph.warmup_day1_limit, ph.warmup_days,
@@ -193,6 +507,25 @@ async function processInbound(db, job) {
   `;
 
   if (!row) throw new Error(`message ${messageId} not found for pharmacy ${job.pharmacy_id}`);
+
+  // ---- is this the pharmacy's own staff, not a customer? --------------
+  //
+  // Checked BEFORE everything else — before the mode gate, the opt-out
+  // check, the conduct gate and the assistant. The staff number is not a
+  // customer of the pharmacy, and every gate below this line is written on
+  // the assumption that it is talking to one. Left to fall through, a
+  // pharmacist replying "ok 97G-YX4" to an order alert would be answered by
+  // the sales assistant, counted against the daily reply cap, and could in
+  // principle be sold their own stock.
+  //
+  // Authorisation is the phone number itself. That is weak in the abstract —
+  // but it is the same trust this system already places in notify_phone when
+  // it SENDS a briefing there, which contains the customer's name, their
+  // medicines and their complaint. A number trusted to receive all of that
+  // is not made less trustworthy by being allowed to answer.
+  if (isStaffNumber(row.wa_phone, row.notify_phone)) {
+    return handleStaffMessage(db, job, row);
+  }
 
   // A conversation a human has taken over must not be talked over. A handoff
   // the assistant can ignore is not a handoff.
@@ -210,15 +543,19 @@ async function processInbound(db, job) {
     const answer = readEscalationAnswer(row.body);
 
     if (answer === true) {
-      await db.begin(async (tx) => {
-        await tx`update conversations set mode = 'human' where id = ${row.conversation_id}`;
-        await tx`
-          update conversations
-          set context = (coalesce(context, '{}'::jsonb) - 'pending_escalation')
-          where id = ${row.conversation_id}
-        `;
-      });
-      const body = "I've passed you to our pharmacist. They'll reply here.";
+      // NOT mode = 'human' here. The handoff row (and the WAITING_FOR_
+      // PHARMACIST workflow state) was already raised when the question was
+      // first flagged — this is the customer accepting an offer, not a
+      // pharmacist accepting the conversation. Muting now would mean the
+      // very next thing this reply invites ("They'll reply here") cannot
+      // itself be answered if the customer has a follow-up before the
+      // pharmacist gets to it. See conversationState.deriveOwnership.
+      await db`
+        update conversations
+        set context = (coalesce(context, '{}'::jsonb) - 'pending_escalation')
+        where id = ${row.conversation_id}
+      `;
+      const body = "I've passed you to our pharmacist. They'll reply here. I'm still here for anything else in the meantime.";
       await sendAndRecordOutbound(db, {
         pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
         accountId: row.account_id, to: row.wa_jid, body, author: 'system', category: CATEGORIES.TRANSACTIONAL,
@@ -332,14 +669,34 @@ async function processInbound(db, job) {
         (select count(*)::int from messages
            where conversation_id = ${row.conversation_id} and direction = 'outbound'
              and created_at > now() - interval '1 hour') as replies_this_conversation_hour,
+        -- LOOP DETECTION, BOUNDED IN TIME.
+        --
+        -- "recent" has to mean recent. Without the interval this looked at
+        -- the last three outbound messages in the conversation FOREVER: once
+        -- a bug made the assistant repeat itself three times, the count
+        -- stayed at 3 for all eternity, tripping the breaker on every
+        -- subsequent message and latching the pharmacy off permanently.
+        -- Clearing sending_paused did nothing, because the very next inbound
+        -- re-tripped it from the same historical rows.
+        --
+        -- That is the difference between a circuit breaker and a fuse. A
+        -- breaker stops a live fault and then lets the system recover once
+        -- the fault is gone; a fuse stays blown. This is meant to be a
+        -- breaker.
+        --
+        -- 15 minutes: long enough to catch a genuine live loop (which fires
+        -- within seconds), short enough that a fixed fault clears without a
+        -- human resetting a flag by hand.
         (select count(*)::int from (
            select body from messages
            where conversation_id = ${row.conversation_id} and direction = 'outbound'
+             and created_at > now() - interval '15 minutes'
            order by id desc limit 3
          ) recent
          where recent.body = (
            select body from messages
            where conversation_id = ${row.conversation_id} and direction = 'outbound'
+             and created_at > now() - interval '15 minutes'
            order by id desc limit 1
          )) as identical_recent_replies
     `,
@@ -431,26 +788,35 @@ async function processInbound(db, job) {
   // ---- greeting and menu --------------------------------------------------
   //
   // Sent AFTER the conduct gate, so it obeys the allowlist and rate limits
-  // like anything else, and BEFORE the assistant, because a menu is a fixed
-  // string and does not need a model.
+  // like anything else, and BEFORE the assistant, because both the welcome
+  // and the menu are fixed strings and do not need a model.
   //
-  // `greeted_at` rather than "is this the first message": history sync, a
-  // re-pair, or a customer who wrote before the pharmacy went live all leave
-  // prior messages in the thread, and any of them would otherwise make a
-  // regular get greeted as a stranger — or never greeted at all.
+  // Gated on `onboarded_at` — a CUSTOMER fact (0028), never a conversation
+  // one. Conversations now have a real lifecycle (see conversationPolicy):
+  // any gap past IDLE_HOURS starts a new conversation row, and a flag stored
+  // there would make a customer who has ordered a dozen times look brand new
+  // the moment their thread ages out. onboarded_at persists across every
+  // conversation a customer ever has, which is the whole point of it.
   const menuOn = row.menu_enabled !== false;
   const wantsMenu = menuOn && isMenuRequest(row.body);
-  const needsGreeting = menuOn && !row.greeted_at;
+  const isFirstContact = menuOn && !row.onboarded_at;
+  // A bare "Good morning" from someone never onboarded gets the SHORT
+  // welcome, not the full itemized menu — see buildWelcome's own comment for
+  // why. Checked only when isFirstContact: a returning customer's greeting
+  // never reaches this function at all, it goes straight to the AI below,
+  // which already replies to small talk naturally.
+  const isBareGreeting = isFirstContact && !wantsMenu && isGreeting(row.body);
 
-  if (wantsMenu || needsGreeting) {
+  // Explicit "menu" always wins over a bare-greeting welcome — someone who
+  // typed the word asked for the full list, not a one-line hello, even on
+  // their very first message (Test B: first message IS "menu").
+  if (wantsMenu) {
     const text = buildMenu({
       pharmacyName: row.pharmacy_name,
       botName: row.bot_name,
-      // WhatsApp's pushName — what the customer calls themselves. Used as a
-      // greeting only, never as identity.
       customerName: row.display_name,
       welcomeNote: row.welcome_note,
-      returning: wantsMenu && Boolean(row.greeted_at),
+      returning: Boolean(row.onboarded_at),
     });
 
     const sent = await sessionManager.sendText(row.account_id, row.wa_jid, text);
@@ -460,20 +826,65 @@ async function processInbound(db, job) {
         providerMessageId: sent.providerMessageId, body: text, author: 'assistant',
         category: CATEGORIES.TRANSACTIONAL, eligibilityReason: 'REPLY_TO_CUSTOMER',
       });
-      await tx`
-        update conversations set greeted_at = now(), last_message_at = now()
-        where id = ${row.conversation_id}
-      `;
+      await tx`update conversations set last_message_at = now() where id = ${row.conversation_id}`;
+      await tx`update customers set onboarded_at = coalesce(onboarded_at, now()) where id = ${row.customer_id}`;
     });
 
-    console.log(JSON.stringify({ level: 'info', msg: 'menu sent', to: row.wa_phone, returning: Boolean(row.greeted_at) }));
+    console.log(JSON.stringify({ level: 'info', msg: 'menu sent', to: row.wa_phone, returning: Boolean(row.onboarded_at) }));
     await markWarmupStarted(db, job.pharmacy_id);
-    return { sent: true, reason: wantsMenu ? 'menu_requested' : 'greeting' };
+    return { sent: true, reason: 'menu_requested' };
+  }
+
+  if (isBareGreeting) {
+    const text = buildWelcome({
+      pharmacyName: row.pharmacy_name,
+      botName: row.bot_name,
+      // WhatsApp's pushName — what the customer calls themselves. Used as a
+      // greeting only, never as identity.
+      customerName: row.display_name,
+      welcomeNote: row.welcome_note,
+    });
+
+    const sent = await sessionManager.sendText(row.account_id, row.wa_jid, text);
+    await db.begin(async (tx) => {
+      await insertOutboundMessage(tx, {
+        pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
+        providerMessageId: sent.providerMessageId, body: text, author: 'assistant',
+        category: CATEGORIES.TRANSACTIONAL, eligibilityReason: 'REPLY_TO_CUSTOMER',
+      });
+      await tx`update conversations set last_message_at = now() where id = ${row.conversation_id}`;
+      await tx`update customers set onboarded_at = now() where id = ${row.customer_id}`;
+    });
+
+    console.log(JSON.stringify({ level: 'info', msg: 'welcome sent', to: row.wa_phone }));
+    await markWarmupStarted(db, job.pharmacy_id);
+    return { sent: true, reason: 'greeting' };
+  }
+
+  // First-ever contact, but the message is a real request ("I need
+  // paracetamol"), not small talk. Marked onboarded silently — no canned
+  // message sent — so this decision does not fire again on their next
+  // message, and execution falls straight through to the AI below so the
+  // request is answered in THIS turn rather than deferred behind a menu
+  // nobody asked for.
+  if (isFirstContact) {
+    await db`update customers set onboarded_at = now() where id = ${row.customer_id} and onboarded_at is null`;
   }
 
   // A bare number is a menu choice. "I want 1 pack" is not, and parseSelection
   // deliberately refuses to read it as one.
-  const choice = menuOn ? parseSelection(row.body, {
+  //
+  // ONLY before the customer has picked something this conversation.
+  // Without this, a bare digit is reinterpreted as a fresh top-level menu
+  // pick for the rest of the conversation's life — including while the
+  // assistant is mid-flow and has itself just asked a numeric question
+  // ("how many packs?"). Menu key 4 is "Speak to the pharmacist"; a
+  // customer answering "4 tablets" got silently escalated to a human
+  // instead of the assistant ever seeing "4" as an answer to its own
+  // question. Once last_menu_choice is set, further digits are just text
+  // and go to the assistant like anything else — "menu" (isMenuRequest,
+  // checked earlier) still works at any point if they want to start over.
+  const choice = menuOn && !row.last_menu_choice ? parseSelection(row.body, {
     pharmacyName: row.pharmacy_name, botName: row.bot_name,
   }) : null;
 
@@ -482,25 +893,27 @@ async function processInbound(db, job) {
   // advice", which the clinical filter would have refused anyway — so it goes
   // straight to a person rather than through a model that must decline.
   if (choice?.intent === 'pharmacist') {
+    let raised;
     await db.begin(async (tx) => {
-      const [handoff] = await tx`
-        insert into handoffs (pharmacy_id, conversation_id, reason, category, detail, triggered_by)
-        values (${job.pharmacy_id}, ${row.conversation_id}, 'customer_request', 'human_requested',
-                'Chose "Speak to the pharmacist" from the menu.', 'customer')
-        returning id, requested_at
-      `;
-      await recordEvent(tx, {
-        pharmacyId: job.pharmacy_id, customerId: row.customer_id,
-        eventType: PATIENT_EVENTS.PHARMACIST_HANDOFF, occurredAt: handoff.requested_at, actorType: 'customer',
-        entityType: 'handoff', entityId: handoff.id,
-        metadata: { reason: 'customer_request', category: 'human_requested' },
+      raised = await raiseOrConsolidateHandoff(tx, {
+        pharmacyId: job.pharmacy_id, conversationId: row.conversation_id, customerId: row.customer_id,
+        reason: 'customer_request', category: 'human_requested',
+        detail: 'Chose "Speak to the pharmacist" from the menu.',
+        triggeredBy: 'customer', actorType: 'customer',
       });
-      await tx`update conversations set mode = 'human', last_menu_choice = ${choice.intent} where id = ${row.conversation_id}`;
+      // last_menu_choice only — NOT mode. A human replies once a pharmacist
+      // explicitly takes over (POST /takeover); asking for one is not that.
+      // See conversationState.deriveOwnership for why this distinction is
+      // the whole point of this ticket.
+      await tx`update conversations set last_menu_choice = ${choice.intent} where id = ${row.conversation_id}`;
     });
 
-    // Unlike a silent escalation, this one WAS asked for, so saying it is
-    // happening is a promise the staff inbox can now actually keep.
-    const ack = 'A pharmacist will reply here shortly. Please tell us what you need in the meantime.';
+    // Asking a second time while already pending gets a shorter, distinct
+    // acknowledgement — repeating the full "a pharmacist will reply" promise
+    // would read as the system having forgotten it already said this once.
+    const ack = raised.isNew
+      ? 'A pharmacist will reply here shortly. Please tell us what you need in the meantime.'
+      : "You're already in the queue for a pharmacist — no need to ask again. I'm still here for anything else while you wait.";
     await sendAndRecordOutbound(db, {
       pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
       accountId: row.account_id, to: row.wa_jid, body: ack, author: 'system', category: CATEGORIES.TRANSACTIONAL,
@@ -519,7 +932,127 @@ async function processInbound(db, job) {
     order by id desc limit 10
   `).reverse();
 
-  const outcome = await respond({
+  // ---- clinical protocol engine ------------------------------------------
+  //
+  // Runs BEFORE respond(), because respond()'s first act is screenMessage(),
+  // which hard-returns a handoff for any symptom description and so would
+  // never let the engine see the message at all.
+  //
+  // This is a NARROWING, not a widening: every message routed here is one
+  // the filter was already sending straight to a pharmacist. The engine asks
+  // the protocol's approved triage questions first, then escalates with a
+  // structured briefing instead of the bare "customer mentioned cough" the
+  // pharmacist gets today. Anything the router declines falls through
+  // untouched to exactly the path it takes now.
+  const clinicalDecision = await clinicalRouter.route({
+    pharmacyId: job.pharmacy_id,
+    screening: screenMessage(row.body),
+    text: row.body,
+    context: row.context || {},
+  }).catch(() => ({ route: false, reason: 'router_error' }));
+
+  if (clinicalDecision.route && await isClinicalWorkflowEnabled(job.pharmacy_id)) {
+    // Same reasoning as the assistant path below: the clinical engine takes
+    // real time, and a patient describing a symptom into silence is the last
+    // person who should be left wondering whether anyone is there.
+    const stopClinicalTyping = sessionManager.startTyping(row.account_id, row.wa_jid);
+    let turn;
+    try {
+      turn = await handleTurn(job.pharmacy_id, {
+        conversationId: row.conversation_id,
+        customerId: row.customer_id,
+        protocolSlug: clinicalDecision.slug,
+        patientMessage: row.body,
+        answeringKey: clinicalDecision.answeringKey || null,
+      });
+    } finally {
+      stopClinicalTyping();
+    }
+
+    // Remember which question is outstanding so the customer's NEXT message
+    // ("3 days") is read as its answer rather than as a fresh question. On
+    // any non-CONTINUE outcome the run is no longer awaiting input, so the
+    // key is cleared — leaving a stale one would capture unrelated messages
+    // into a finished assessment.
+    const runContext = turn.outcome === 'CONTINUE' && turn.question
+      ? { clinical_run: { slug: clinicalDecision.slug, awaiting_key: turn.question.key } }
+      : { clinical_run: null };
+
+    // SEND BEFORE RECORDING — the same discipline every other reply path in
+    // this file follows (see outboundMessage.js's own header on why: "no
+    // path here records MESSAGE_SENT for a send that didn't happen").
+    //
+    // This branch used to do the opposite. The transaction below — message
+    // row written as delivery_status 'sent', conversation context moved to
+    // "awaiting the patient's answer", onAssistantReplied clearing the
+    // pharmacist queue — committed BEFORE the WhatsApp send was even
+    // attempted, and a failed send was then swallowed into a console.error
+    // instead of being allowed to fail the job. A dead socket meant every
+    // observable record insisted the patient had been asked and the ball
+    // was in their court, while they had received nothing and nothing was
+    // ever retried — worse than a job stuck visibly `running`, because
+    // nothing here ever surfaced as broken.
+    //
+    // Sending first and letting a genuine failure propagate (as every other
+    // branch already does) means a bad send fails the job and the queue
+    // retries it, instead of the failure vanishing into an internally
+    // consistent lie.
+    let sent = null;
+    if (turn.patientMessage) {
+      sent = await sessionManager.sendText(row.account_id, row.wa_jid, turn.patientMessage);
+    }
+
+    await db.begin(async (tx) => {
+      await tx`
+        update conversations
+        set context = coalesce(context, '{}'::jsonb) || ${tx.json(runContext)}
+        where id = ${row.conversation_id}
+      `;
+      if (turn.patientMessage) {
+        await insertOutboundMessage(tx, {
+          pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
+          providerMessageId: sent.providerMessageId, body: turn.patientMessage, author: 'assistant',
+          category: CATEGORIES.TRANSACTIONAL, eligibilityReason: 'REPLY_TO_CUSTOMER',
+        });
+      }
+      // CONTINUE and RESOLVED both leave the ball with the customer — the
+      // assistant asked something, or closed with safety-net advice and an
+      // offer. REVIEW and URGENT have already raised a handoff inside
+      // handleTurn, and marking those as "assistant replied" would take them
+      // out of the pharmacist queue.
+      if (turn.outcome === 'CONTINUE' || turn.outcome === 'RESOLVED') {
+        await onAssistantReplied(tx, {
+          pharmacyId: job.pharmacy_id, conversationId: row.conversation_id,
+        });
+      }
+    });
+
+    if (turn.patientMessage) {
+      await markWarmupStarted(db, job.pharmacy_id);
+    }
+
+    console.log(JSON.stringify({
+      level: 'info', msg: 'clinical protocol turn', to: row.wa_phone,
+      protocol: clinicalDecision.slug, outcome: turn.outcome, reason: turn.reason,
+      askedKey: turn.question?.key || null,
+    }));
+    return { sent: Boolean(turn.patientMessage), reason: `clinical:${turn.outcome}` };
+  }
+
+  // "typing…" for the part of the turn that actually takes time.
+  //
+  // respond() is where the seconds go — the model, plus any catalogue tool
+  // calls it makes. sendText shows the indicator for its own pacing delay,
+  // but that starts only once there is something to send, which is after
+  // this. Without it the customer watches a silent chat through the whole
+  // slow part and reasonably concludes the number is dead.
+  //
+  // Stopped in `finally`: a thrown assistant error must not leave the
+  // pharmacy showing as permanently typing.
+  const stopThinking = sessionManager.startTyping(row.account_id, row.wa_jid);
+  let outcome;
+  try {
+    outcome = await respond({
     pharmacyId: job.pharmacy_id,
     pharmacyName: row.pharmacy_name,
     text: row.body,
@@ -534,12 +1067,16 @@ async function processInbound(db, job) {
     // For the staff alert, so it can say who ordered rather than just a number.
     customer: { display_name: row.display_name, full_name: row.full_name, wa_phone: row.wa_phone },
     botName: row.bot_name,
+    tone: row.assistant_tone,
     // A menu choice is a bare digit, which tells the model nothing on its
     // own. Passed as a FACT about what was chosen, not as an instruction —
     // same discipline as conversation context, so nothing arriving from a
     // customer can become a directive by routing through here.
     menuBriefing: choice ? intentBriefing(choice.intent, { pharmacyName: row.pharmacy_name }) : null,
-  });
+    });
+  } finally {
+    stopThinking();
+  }
 
   // ---- escalate -----------------------------------------------------------
   if (outcome.action === 'handoff') {
@@ -563,35 +1100,29 @@ async function processInbound(db, job) {
 
     const escalation = escalationMessage(outcome.category, { pharmacyPhone: row.pharmacy_phone });
 
+    let raised;
     await db.begin(async (tx) => {
-      const [handoff] = await tx`
-        insert into handoffs (pharmacy_id, conversation_id, reason, category, detail, triggered_by)
-        values (${job.pharmacy_id}, ${row.conversation_id},
-                ${HANDOFF_REASON[outcome.category] || 'unsupported'},
-                ${outcome.category},
-                ${`${outcome.category}: ${outcome.reason}`}, 'assistant')
-        returning id, requested_at
-      `;
-      await recordEvent(tx, {
-        pharmacyId: job.pharmacy_id, customerId: row.customer_id,
-        eventType: PATIENT_EVENTS.PHARMACIST_HANDOFF, occurredAt: handoff.requested_at, actorType: 'ai',
-        entityType: 'handoff', entityId: handoff.id,
-        metadata: { reason: HANDOFF_REASON[outcome.category] || 'unsupported', category: outcome.category },
+      raised = await raiseOrConsolidateHandoff(tx, {
+        pharmacyId: job.pharmacy_id, conversationId: row.conversation_id, customerId: row.customer_id,
+        reason: HANDOFF_REASON[outcome.category] || 'unsupported', category: outcome.category,
+        detail: `${outcome.category}: ${outcome.reason}`,
+        triggeredBy: 'assistant', actorType: 'ai',
       });
 
-      // Muting the assistant is the handoff — without it the assistant answers
-      // the customer's NEXT message and talks over the pharmacist now dealing
-      // with them.
+      // NOT mode = 'human'. HANDOFF ≠ AI SILENCE — the assistant stays
+      // available (within its safety boundaries; see the clinical filter
+      // that produced `outcome.action === 'handoff'` in the first place)
+      // until a pharmacist explicitly calls POST /:id/takeover. Muting here
+      // used to mean a two-second clinical question froze a conversation
+      // for however long the pharmacist queue took, even for "what time do
+      // you close" asked five minutes later.
       //
-      // But when we have OFFERED a pharmacist rather than imposed one, muting
-      // here would swallow the customer's own answer: they reply "yes" and
-      // nothing responds, which is exactly the silence this message exists to
-      // prevent. So the mute waits for their reply, and the handoff row is
-      // still written immediately so staff see the clinical question either
-      // way.
-      if (!escalation.asksPermission) {
-        await tx`update conversations set mode = 'human' where id = ${row.conversation_id}`;
-      } else {
+      // Only the NEW-handoff, ask-permission case still writes anything to
+      // context: pending_escalation exists so the customer's very next
+      // message can be read as yes/no to an offer. A consolidated (repeat)
+      // escalation does not re-ask, so it does not touch it — whatever
+      // pending_escalation state already existed is left alone.
+      if (raised.isNew && escalation.asksPermission) {
         await tx`
           update conversations
           set context = coalesce(context, '{}'::jsonb) || ${tx.json({
@@ -608,62 +1139,61 @@ async function processInbound(db, job) {
       to: row.wa_phone,
       category: outcome.category,
       reason: outcome.reason,
+      consolidated: !raised.isNew,
     }));
 
-    // Tell a human, on their phone. A badge on a dashboard nobody has open is
-    // not a notification — the first clinical escalation sat unread for 46
-    // hours precisely because the only signal for it was on screen.
+    // Tell a human, on their phone — but only for a genuinely NEW handoff.
+    // A repeat clinical question while one is already open updates the SAME
+    // handoff's detail (raiseOrConsolidateHandoff above) rather than paging
+    // staff a second time about a conversation they already know is
+    // waiting; §13's complaint is exactly a pharmacist receiving three
+    // fragmented pings instead of one consolidated picture.
     //
     // Not awaited, and never allowed to throw: the handoff is already
-    // recorded and the conversation already muted. A failed alert must not
-    // undo that, or a send error would leave the customer un-escalated as
-    // well as un-notified.
-    (async () => {
-      const { buildBriefing } = require('./safety/consultationBriefing');
-      const { alertStaffOfConsultation } = require('./orders/staffAlert');
-      // Bounded, the same way the AI's own history load is (see
-      // processInbound below). buildBriefing only needs the trigger message
-      // and whatever came after it — before the conversation-close sweep
-      // (0023) this conversation could hold days of unrelated traffic, and
-      // even with sessions now segmented, an unbounded load stays a cost with
-      // no benefit for what this actually renders.
-      const history = (await db`
-        select direction, body, created_at from messages
-        where conversation_id = ${row.conversation_id} order by id desc limit 50
-      `).reverse();
-      const briefing = buildBriefing({
-        category: outcome.category,
-        requestedAt: new Date(),
-        messages: history,
-        context: row.context,
-      });
-      const r = await alertStaffOfConsultation(job.pharmacy_id, {
-        briefing,
-        customer: { display_name: row.display_name, full_name: row.full_name, wa_phone: row.wa_phone },
-      });
-      console.log(JSON.stringify({
-        level: r.sent ? 'info' : 'warn', msg: 'consultation alert', sent: r.sent, reason: r.reason,
-      }));
-    })().catch((err) => console.error(JSON.stringify({
-      level: 'error', msg: 'consultation alert threw', error: err.message,
-    })));
+    // recorded. A failed alert must not undo that, or a send error would
+    // leave the customer un-escalated as well as un-notified.
+    if (raised.isNew) {
+      (async () => {
+        const { buildBriefing } = require('./safety/consultationBriefing');
+        const { alertStaffOfConsultation } = require('./orders/staffAlert');
+        // Bounded, the same way the AI's own history load is (see
+        // processInbound below). buildBriefing only needs the trigger message
+        // and whatever came after it — before the conversation-close sweep
+        // (0023) this conversation could hold days of unrelated traffic, and
+        // even with sessions now segmented, an unbounded load stays a cost with
+        // no benefit for what this actually renders.
+        const history = (await db`
+          select direction, body, created_at from messages
+          where conversation_id = ${row.conversation_id} order by id desc limit 50
+        `).reverse();
+        const briefing = buildBriefing({
+          category: outcome.category,
+          requestedAt: new Date(),
+          messages: history,
+          context: row.context,
+        });
+        const r = await alertStaffOfConsultation(job.pharmacy_id, {
+          briefing,
+          customer: { display_name: row.display_name, full_name: row.full_name, wa_phone: row.wa_phone },
+        });
+        console.log(JSON.stringify({
+          level: r.sent ? 'info' : 'warn', msg: 'consultation alert', sent: r.sent, reason: r.reason,
+        }));
+      })().catch((err) => console.error(JSON.stringify({
+        level: 'error', msg: 'consultation alert threw', error: err.message,
+      })));
+    }
 
-    // TELL THE CUSTOMER. This used to be silent, on the grounds that promising
-    // "a human will reply" with no staff inbox in existence was a promise the
-    // product could not keep. The Inbox exists now, so that reasoning is spent
-    // — and silence turned out to be the worse failure: the customer keeps
-    // messaging a number that has simply stopped answering, with nothing to
-    // tell them why.
-    //
-    // Sent exactly once, because the conversation is muted above and every
-    // later message returns at the mode check before reaching this point.
-    // Nothing here claims a timeframe, since nothing in the system enforces
-    // one.
+    // TELL THE CUSTOMER. A NEW handoff gets the full, named-reason message
+    // (escalation.text) — the boundary explanation still matters the first
+    // time. A CONSOLIDATED one gets a short "already reviewing" line instead
+    // of repeating that full explanation, which is what Test 6 asks for:
+    // acknowledge, do not guess, do not re-litigate the refusal.
     try {
-      // Named reason, and a question when there is a real choice to offer.
-      // A single generic line for every case left someone asking about their
-      // child reading a deliberate professional boundary as a broken bot.
-      const ack = escalation.text;
+      const ack = raised.isNew
+        ? escalation.text
+        : "A pharmacist is already reviewing this for you — I've added this to what they'll look at. "
+          + "I don't want to guess on anything medication-related, but I'm still here for anything else.";
       if (!ack) return { sent: false, reason: `handoff:${outcome.category}` };
       await sendAndRecordOutbound(db, {
         pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
@@ -679,7 +1209,7 @@ async function processInbound(db, job) {
       }));
     }
 
-    return { sent: false, reason: `handoff:${outcome.category}` };
+    return { sent: false, reason: `handoff:${outcome.category}`, consolidated: !raised.isNew };
   }
 
   // ---- answer -------------------------------------------------------------
@@ -700,6 +1230,13 @@ async function processInbound(db, job) {
         where id = ${row.conversation_id}
       `;
     }
+    // We answered, so the ball is with the customer. Inside the same
+    // transaction as the outbound row: a thread recorded as replied-to but
+    // still showing AI_HANDLING would sit in the inbox looking like work
+    // nobody had picked up.
+    await onAssistantReplied(tx, {
+      pharmacyId: job.pharmacy_id, conversationId: row.conversation_id,
+    });
   });
 
   console.log(JSON.stringify({
@@ -730,7 +1267,11 @@ async function tick() {
   }
 
   try {
-    await handler(db, job);
+    // Bounded. A handler that hangs — a half-open WhatsApp socket, a database
+    // call that never returns — used to block the loop forever rather than
+    // failing, which stopped every subsequent message for that pharmacy with
+    // no error anywhere. A timeout makes it a normal retryable failure.
+    await withTimeout(handler(db, job), JOB_TIMEOUT_MS, `job ${job.id} (${job.kind})`);
     await succeed(db, job);
   } catch (err) {
     await fail(db, job, err);
@@ -800,9 +1341,25 @@ async function sweepIdleConversations(db) {
     });
     if (!decision.close) continue;
 
+    // workflow_state moves WITH status, because the two are not independent:
+    // conversations_workflow_matches_status requires closed rows to be
+    // 'resolved' or 'archived', exactly as it requires open rows to be one of
+    // the open-ish states. Setting status alone produced an illegal pair, so
+    // every close in this sweep was rejected by the constraint and the whole
+    // batch aborted — silently, because the error was caught and logged by
+    // the caller. Threads therefore never closed at all: the dashboard's
+    // "waiting for a reply" count was reading days-old dead conversations
+    // that this sweep believed it had already retired.
+    //
+    // 'resolved' rather than 'archived' — it is what every closed row in the
+    // table already uses, and archived should mean a deliberate act, not the
+    // ordinary end of a quiet conversation.
     await db`
       update conversations
-      set status = 'closed', closed_at = now(), closed_reason = ${decision.reason}
+      set status = 'closed',
+          workflow_state = 'resolved',
+          closed_at = now(),
+          closed_reason = ${decision.reason}
       where id = ${c.id} and status = 'open'
     `;
 
@@ -872,6 +1429,74 @@ async function sweepUnhandledConsultations(db) {
   }
 }
 
+/**
+ * Hand a conversation back to the assistant when the pharmacist who took it
+ * has gone quiet — so the customer is never left messaging a number that
+ * has silently stopped answering.
+ *
+ * TEN MINUTES, and why it is not shorter or longer
+ * Short enough that a customer does not sit in silence wondering if anyone
+ * is there; long enough that a pharmacist reading a history, checking a
+ * shelf, or typing a careful clinical reply is not cut off mid-thought. The
+ * clock resets on every staff reply (routes/conversations.js), so a
+ * pharmacist actually working the thread never trips it — only one who has
+ * genuinely walked away.
+ *
+ * WHAT THIS DELIBERATELY DOES NOT DO
+ * It does not resolve, cancel, or downgrade the handoff. The pharmacist is
+ * still needed and the thread stays WAITING_FOR_PHARMACIST, still high
+ * priority, still top of the inbox, still sending reminders. ONLY `mode`
+ * returns to 'bot'. The resulting state — handoff PENDING, owner AI — is
+ * precisely why those are two separate axes: the assistant resumes helping
+ * without the escalation being forgotten.
+ *
+ * THE SAFETY ARGUMENT FOR LETTING THE ASSISTANT BACK IN
+ * The question that caused the escalation is still one the assistant must
+ * not answer — and it still cannot. The clinical filter runs before the
+ * model on every inbound message, so if the customer repeats the clinical
+ * question, it is refused and re-escalated exactly as it was the first
+ * time. What the assistant regains is the ability to answer the ordinary
+ * things ("what time do you close", "how much is paracetamol") that it was
+ * always allowed to answer, and which the customer currently gets silence
+ * for.
+ */
+const PHARMACIST_IDLE_TAKEBACK_MINUTES = 10;
+
+async function sweepIdlePharmacistHandoffs(db) {
+  const idle = await db`
+    select h.id, h.pharmacy_id, h.conversation_id
+    from handoffs h
+    join conversations conv on conv.id = h.conversation_id
+    where h.resolved_at is null
+      and h.accepted_at is not null
+      and conv.mode = 'human'
+      and h.handoff_last_activity_at < now() - make_interval(mins => ${PHARMACIST_IDLE_TAKEBACK_MINUTES})
+    limit 10
+  `;
+
+  for (const h of idle) {
+    // Claimed by clearing the activity stamp in the same conditional update
+    // that flips the mode — so a second sweep pass cannot pick the same
+    // conversation up again and log a duplicate takeback.
+    const [claimed] = await db`
+      update handoffs set handoff_last_activity_at = null
+      where id = ${h.id} and handoff_last_activity_at is not null
+      returning id
+    `;
+    if (!claimed) continue;
+
+    await db`update conversations set mode = 'bot' where id = ${h.conversation_id}`;
+
+    console.log(JSON.stringify({
+      level: 'info',
+      msg: 'pharmacist idle — assistant resumed, handoff still open',
+      conversationId: h.conversation_id,
+      handoffId: h.id,
+      idleMinutes: PHARMACIST_IDLE_TAKEBACK_MINUTES,
+    }));
+  }
+}
+
 async function sweepExpiredHolds(db) {
   const expired = await expireStaleHolds();
   for (const order of expired) {
@@ -928,7 +1553,7 @@ function start() {
   const loop = async () => {
     if (!running) return;
     try {
-      // ONE gate for all three periodic scans, checked once rather than
+      // ONE gate for all FOUR periodic scans, checked once rather than
       // (claimed but not actually) per-sweep. Each previously managed its own
       // timing, or in sweepUnhandledConsultations' case claimed to share one
       // it never actually checked — it ran on every poll tick, 30x more often
@@ -936,13 +1561,34 @@ function start() {
       // version of "shared throttle" that is actually shared.
       if (Date.now() - lastSweepAt >= SWEEP_INTERVAL_MS) {
         lastSweepAt = Date.now();
-        await sweepExpiredHolds(getSql());
-        await sweepUnhandledConsultations(getSql()).catch((err) => console.error(JSON.stringify({
-          level: 'error', msg: 'consultation sweep failed', error: err.message,
-        })));
-        await sweepIdleConversations(getSql()).catch((err) => console.error(JSON.stringify({
-          level: 'error', msg: 'conversation close sweep failed', error: err.message,
-        })));
+        // Each sweep gets its OWN catch, not one around the block. Holds,
+        // consultations, idle conversations and the pharmacist idle-takeback
+        // are unrelated safety nets — sweepExpiredHolds used to be the one
+        // exception, uncaught, so a bad order row threw before the other
+        // three ever ran. Rare, but the takeback sweep is what stops a
+        // customer being stranded when a pharmacist walks away, and having
+        // an unrelated stock-hold failure able to silently suppress it for
+        // another 60s (repeatedly, if the fault persisted) was exactly the
+        // "one failure cascades into unrelated failures" shape this session
+        // spent most of a day chasing elsewhere.
+        // Every sweep is BOUNDED as well as caught. The catch handles a
+        // sweep that fails; the timeout handles one that never returns at
+        // all, which is the case that used to kill the loop — these are
+        // sequential awaits, so a single hung query meant the sweeps below
+        // it never ran and the reschedule at the bottom was never reached.
+        const sweeps = [
+          ['expired holds', sweepExpiredHolds],
+          ['consultation', sweepUnhandledConsultations],
+          ['conversation close', sweepIdleConversations],
+          ['pharmacist idle takeback', sweepIdlePharmacistHandoffs],
+          ['abandoned jobs', sweepAbandonedJobs],
+        ];
+        for (const [name, fn] of sweeps) {
+          await withTimeout(fn(getSql()), SWEEP_TIMEOUT_MS, `${name} sweep`)
+            .catch((err) => console.error(JSON.stringify({
+              level: 'error', msg: `${name} sweep failed`, error: err.message,
+            })));
+        }
       }
       // Drain rather than sleeping between each job, so a burst is not
       // served at one message per poll interval.
@@ -951,8 +1597,14 @@ function start() {
       while (worked && running && guard++ < 50) worked = await tick();
     } catch (err) {
       console.error(JSON.stringify({ level: 'error', msg: 'worker loop error', error: err.message }));
+    } finally {
+      // In `finally`, not after the catch. Every await inside the try is now
+      // bounded, so this is reachable on any path — but putting the
+      // reschedule here means even an unforeseen throw between the catch and
+      // the end of the block cannot silently retire the worker. The loop
+      // stopping is the one failure that produces no symptom except silence.
+      if (running) timer = setTimeout(loop, env.worker.pollIntervalMs);
     }
-    if (running) timer = setTimeout(loop, env.worker.pollIntervalMs);
   };
 
   loop();
@@ -964,4 +1616,10 @@ function stop() {
   clearTimeout(timer);
 }
 
-module.exports = { start, stop, tick, HANDOFF_REASON };
+module.exports = {
+  start, stop, tick, HANDOFF_REASON,
+  // Exported for tests. The sweep is the only place the idle-takeback rule
+  // lives, and it is worth proving against a real database rather than
+  // waiting ten minutes of wall clock for the loop to call it.
+  sweepIdlePharmacistHandoffs, PHARMACIST_IDLE_TAKEBACK_MINUTES,
+};

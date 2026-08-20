@@ -24,6 +24,7 @@ const { screenMessage } = require('../safety/clinicalFilter');
 const { chat, isConfigured, LlmUnavailable } = require('./llmClient');
 const { toolSchemas, runTool } = require('./catalogueTools');
 const { validateReply } = require('./replyValidator');
+const { toneLine } = require('./assistantTone');
 
 /**
  * Bounded so a model that keeps calling tools cannot spend the pharmacy's
@@ -33,14 +34,69 @@ const { validateReply } = require('./replyValidator');
  */
 const MAX_TOOL_ITERATIONS = 3;
 
+/**
+ * How many times a REJECTED draft may be handed back for correction before
+ * the conversation goes to a person.
+ *
+ * WHY THIS EXISTS
+ * validateReply is a tripwire: it catches a draft that quotes a figure no
+ * tool returned, or claims an action that never happened. Until now, tripping
+ * it went straight to a pharmacist — no second attempt. Measured on real
+ * traffic that was the single largest source of handoffs (17 of 39), ahead of
+ * every genuine clinical reason combined, and almost none of them needed a
+ * human at all: the top cause was the model returning an EMPTY message, which
+ * says nothing about whether a pharmacist is required.
+ *
+ * A validator that only ever escalates teaches nothing. Handing the specific
+ * violation back — "you quoted ₦X, no tool returned that; rewrite using only
+ * verified figures" — lets the model fix its own mistake on the spot, which
+ * is what a competent assistant does. The corrected draft is re-validated by
+ * exactly the same check, so nothing unverified reaches a customer: the
+ * guarantee is unchanged, only the number of chances to meet it.
+ *
+ * Two, not more. A model that cannot produce a defensible answer after two
+ * targeted corrections is genuinely stuck, and that IS a person's job.
+ */
+const MAX_VALIDATION_RETRIES = 2;
+
+/**
+ * Turn validator violations into an instruction the model can act on.
+ *
+ * Deliberately says what to do, not just what went wrong — and explicitly
+ * tells it to still answer the rest of the question. Told only "that was
+ * wrong", a model's cheapest escape is to give up and say nothing useful,
+ * which is the same dead end as the handoff this replaces.
+ */
+function buildCorrection(violations) {
+  return [
+    'Your draft reply was checked before sending and rejected:',
+    ...violations.map((v) => `  - ${v.detail}`),
+    '',
+    'Rewrite it now, in these terms:',
+    '- Use ONLY prices, stock numbers and facts a tool returned in this conversation.',
+    '- Do not claim to have done anything the tools did not actually do.',
+    '- If you cannot back one detail up, leave that detail out — but still answer the',
+    '  rest of the question as helpfully as you can. Dropping the whole answer is worse',
+    '  than an answer missing one figure.',
+    '- If a figure is genuinely needed and you do not have it, call the tool that returns it.',
+    '',
+    'Reply with the corrected message to the customer.',
+  ].join('\n');
+}
+
 /** How much conversation the model sees. Enough for "I want two" to resolve. */
 const HISTORY_LIMIT = 10;
 
-function buildSystemPrompt({ pharmacyName, context, botName, menuBriefing }) {
+function buildSystemPrompt({ pharmacyName, context, botName, menuBriefing, tone }) {
   const lines = [
     botName
       ? `You are ${botName}, the WhatsApp assistant for ${pharmacyName || 'a Nigerian community pharmacy'}, replying to a customer. If asked your name, you are ${botName}.`
       : `You are the WhatsApp assistant for ${pharmacyName || 'a Nigerian community pharmacy'}, replying to a customer.`,
+    // Placed BEFORE the rules, not after, and that ordering is deliberate:
+    // tone describes how to say things, and every rule below constrains what
+    // may be said. A voice instruction sitting after "never give dosage
+    // advice" reads as a licence to soften it.
+    toneLine(tone),
     '',
     'RULES:',
     '- Only state a price, stock level or product detail that a tool returned in this conversation. Never estimate, never recall, never round.',
@@ -50,7 +106,12 @@ function buildSystemPrompt({ pharmacyName, context, botName, menuBriefing }) {
     // attendant would never make that mistake, so the assistant should not
     // either: `sale_unit` on every product IS the correct word, always.
     '- Every product a tool returns has a `sale_unit` (card, bottle, tube, sachet, vial...). ALWAYS state prices using that word, never the customer\'s own word for the unit.',
-    '- If the customer names a unit that does not match `sale_unit` (e.g. they say "sachet" for a product whose sale_unit is "card"), gently correct them in the same sentence you give the price — e.g. "That comes as tablets on a card, not a sachet — a card is ₦460." Do not just silently substitute the right word without saying so; they should learn what they are actually buying.',
+    // "Sachet" for a strip of tablets is ordinary Nigerian speech, not a
+    // mistake. Correcting it — which this prompt used to require — made the
+    // assistant sound foreign and slightly condescending about a distinction
+    // the pharmacy itself does not draw.
+    '- "Sachet", "satchet", "strip", "packet" and "card" all mean the same thing when a product is sold by the card. Treat them as the customer\'s own word for it: never correct them, never explain the difference, just answer using the `sale_unit` word and give the price.',
+    '- Only correct a unit when the customer would otherwise turn up expecting the WRONG OBJECT — e.g. they say "bottle" for something sold as a card, or "tube" for a syrup. Then say it plainly and kindly in the same sentence as the price: "That one comes as a card of tablets rather than a bottle — a card is ₦460."',
     '- If a tool returns no match, say the pharmacy does not appear to stock it and offer to check with staff. Do not guess.',
     '- If a price is unknown, say you will confirm it. Do not say it is free and do not invent a figure.',
     '- Never give dosage, medical or clinical advice of any kind. If asked, say a pharmacist will help.',
@@ -60,16 +121,42 @@ function buildSystemPrompt({ pharmacyName, context, botName, menuBriefing }) {
     // separately, because the model's instinct is to promise the reassuring
     // version.
     '- You CAN send an order to the pharmacy, using create_order. Only after the customer has said exactly what they want and how many.',
+    // Without this the model treats a change of mind as a new order, and the
+    // customer ends up with two references for one shopping trip — or worse,
+    // is told to phone the pharmacy for something the assistant can just do.
+    '- If the customer changes their mind about something already on their order ("make that 2 instead", "remove the vitamin C", "I don\'t need it any more"): use change_order_item. Do NOT create a second order, and do not send them to a person for this — you can do it yourself while the pharmacy has not confirmed it yet.',
+    '- change_order_item takes the NEW total quantity for that item, and 0 removes it. If it refuses because the pharmacy has already confirmed or prepared the order, tell the customer plainly that staff have already started on it and offer to put them through to a person.',
     // Without an explicit route for "we don't have it", the model either
     // invents a substitute — clinical judgement it must never make — or ends
     // the conversation, which loses a sale the pharmacy never hears about.
     '- If find_products finds nothing, or the product is out of stock, and the customer still wants it: use ask_pharmacist. Never suggest a different medicine yourself, even one you are confident about. Deciding what substitutes for what is a pharmacist\'s job.',
+    // contact_pharmacy is deliberately the LAST thing reached for, not a
+    // shortcut. "I don't know, call this number" for every hard question is
+    // what makes a product feel like a dumb chatbot instead of a pharmacy
+    // front desk — the ordering below is the whole difference.
+    '- Try in this order before offering a phone number: (1) find_products / browse_category / get_pharmacy_info for anything the catalogue or pharmacy details can answer, (2) create_order for placing an order, (3) ask_pharmacist or a pharmacist handoff for anything needing pharmacist judgement or a substitute. Only call contact_pharmacy once you have genuinely tried what applies and none of it resolved things, or the customer explicitly asks for a phone number.',
+    '- contact_pharmacy does NOT replace a pharmacist handoff for a clinical question. If a pharmacist needs to review something, still hand off — you may ALSO mention the number from contact_pharmacy alongside that, never instead of it.',
+    '- If contact_pharmacy says no number is configured, say so plainly ("I can\'t give you a direct number right now") and do not invent one — fall back to a pharmacist handoff if the situation still needs a person.',
+    // The one place this system is tempted to answer from its own memory of
+    // the conversation instead of a tool. "What did I buy last time" feels
+    // answerable from what was just said a few turns ago, but a customer
+    // asking that is usually asking about something OUTSIDE this
+    // conversation entirely — and even inside it, restating from memory
+    // rather than the database is exactly the failure mode Segment 1
+    // exists to close off.
+    '- If the customer asks about something they ordered before ("what did I get last time", "the usual", "same as before"): call get_order_history. Never answer from anything said earlier in this conversation or from your own memory — always call the tool, even if you think you already know. If it returns no orders, say so plainly.',
     '',
     'WHEN SOMEONE ASKS BROADLY ("what do you have for malaria", "your best painkiller"):',
     // Shape, not just content. Told only WHAT it may say, the model reads out
     // everything the tool returned as a flat price list — accurate, and
     // useless to someone trying to choose. A counter assistant narrows.
     '- Call browse_category, then reply in three parts: one warm opening line, then AT MOST THREE options each on its own line, then a question asking which they want.',
+    // Without this the model second-guesses the tool and asks the customer to
+    // name a brand it has already found — the "too rigid" complaint in one
+    // exchange.
+    '- browse_category understands the KIND of medicine, not just words on the label: "blood pressure medicine" finds amlodipine even though the catalogue row says neither word. Trust what it returns instead of asking the customer to name a product themselves.',
+    '- If it comes back with `refused: true`, that request read as a symptom or an emergency. Do NOT search again or name any medicine — hand it to a pharmacist, and if it sounds urgent say plainly they should get immediate care.',
+    '- After listing options, close by offering the pharmacist once, naturally: these are what the pharmacy stocks for that need, and which one suits them is a pharmacist\'s call. Not as a disclaimer, and not repeated.',
     '- Never list more than three, even if the tool returns more. The tool already puts the best ones first.',
     '- Give each option a short line of its own: the name, the price, and ONE reason to pick it drawn from the tool (the pharmacy recommends it, most customers buy it, it is the most affordable, or the pharmacy\'s own description).',
     // The distinction that makes this safe AND better sales: every
@@ -87,6 +174,11 @@ function buildSystemPrompt({ pharmacyName, context, botName, menuBriefing }) {
     // something true available, and the instruction is what to USE rather
     // than what to avoid.
     '- For each option, use the product\'s `description` if it has one, otherwise its `factual_summary`, otherwise give only the name and price.',
+    // Real traffic: "Ibuprofen 400mg — ₦430 per card. 400mg tablets." The
+    // strength is already in the name, so the summary added a second copy of
+    // it and nothing else. Repetition inside one short line is what makes a
+    // list look machine-written rather than like a person at a counter.
+    '- Do NOT repeat in the description anything already stated in the product name — if the name says "Ibuprofen 400mg", the line must not end "400mg tablets". If the summary would only restate the name, give the name and price alone.',
     '- Never write your own words about what a medicine is good for, treats, helps with, relieves, or is used for. Not even mildly. If the tool gave you nothing, say nothing beyond the name and price.',
     // Not caution for its own sake — a Nigerian pharmacist genuinely says
     // this, and saying it makes the assistant sound more professional rather
@@ -111,6 +203,11 @@ function buildSystemPrompt({ pharmacyName, context, botName, menuBriefing }) {
     '- When they reply with their name, call save_customer_name with EXACTLY the name they typed, then call create_order again.',
     '- Never supply a name they did not type. Not their WhatsApp profile name, not a surname you added to make it look complete, not a name from earlier in the conversation. If you are unsure, ask them to type it again.',
     '- If they only give one name, pass that one name. Do not add a surname.',
+    // A stored name is not permanent — "my name is actually James now" is a
+    // correction, not a repeat question, and save_customer_name already
+    // overwrites on every call. Without this line the model has no reason to
+    // call it a second time once a name exists.
+    '- If a customer with a name already on file tells you it is wrong or has changed ("my name is actually James"), call save_customer_name again with what they just typed. Do not ask them to repeat it first.',
     '- Keep replies short. This is WhatsApp, not email. One or two sentences unless listing products.',
     '- Write in plain, warm Nigerian English. Do not use emoji.',
     '- Prices are in naira. Write them as ₦1,250.',
@@ -168,7 +265,7 @@ function buildSystemPrompt({ pharmacyName, context, botName, menuBriefing }) {
  * @returns {Promise<{action:'reply'|'handoff', text?:string, reason?:string,
  *   category?:string, toolResults:object[], contextUpdate?:object}>}
  */
-async function respond({ pharmacyId, pharmacyName, text, history = [], context = {}, customerId = null, conversationId = null, botName = null, menuBriefing = null, customer = null }) {
+async function respond({ pharmacyId, pharmacyName, text, history = [], context = {}, customerId = null, conversationId = null, botName = null, menuBriefing = null, customer = null, tone = null }) {
   // ---- 1. safety, before anything else ----------------------------------
   const screening = screenMessage(text);
   if (!screening.allow) {
@@ -192,7 +289,7 @@ async function respond({ pharmacyId, pharmacyName, text, history = [], context =
 
   // ---- 2. tool-calling loop ---------------------------------------------
   const messages = [
-    { role: 'system', content: buildSystemPrompt({ pharmacyName, context, botName, menuBriefing }) },
+    { role: 'system', content: buildSystemPrompt({ pharmacyName, context, botName, menuBriefing, tone }) },
     ...history.slice(-HISTORY_LIMIT).map((m) => ({
       role: m.direction === 'inbound' ? 'user' : 'assistant',
       content: m.body || '',
@@ -204,7 +301,14 @@ async function respond({ pharmacyId, pharmacyName, text, history = [], context =
   let contextUpdate = null;
 
   try {
-    for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration += 1) {
+    // Counted separately from tool iterations on purpose: a correction is
+    // not the model "being confused and calling more tools", and spending
+    // the tool budget on it would mean a single rejected draft could leave
+    // the assistant unable to look anything up afterwards.
+    let toolIterations = 0;
+    let validationRetries = 0;
+
+    for (let attempt = 0; attempt < MAX_TOOL_ITERATIONS + MAX_VALIDATION_RETRIES; attempt += 1) {
       const turn = await chat({ messages, tools: toolSchemas() });
 
       if (turn.toolCalls.length === 0) {
@@ -219,17 +323,50 @@ async function respond({ pharmacyId, pharmacyName, text, history = [], context =
           // true statement, and blocking it mutes the conversation for good.
           priorOrderReferences: Array.isArray(context?.order_references) ? context.order_references : [],
         });
-        if (!check.ok) {
-          return {
-            action: 'handoff',
-            reason: `The assistant's draft could not be verified: ${check.violations.map((v) => v.detail).join(' ')}`,
-            category: 'unverified_reply',
-            toolResults,
-            draft: turn.content,
-          };
+
+        if (check.ok) {
+          return { action: 'reply', text: turn.content.trim(), toolResults, contextUpdate };
         }
-        return { action: 'reply', text: turn.content.trim(), toolResults, contextUpdate };
+
+        // Hand the violation back and let it fix its own mistake, rather
+        // than paging a pharmacist about a sentence the model could have
+        // corrected itself. See MAX_VALIDATION_RETRIES.
+        if (validationRetries < MAX_VALIDATION_RETRIES) {
+          validationRetries += 1;
+          console.log(JSON.stringify({
+            level: 'info',
+            msg: 'draft rejected, asking the assistant to correct it',
+            attempt: validationRetries,
+            violations: check.violations.map((v) => v.type),
+          }));
+          // Only echo a draft that actually had content. An empty assistant
+          // message is exactly what some providers reject as malformed, and
+          // an empty draft is the most common rejection there is.
+          if (turn.rawMessage && turn.content) messages.push(turn.rawMessage);
+          messages.push({ role: 'user', content: buildCorrection(check.violations) });
+          continue;
+        }
+
+        // Out of corrections. WHICH kind of failure this is decides who gets
+        // it: a model that returned nothing at all is a technical fault the
+        // queue should retry (assistant_error is in worker.js's
+        // TRANSIENT_CATEGORIES), not a clinical judgement call. Only a draft
+        // that repeatedly asserted something unverifiable is a real
+        // "someone must look at this".
+        const onlyEmpty = check.violations.every((v) => v.type === 'empty_reply');
+        return {
+          action: 'handoff',
+          reason: `The assistant's draft could not be verified after ${validationRetries} correction attempts: `
+            + check.violations.map((v) => v.detail).join(' '),
+          category: onlyEmpty ? 'assistant_error' : 'unverified_reply',
+          toolResults,
+          draft: turn.content,
+        };
       }
+
+      // Tool calls have their own, tighter budget — see MAX_TOOL_ITERATIONS.
+      toolIterations += 1;
+      if (toolIterations > MAX_TOOL_ITERATIONS) break;
 
       // The assistant message must be echoed back with its tool_calls intact
       // or the provider rejects the follow-up as malformed.

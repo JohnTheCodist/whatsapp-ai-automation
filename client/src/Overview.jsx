@@ -16,41 +16,343 @@ import { useEffect, useState } from 'react';
 
 const naira = (n) => `₦${Number(n || 0).toLocaleString('en-NG')}`;
 
-/** Inline sparkline. No chart library — it is 14 numbers. */
-function Spark({ points, className = '' }) {
-  if (!points?.length) return null;
-  const max = Math.max(1, ...points);
-  const w = 100;
-  const h = 28;
-  const step = w / Math.max(1, points.length - 1);
-  const d = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(1)},${(h - (p / max) * h).toFixed(1)}`).join(' ');
+/** A headline figure, with the sentence that says what it actually means. */
+function Big({ icon, label, value, hint }) {
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className={`h-8 w-full ${className}`}>
-      <path d={`${d} L${w},${h} L0,${h} Z`} fill="currentColor" opacity="0.12" />
-      <path d={d} fill="none" stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-    </svg>
+    <div className="rounded-lg border border-slate-200 bg-white p-5">
+      <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+        <span aria-hidden="true">{icon}</span>{label}
+      </p>
+      <p className="mt-2 text-3xl font-semibold tabular-nums text-slate-900">{value}</p>
+      <p className="mt-1 text-xs text-slate-500">{hint}</p>
+    </div>
   );
 }
 
-function Card({ label, value, sub, tone = 'default', children }) {
-  const tones = {
-    default: 'border-slate-200',
-    warn: 'border-amber-300 bg-amber-50',
-    bad: 'border-red-300 bg-red-50',
-    good: 'border-teal-300 bg-teal-50',
-  };
+/**
+ * The chronic register, per condition.
+ *
+ * WHY ZEROES ARE SHOWN RATHER THAN HIDDEN
+ * A condition with nobody in it is dropped by most dashboards, which makes
+ * "we do not follow asthma" and "we follow asthma and nobody qualifies yet"
+ * look identical. They are opposite facts, and only one of them means the
+ * pharmacy should go looking. So every tracked condition appears, and an
+ * empty one says so in words.
+ *
+ * PENDING IS SHOWN, NEVER ADDED IN
+ * "Tracked" has to keep meaning confirmed by a real purchase. A patient one
+ * purchase short is worth knowing about — they are the next refill list —
+ * but folding them into the headline count is how a register fills with
+ * maybes and stops being trusted.
+ */
+function Chronic({ conditions }) {
+  if (!conditions?.length) return null;
+
+  const anyone = conditions.some((c) => c.confirmed > 0 || c.pending > 0);
+
   return (
-    <div className={`rounded-lg border p-4 ${tones[tone]}`}>
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">{value}</p>
-      {sub && <p className="mt-0.5 text-xs text-slate-600">{sub}</p>}
-      {children}
+    <section className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-medium text-slate-700">❤️ Chronic register</h3>
+        <span className="text-xs text-slate-500">confirmed by purchase history</span>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {conditions.map((c) => {
+          const on = c.confirmed > 0;
+          return (
+            <div
+              key={c.code}
+              className={`rounded-lg border p-3 ${on ? 'border-teal-200 bg-teal-50' : 'border-slate-200 bg-slate-50'}`}
+            >
+              <p className={`text-xs font-medium ${on ? 'text-teal-800' : 'text-slate-500'}`}>{c.name}</p>
+              <p className={`mt-0.5 text-2xl font-semibold tabular-nums ${on ? 'text-teal-900' : 'text-slate-400'}`}>
+                {c.confirmed}
+              </p>
+              {c.pending > 0 ? (
+                <p className="mt-0.5 text-[11px] text-amber-700">
+                  +{c.pending} gathering evidence
+                </p>
+              ) : (
+                <p className="mt-0.5 text-[11px] text-slate-400">
+                  {on ? 'patient' + (c.confirmed === 1 ? '' : 's') : 'none yet'}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {!anyone && (
+        <p className="mt-3 text-xs text-slate-500">
+          Nobody has qualified yet. A patient is added the first time they buy a medicine
+          for one of these — nothing to set up.
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Average time to approve an order, against a five-minute target.
+ *
+ * The colour is the whole point of the card, so it is derived on the server
+ * (`withinTarget`) rather than recomputed here — two places deciding what
+ * "late" means is how a green badge ends up next to a red number.
+ */
+function Approval({ approval }) {
+  if (!approval) {
+    return <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">Loading…</div>;
+  }
+
+  // No order has ever been acted on. "0 minutes" would read as instant.
+  if (approval.averageMinutes === null) {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Average time to approve an order</p>
+        <p className="mt-1 text-sm text-slate-500">No orders have been actioned yet.</p>
+      </div>
+    );
+  }
+
+  const ok = approval.withinTarget;
+  const mins = approval.averageMinutes;
+  const pretty = mins >= 60
+    ? `${Math.floor(mins / 60)}h ${Math.round(mins % 60)}m`
+    : `${mins} min`;
+
+  return (
+    <div className={`flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border p-4 ${
+      ok ? 'border-teal-300 bg-teal-50' : 'border-red-300 bg-red-50'}`}>
+      <span className={`inline-flex h-2.5 w-2.5 shrink-0 rounded-full ${ok ? 'bg-teal-600' : 'bg-red-600'}`} />
+      <div className="min-w-0">
+        <p className={`text-xs font-medium uppercase tracking-wide ${ok ? 'text-teal-800' : 'text-red-800'}`}>
+          Average time to approve an order
+        </p>
+        <p className={`text-2xl font-semibold tabular-nums ${ok ? 'text-teal-900' : 'text-red-900'}`}>{pretty}</p>
+      </div>
+      <p className={`ml-auto text-xs ${ok ? 'text-teal-800' : 'text-red-800'}`}>
+        {ok
+          ? `Under the ${approval.targetMinutes}-minute target`
+          : `Over the ${approval.targetMinutes}-minute target — customers are waiting`}
+        <span className="block text-slate-500">
+          across {approval.sample} order{approval.sample === 1 ? '' : 's'}
+        </span>
+      </p>
     </div>
+  );
+}
+
+/**
+ * Revenue against new and returning customers, on one time base.
+ *
+ * Revenue is an area (it is a magnitude) and the two customer counts are
+ * lines (they are tallies) — plotting all three the same way would invite
+ * reading naira against people. Revenue keeps its own scale for the same
+ * reason: on a shared axis, counts in single digits sit flat on the floor.
+ */
+function Growth({ trend, days }) {
+  if (!trend?.length) {
+    return <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">Loading…</div>;
+  }
+
+  const w = 320;
+  const h = 96;
+  const step = w / Math.max(1, trend.length - 1);
+  const maxRev = Math.max(1, ...trend.map((d) => d.revenue));
+  const maxCust = Math.max(1, ...trend.map((d) => Math.max(d.newCustomers, d.returningCustomers)));
+
+  const path = (get, max) => trend
+    .map((d, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(1)},${(h - (get(d) / max) * h).toFixed(1)}`)
+    .join(' ');
+
+  const revPath = path((d) => d.revenue, maxRev);
+  const totalRev = trend.reduce((s, d) => s + d.revenue, 0);
+  const totalNew = trend.reduce((s, d) => s + d.newCustomers, 0);
+  const totalRet = trend.reduce((s, d) => s + d.returningCustomers, 0);
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-medium text-slate-700">📈 Revenue &amp; customer growth</h3>
+        <span className="text-xs text-slate-500">last {days} days</span>
+      </div>
+
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="mt-3 h-28 w-full" role="img"
+        aria-label={`Revenue ${naira(totalRev)}, ${totalNew} new and ${totalRet} returning customers over ${days} days`}>
+        <path d={`${revPath} L${w},${h} L0,${h} Z`} className="fill-teal-500/15" />
+        <path d={revPath} className="stroke-teal-600" fill="none" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+        <path d={path((d) => d.newCustomers, maxCust)} className="stroke-slate-800" fill="none" strokeWidth="1.5"
+          vectorEffect="non-scaling-stroke" />
+        <path d={path((d) => d.returningCustomers, maxCust)} className="stroke-amber-500" fill="none" strokeWidth="1.5"
+          strokeDasharray="3 2" vectorEffect="non-scaling-stroke" />
+      </svg>
+
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        <Key className="bg-teal-600" label="Revenue" value={naira(totalRev)} />
+        <Key className="bg-slate-800" label="New patients" value={totalNew} />
+        <Key className="bg-amber-500" label="Returning" value={totalRet} />
+      </div>
+      <div className="mt-1 flex justify-between text-[10px] text-slate-400">
+        <span>{trend[0]?.day}</span><span>{trend[trend.length - 1]?.day}</span>
+      </div>
+    </section>
+  );
+}
+
+function Key({ className, label, value }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-slate-600">
+      <span className={`h-2 w-2 rounded-full ${className}`} />
+      {label} <strong className="tabular-nums text-slate-800">{value}</strong>
+    </span>
+  );
+}
+
+/** What actually earned the money, beside the line that shows it going up. */
+function TopProducts({ products, days }) {
+  if (!products) {
+    return <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">Loading…</div>;
+  }
+  const max = Math.max(1, ...products.map((p) => p.revenue));
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-medium text-slate-700">Top 5 products</h3>
+        <span className="text-xs text-slate-500">last {days} days</span>
+      </div>
+
+      {products.length === 0 ? (
+        <p className="mt-3 text-sm text-slate-500">No confirmed orders in this window yet.</p>
+      ) : (
+        <ol className="mt-3 space-y-2.5">
+          {products.map((p, i) => (
+            <li key={p.name}>
+              <div className="flex items-baseline gap-2 text-sm">
+                <span className="w-4 shrink-0 tabular-nums text-xs text-slate-400">{i + 1}</span>
+                <span className="min-w-0 flex-1 truncate text-slate-800" title={p.name}>{p.name}</span>
+                <span className="shrink-0 tabular-nums font-medium text-slate-900">{naira(p.revenue)}</span>
+              </div>
+              {/* The bar is what makes the ranking readable at a glance — five
+                  right-aligned numbers require comparing digits. */}
+              <div className="ml-6 mt-1 h-1.5 overflow-hidden rounded bg-slate-100">
+                <div className="h-full rounded bg-teal-500" style={{ width: `${(p.revenue / max) * 100}%` }} />
+              </div>
+              <p className="ml-6 mt-0.5 text-[10px] text-slate-400">{p.units} sold</p>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+/**
+ * "Needs you", as a bell rather than a band of cards.
+ *
+ * WHY THIS IS COLLAPSED
+ * The three cards it replaces were the largest thing on the dashboard and,
+ * in the normal case, all three read zero. A pharmacy that is keeping up saw
+ * a permanent wall of "Nothing waiting" — so the most prominent region on
+ * the page carried the least information, and staff learned to scroll past
+ * the exact area that matters on the day it is not zero.
+ *
+ * Collapsed, the quiet state costs one line. The loud state is unmissable:
+ * amber, a count, and it opens on click. Nothing is hidden that was not
+ * already zero.
+ */
+function NeedsYou({ waiting, total, onNavigate }) {
+  const [open, setOpen] = useState(false);
+  const quiet = total === 0;
+
+  const items = [
+    {
+      n: waiting.customers ?? 0,
+      label: 'waiting for a reply',
+      detail: 'Their last message has had no answer from anyone.',
+      go: 'inbox',
+    },
+    {
+      n: waiting.handoffs ?? 0,
+      label: 'need a pharmacist',
+      detail: 'Someone asked a question the assistant would not answer.',
+      go: 'inbox',
+    },
+    {
+      n: waiting.orders ?? 0,
+      label: 'orders to confirm',
+      detail: 'Stock is held until you confirm, or the hold expires.',
+      go: 'orders',
+    },
+  ].filter((i) => i.n > 0);
+
+  return (
+    <section
+      className={`rounded-lg border transition-colors ${
+        quiet ? 'border-slate-200 bg-white' : 'border-amber-300 bg-amber-50'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => !quiet && setOpen((v) => !v)}
+        aria-expanded={quiet ? undefined : open}
+        // Nothing to expand when it is quiet, so it stops being a control
+        // rather than becoming a button that does nothing when pressed.
+        disabled={quiet}
+        className={`flex w-full items-center gap-3 px-4 py-3 text-left ${
+          quiet ? 'cursor-default' : 'cursor-pointer'
+        }`}
+      >
+        <span className="relative flex-none" aria-hidden="true">
+          <svg
+            width="18" height="18" viewBox="0 0 24 24" fill="none"
+            stroke={quiet ? '#94a3b8' : '#b45309'} strokeWidth="2"
+            strokeLinecap="round" strokeLinejoin="round"
+          >
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
+          {!quiet && (
+            <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-amber-50" />
+          )}
+        </span>
+
+        <span className={`text-sm ${quiet ? 'text-slate-500' : 'font-medium text-amber-900'}`}>
+          {quiet
+            ? 'Nothing needs you right now'
+            : `${total} ${total === 1 ? 'thing needs' : 'things need'} you`}
+        </span>
+
+        {!quiet && (
+          <span className="ml-auto text-xs text-amber-800">{open ? 'Hide' : 'Show'}</span>
+        )}
+      </button>
+
+      {!quiet && open && (
+        <ul className="border-t border-amber-200 px-4 py-2">
+          {items.map((i) => (
+            <li key={i.label} className="border-b border-amber-100 last:border-0">
+              <button
+                type="button"
+                onClick={() => onNavigate?.(i.go)}
+                className="flex w-full items-baseline gap-2 py-2 text-left hover:opacity-75"
+              >
+                <span className="text-base font-semibold tabular-nums text-amber-900">{i.n}</span>
+                <span className="text-sm text-amber-900">{i.label}</span>
+                <span className="ml-auto hidden text-xs text-amber-700 sm:block">{i.detail}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
 export default function Overview({ onNavigate }) {
   const [data, setData] = useState(null);
+  const [ins, setIns] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -65,9 +367,29 @@ export default function Overview({ onNavigate }) {
         if (!cancelled) setError(e.message);
       }
     };
+
+    // Fetched separately, and its failure is deliberately NOT fatal. These are
+    // trend figures over 30 days: if they are slow or unavailable the operational
+    // half of this screen — what needs a human right now — must still render.
+    // One combined request would mean a slow aggregate query blanking the alerts.
+    const loadInsights = async () => {
+      try {
+        const r = await fetch('/api/insights');
+        if (!r.ok) return;
+        const j = await r.json();
+        if (!cancelled) setIns(j);
+      } catch {
+        /* leaves the headline cards showing a dash rather than an error */
+      }
+    };
+
     load();
+    loadInsights();
     const t = setInterval(load, 20000);
-    return () => { cancelled = true; clearInterval(t); };
+    // Slower: these move over days, so polling them every 20s spends database
+    // time to redraw the same numbers.
+    const ti = setInterval(loadInsights, 120000);
+    return () => { cancelled = true; clearInterval(t); clearInterval(ti); };
   }, []);
 
   if (error) {
@@ -77,7 +399,11 @@ export default function Overview({ onNavigate }) {
     return <p className="text-sm text-slate-500">Loading…</p>;
   }
 
-  const { connection, waiting, today, sales, catalogue, limits, daily } = data;
+  // today / sales / catalogue / daily are deliberately NOT read here any more
+  // — they belong to AiPerformance now. Left in the response because that
+  // screen fetches the same endpoint; destructuring them here would only
+  // suggest this screen still shows them.
+  const { connection, waiting, limits } = data;
   const connected = connection.status === 'connected';
   const needsAttention = waiting.handoffs + waiting.orders + (waiting.customers || 0);
 
@@ -100,136 +426,65 @@ export default function Overview({ onNavigate }) {
         </div>
       )}
 
-      {/* ---- waiting for a human ---- */}
-      <section>
-        <h3 className="mb-2 text-sm font-medium text-slate-700">Waiting for you</h3>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {/* First, and deliberately so. A handoff is at least visible in the
-              Inbox; an unanswered customer is invisible unless this card
-              exists. It is the number most likely to be embarrassing, which
-              is exactly why it goes first. */}
-          <button onClick={() => onNavigate?.('inbox')} className="text-left">
-            <Card
-              label="Customers waiting for a reply"
-              value={waiting.customers ?? 0}
-              sub={
-                waiting.customers
-                  ? 'Their last message has had no answer from anyone'
-                  : 'Everyone has been answered'
-              }
-              tone={waiting.customers > 0 ? 'warn' : 'default'}
-            />
-          </button>
-          <button onClick={() => onNavigate?.('inbox')} className="text-left">
-            <Card
-              label="Conversations needing a person"
-              value={waiting.handoffs}
-              sub={waiting.handoffs ? 'Someone asked a question the assistant would not answer' : 'Nothing waiting'}
-              tone={waiting.handoffs > 0 ? 'warn' : 'default'}
-            />
-          </button>
-          <button onClick={() => onNavigate?.('orders')} className="text-left">
-            <Card
-              label="Orders to confirm"
-              value={waiting.orders}
-              sub={waiting.orders ? 'Stock is held until you confirm or the hold expires' : 'Nothing waiting'}
-              tone={waiting.orders > 0 ? 'warn' : 'default'}
-            />
-          </button>
-        </div>
-        {needsAttention === 0 && (
-          <p className="mt-2 text-xs text-slate-500">Nothing needs you right now.</p>
-        )}
+      {/* ---- waiting for a human ----
+          Collapsed to a bell. Three cards reading "0 / Nothing waiting" took
+          the widest, highest band on the page to say nothing is happening,
+          which is the normal state — so the loudest thing on the dashboard
+          was permanently noise. It now costs one line when idle and opens
+          only when there is something to open. The numbers are unchanged;
+          only how much room they take before they matter. */}
+      <NeedsYou
+        waiting={waiting}
+        total={needsAttention}
+        onNavigate={onNavigate}
+      />
+
+      {/* ---- the three figures that describe the business ----
+          Nothing operational here: no counts of today's messages, no
+          catalogue health. Those moved to AI Performance, because an owner
+          opening this screen is asking "how is the pharmacy doing", and
+          answering that alongside "you have 3 unread" made both harder to
+          read. Each card carries a plain-English line saying what it means,
+          since "Chronic Patients Tracked" is not self-evident. */}
+      <section className="grid gap-3 sm:grid-cols-3">
+        <Big
+          icon="👥"
+          label="Total patients"
+          value={ins ? ins.headline.totalPatients.toLocaleString('en-NG') : '—'}
+          hint="How large your customer base is"
+        />
+        <Big
+          icon="🤖"
+          label="AI-assisted sales"
+          value={ins ? naira(ins.headline.aiAssistedSales) : '—'}
+          hint="Revenue generated through AI conversations"
+        />
+        <Big
+          icon="❤️"
+          label="Chronic patients tracked"
+          value={ins ? ins.headline.chronicTracked.toLocaleString('en-NG') : '—'}
+          hint="Patients RxNaija is following from purchase history"
+        />
       </section>
 
-      {/* ---- is the assistant working ---- */}
-      <section>
-        <h3 className="mb-2 text-sm font-medium text-slate-700">Last 24 hours</h3>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Card label="Messages received" value={today.messagesIn} sub={`${today.conversations} conversation${today.conversations === 1 ? '' : 's'}`} />
-          <Card label="Answered by assistant" value={today.replied} />
-          {/* Deliberately adjacent to "answered". A high number here is not a
-              failure of the safety design — it is the design working — but it
-              is also a queue somebody has to actually work through. */}
-          <Card
-            label="Handed to staff"
-            value={today.handedOff}
-            sub={today.handedOff > today.replied ? 'More escalated than answered' : null}
-            tone={today.handedOff > today.replied && today.handedOff > 0 ? 'warn' : 'default'}
-          />
-          <Card label="New customers" value={today.newCustomers} />
-        </div>
-      </section>
+      {/* ---- the chronic register ----
+          Under the headline total, because it is that total broken open:
+          "3 tracked" is a fact, "2 hypertensive, 1 diabetic" is something a
+          pharmacy can act on — a refill list, a reminder, a stock decision. */}
+      <Chronic conditions={ins?.conditions} />
 
-      {/* ---- traffic ---- */}
-      <section className="rounded-lg border border-slate-200 p-4">
-        <div className="flex items-baseline justify-between">
-          <h3 className="text-sm font-medium text-slate-700">Messages, last 14 days</h3>
-          <span className="text-xs text-slate-500">
-            in <span className="text-teal-600">▬</span> · out <span className="text-slate-400">▬</span>
-          </span>
-        </div>
-        <div className="mt-2 text-teal-600"><Spark points={daily.map((d) => d.inbound)} /></div>
-        <div className="text-slate-400"><Spark points={daily.map((d) => d.outbound)} /></div>
-        <div className="mt-1 flex justify-between text-[10px] text-slate-400">
-          <span>{daily[0]?.day}</span><span>{daily[daily.length - 1]?.day}</span>
-        </div>
-      </section>
+      {/* ---- how fast staff act ----
+          Immediately under the headline figures, because it is the one number
+          on this screen the owner can do something about today. */}
+      <Approval approval={ins?.approval} />
 
-      {/* ---- selling ---- */}
-      <section>
-        <h3 className="mb-2 text-sm font-medium text-slate-700">Last 7 days</h3>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Card label="Orders placed" value={sales.orders7d} />
-          <Card label="Confirmed value" value={naira(sales.confirmedValue7d)} sub="Confirmed, ready or completed" />
-          <Card label="Rejected" value={sales.rejected7d} />
-          {/* Expiry is not a neutral statistic: each one is stock that sat off
-              the shelf and a customer who was told nothing came of it. */}
-          <Card
-            label="Expired unconfirmed"
-            value={sales.expired7d}
-            sub={sales.expired7d > 0 ? 'Held stock nobody confirmed in time' : null}
-            tone={sales.expired7d > 0 ? 'warn' : 'default'}
-          />
-        </div>
-      </section>
-
-      {/* ---- what the assistant can actually sell ---- */}
-      <section>
-        <h3 className="mb-2 text-sm font-medium text-slate-700">Catalogue</h3>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Card label="Products" value={catalogue.active} />
-          {/* A product with no price cannot be quoted, so it is invisible to
-              customers however well it is stocked. */}
-          <Card
-            label="Missing a price"
-            value={catalogue.noPrice}
-            sub={catalogue.noPrice > 0 ? 'The assistant cannot quote these' : 'All priced'}
-            tone={catalogue.noPrice > 0 ? 'warn' : 'good'}
-          />
-          <Card label="Out of stock" value={catalogue.outOfStock} />
-        </div>
-      </section>
-
-      {/* ---- limits, only when they are near enough to matter ---- */}
-      <section className="rounded-lg border border-slate-200 p-4 text-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-slate-600">
-            Replies sent today: <strong className="tabular-nums">{limits.sent24h}</strong> of {limits.cap}
-            {limits.capSource === 'warmup' && (
-              <span className="ml-1 text-xs text-slate-500">(warm-up day {limits.warmupDay})</span>
-            )}
-          </span>
-          <span className="text-xs text-slate-500">
-            Replying to: {limits.replyMode === 'all' ? 'everyone' : limits.replyMode === 'allowlist' ? 'allowlist only' : 'nobody'}
-          </span>
-        </div>
-        <div className="mt-2 h-1.5 overflow-hidden rounded bg-slate-100">
-          <div
-            className={`h-full ${limits.sent24h / limits.cap > 0.8 ? 'bg-amber-500' : 'bg-teal-500'}`}
-            style={{ width: `${Math.min(100, (limits.sent24h / Math.max(1, limits.cap)) * 100)}%` }}
-          />
-        </div>
+      {/* ---- growth, and what is driving it ----
+          The chart and the top-five sit side by side on purpose: "revenue is
+          up" and "this is what sold" are the same question asked twice, and
+          separating them means scrolling between the answer and its cause. */}
+      <section className="grid gap-3 lg:grid-cols-[1.6fr_1fr]">
+        <Growth trend={ins?.trend} days={ins?.windowDays} />
+        <TopProducts products={ins?.topProducts} days={ins?.windowDays} />
       </section>
     </div>
   );
