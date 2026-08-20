@@ -70,17 +70,31 @@ else
 fi
 
 # ---------------------------------------------------------------- firewall --
-# Oracle's images ship iptables with a default-deny INPUT chain, and its
-# cloud-level Security List blocks 80/443 as well. Both have to be opened or
-# Caddy cannot complete the ACME challenge and TLS never issues — the single
-# most common way this deploy appears to "just hang".
-say "Opening 80/443 in the host firewall"
-sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT || true
-sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT || true
-if command -v netfilter-persistent >/dev/null 2>&1; then
-  sudo netfilter-persistent save || true
+# Two clouds, two different problems, and getting this wrong looks identical
+# in both: Caddy cannot complete the ACME challenge, so TLS never issues and
+# the site appears to hang forever rather than erroring.
+#
+#   Oracle — ships iptables with a default-deny INPUT chain AND blocks 80/443
+#            at the cloud Security List. Both layers must be opened.
+#   GCP    — leaves the OS firewall open; only the VPC rule matters, and that
+#            is the "Allow HTTP/HTTPS traffic" checkbox at instance creation.
+#
+# So the host-level rule is applied only where something is actually blocking.
+# Adding it unconditionally on GCP would be a no-op that still installs
+# iptables-persistent for no reason.
+if sudo iptables -S INPUT 2>/dev/null | grep -q -- '-P INPUT DROP'; then
+  say "Host firewall is default-deny — opening 80/443"
+  sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT || true
+  sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT || true
+  if command -v netfilter-persistent >/dev/null 2>&1; then
+    sudo netfilter-persistent save || true
+  else
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq iptables-persistent || true
+  fi
 else
-  sudo apt-get install -y -qq iptables-persistent || true
+  say "Host firewall already permits inbound — nothing to open here"
+  echo "    (On GCP make sure the instance has the HTTP/HTTPS firewall tags,"
+  echo "     or TLS will never issue however correct this box is.)"
 fi
 
 # ------------------------------------------------------------------ units ---
