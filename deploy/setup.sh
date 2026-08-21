@@ -27,6 +27,38 @@ say "Updating packages"
 sudo apt-get update -qq
 sudo apt-get install -y -qq curl git ca-certificates gnupg
 
+# ------------------------------------------------------------------- swap ---
+# The client build is the only genuinely memory-hungry thing this box does.
+# Vite/Rollup routinely peaks past 800MB, and on a 1GB VPS with no swap the
+# kernel OOM-kills it — which surfaces as a build that dies with no error
+# anyone can act on, rather than as "out of memory".
+#
+# Runtime is much lighter: Node and Express ~80MB, the NAFDAC indexes ~40MB,
+# and roughly 100-150MB per connected WhatsApp socket. A 1GB box runs several
+# pharmacies fine. It is only the twice-a-week build that needs the headroom,
+# which is exactly what swap is for — slow is fine for something that is not
+# in the request path.
+#
+# Skipped when swap already exists or on a box with plenty of RAM, so this is
+# safe to re-run.
+MEM_MB=$(free -m | awk '/^Mem:/{print $2}')
+SWAP_MB=$(free -m | awk '/^Swap:/{print $2}')
+if [ "$SWAP_MB" -lt 512 ] && [ "$MEM_MB" -lt 3000 ]; then
+  say "Adding 2G swap (RAM: ${MEM_MB}MB) so the client build cannot be OOM-killed"
+  sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile >/dev/null
+  sudo swapon /swapfile
+  grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+  # Prefer RAM heavily: swap here is a safety net for build spikes, not a
+  # place to page the running app's working set to. The default of 60 would
+  # push a live WhatsApp socket's memory to disk and make replies sluggish.
+  sudo sysctl -q vm.swappiness=10
+  grep -q '^vm.swappiness' /etc/sysctl.conf || echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf >/dev/null
+else
+  say "Swap already present or ample RAM — skipping"
+fi
+
 # ------------------------------------------------------------------- node ---
 # NodeSource rather than apt's node: Ubuntu ships 18/20, and this app requires
 # 22.12+. Installing the wrong major fails at startup with a syntax error that
