@@ -21,7 +21,48 @@ const { requestId, notFound, errorHandler } = require('./middleware/errorHandler
 const app = express();
 
 app.use(requestId);
-app.use(helmet());
+
+// helmet's default Content-Security-Policy is `default-src 'self'`, which is
+// the right instinct and wrong for a page that must talk to Supabase.
+//
+// WHAT IT BROKE
+// Sign-in runs in the BROWSER and calls supabase.co directly — it does not go
+// through this server at all. With no connect-src, the browser fell back to
+// default-src, refused the request, and the app reported "Could not reach the
+// server". Nothing was unreachable: the browser declined to try.
+//
+// This could only appear in production. In development Vite serves the
+// dashboard and helmet never touches it; here the same Node process serves
+// both the API and the client, so the API's headers now apply to the page.
+//
+// The allowlist is explicit rather than a wildcard, and built from the
+// configured project URL rather than hardcoded, so a project change cannot
+// leave a stale origin permitted.
+const supabaseOrigin = (() => {
+  try { return new URL(process.env.SUPABASE_URL).origin; } catch { return null; }
+})();
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      // Supabase over HTTPS for auth and REST, plus its realtime websocket.
+      'connect-src': ["'self'", ...(supabaseOrigin ? [supabaseOrigin, supabaseOrigin.replace(/^https:/, 'wss:')] : [])],
+      // Vite emits a small inline bootstrap; styles are inlined by Tailwind's
+      // build. Neither is user-controlled — they are build output.
+      'script-src': ["'self'"],
+      'style-src': ["'self'", "'unsafe-inline'"],
+      'img-src': ["'self'", 'data:', 'blob:'],
+      'font-src': ["'self'", 'data:'],
+      // Nothing here should ever be framed; clickjacking a pharmacy dashboard
+      // is a real attack, not a theoretical one.
+      'frame-ancestors': ["'none'"],
+    },
+  },
+  // The dashboard loads only its own assets, but Google's OAuth flow
+  // navigates away and back; COEP would break that handoff for no gain here.
+  crossOriginEmbedderPolicy: false,
+}));
 app.use(cors({ origin: process.env.CORS_ORIGIN || true }));
 
 // Webhook routes need the RAW body to verify a provider signature — a
