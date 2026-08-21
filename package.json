@@ -11,7 +11,7 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "test": "node --test \"server/tests/*.test.js\"",
-    "build": "npm --prefix client install && npm --prefix client run build",
+    "build": "npm --prefix client install --include=dev --no-audit --no-fund && npm --prefix client run build",
     "migrate": "node scripts/migrate.js",
     "doctor": "node scripts/doctor.js"
   },
