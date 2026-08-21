@@ -16,11 +16,20 @@ say() { printf '\n\033[1;36m==> %s\033[0m\n' "$1"; }
 
 cd "$APP_DIR"
 
+# EVERY git call runs as the owning user, including the read-only ones.
+#
+# git refuses to operate on a repository owned by another user — "detected
+# dubious ownership". Running the fetch through sudo but leaving `git
+# rev-parse` bare meant the fetch succeeded as rxnaija and the very next line
+# failed as root, which reads like a corrupt repository rather than a uid
+# mismatch two lines apart.
+GIT="sudo -u $APP_USER git"
+
 say "Fetching main"
-sudo -u "$APP_USER" git fetch --quiet origin main
-BEFORE="$(git rev-parse --short HEAD)"
-sudo -u "$APP_USER" git reset --hard --quiet origin/main
-AFTER="$(git rev-parse --short HEAD)"
+$GIT fetch --quiet origin main
+BEFORE="$($GIT rev-parse --short HEAD)"
+$GIT reset --hard --quiet origin/main
+AFTER="$($GIT rev-parse --short HEAD)"
 
 if [ "$BEFORE" = "$AFTER" ]; then
   say "Already at ${AFTER} — nothing to deploy"
