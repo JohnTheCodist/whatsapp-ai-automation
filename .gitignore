@@ -19,3 +19,8 @@ coverage/
 
 # Dev supervisor output — crash evidence, not source.
 logs/
+
+# Assembled locally to scp secrets to a server, then deleted. Ignored so a
+# copy left behind after a deploy cannot be committed by a later .
+env.production*
+*.env.production

@@ -14,6 +14,7 @@
  */
 
 const { getSql, assertPharmacyId } = require('./db');
+const { generateTradeCode } = require('./whatsapp/tradeCode');
 const { isValidTone, DEFAULT_TONE } = require('./ai/assistantTone');
 const { normalizeMsisdn } = require('./whatsapp/senderIdentity');
 
@@ -206,7 +207,7 @@ async function getPharmacy(pharmacyId) {
   const db = getSql();
   const [row] = await db`
     select id, name, slug, status, bot_name, welcome_note, menu_enabled,
-           notify_phone, notify_on_new_order, public_whatsapp_number,
+           notify_phone, notify_on_new_order, public_whatsapp_number, wholesale_code,
            reservation_hold_minutes, created_at, updated_at
     from pharmacies where id = ${pharmacyId}
   `;
@@ -310,7 +311,7 @@ async function updateAssistantSettings(pharmacyId, fields = {}) {
       updated_at = now()
     where id = ${pharmacyId}
     returning id, name, bot_name, assistant_tone, welcome_note, menu_enabled,
-              notify_phone, notify_on_new_order, public_whatsapp_number, updated_at
+              notify_phone, notify_on_new_order, public_whatsapp_number, wholesale_code, updated_at
   `;
   return row;
 }
@@ -496,7 +497,50 @@ async function listMembers(pharmacyId) {
   `;
 }
 
+/**
+ * Issue the trade QR code, or hand back the one already in use.
+ *
+ * IDEMPOTENT BY DEFAULT, and that is the whole design. This code ends up
+ * printed on invoices and delivery notes. Regenerating it on every call would
+ * mean a second click silently kills every copy already in customers' hands,
+ * and they would land in an ordinary retail chat with nothing to explain why.
+ * Rotation therefore has to be asked for.
+ *
+ * The unique index is what actually guarantees no two pharmacies share a code.
+ * The retry loop exists because a collision across a short alphabet is rare
+ * rather than impossible, and a 500 on "generate my code" is a poor first
+ * impression for a feature this small.
+ */
+async function ensureTradeCode(pharmacyId, { rotate = false } = {}) {
+  assertPharmacyId(pharmacyId);
+  const db = getSql();
+
+  const [current] = await db`
+    select wholesale_code from pharmacies where id = ${pharmacyId}
+  `;
+  if (!current) return null;
+  if (current.wholesale_code && !rotate) return getPharmacy(pharmacyId);
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const code = generateTradeCode();
+    try {
+      await db`
+        update pharmacies
+        set wholesale_code = ${code}, updated_at = now()
+        where id = ${pharmacyId}
+      `;
+      return await getPharmacy(pharmacyId);
+    } catch (err) {
+      // Only a collision on the unique index is worth retrying. Anything else
+      // is a real failure and must not be retried into silence.
+      if (!/unique/i.test(err.message)) throw err;
+    }
+  }
+  throw new Error('Could not allocate a unique trade code. Please try again.');
+}
+
 module.exports = {
+  ensureTradeCode,
   updateAssistantSettings,
   createPharmacy,
   getPharmacy,

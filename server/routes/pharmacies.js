@@ -97,6 +97,30 @@ router.patch('/me/assistant', requireAuth, requireRole('owner', 'pharmacist'), a
 }));
 
 /**
+ * POST /api/pharmacies/me/trade-code — mint the wholesale QR code.
+ *
+ * OWNER ONLY. This code decides who is quoted trade prices, so issuing one is
+ * a commercial decision, not a settings tweak a counter assistant makes.
+ *
+ * Returns the EXISTING code if there is one rather than rotating it. A
+ * pharmacy that has printed the code on its invoices and delivery notes would
+ * otherwise find every one of them silently dead the next time someone
+ * clicked the button — and the customers holding them would land in a normal
+ * retail chat with no indication anything had changed.
+ *
+ * Rotation is therefore deliberate and separate: pass `{ rotate: true }`,
+ * which is the right shape for "the code leaked" and the wrong shape for a
+ * mis-click.
+ */
+router.post('/me/trade-code', requireAuth, requireRole('owner'), asyncRoute(async (req, res) => {
+  const pharmacy = await pharmacies.ensureTradeCode(req.pharmacyId, {
+    rotate: req.body?.rotate === true,
+  });
+  if (!pharmacy) throw new HttpError(404, 'Pharmacy not found', 'NOT_FOUND');
+  res.json({ pharmacy });
+}));
+
+/**
  * POST /api/pharmacies/me/assistant/welcome-note/generate — draft one line.
  *
  * Returns a DRAFT. It does not save anything — the owner reads it, edits it

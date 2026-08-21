@@ -26,7 +26,7 @@ const { onCustomerMessage } = require('./conversationService');
 const { recordEvent } = require('../customers/customerEvents');
 const { PATIENT_EVENTS } = require('../customers/patientEventTypes');
 const { resolveCustomer } = require('../customers/customerIdentity');
-const { isTradeCode } = require('../customers/tradeAccess');
+const { isTradeCode } = require('./tradeCode');
 const { env } = require('../../config/env');
 
 /** How long a customer-initiated reply window stays open. */
