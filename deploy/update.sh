@@ -35,6 +35,15 @@ say "Installing and building"
 sudo -u "$APP_USER" --preserve-env bash -c '
   set -a; . '"$APP_DIR"'/.env.production; set +a
   npm install --omit=dev --no-audit --no-fund
+  # --include=dev is REQUIRED here even though this is production.
+  # Sourcing .env.production above sets NODE_ENV=production, which makes npm
+  # skip devDependencies — and Vite is one. Without this the build dies with
+  # 'vite: not found', which reads as a missing binary rather than as npm
+  # quietly obeying an env var set three lines earlier.
+  #
+  # The tooling is only needed DURING the build; nothing it installs ends up
+  # in what actually runs.
+  npm --prefix client install --include=dev --no-audit --no-fund
   npm run build
 '
 

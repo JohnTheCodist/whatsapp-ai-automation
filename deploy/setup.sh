@@ -165,7 +165,7 @@ Provisioning done. Three things left, and they need your keys.
 2. Build and migrate (VITE_* must be set — Vite inlines them at build time):
 
      cd /opt/rxnaija
-     sudo -u rxnaija --preserve-env bash -c 'set -a; . ./.env.production; set +a; npm install && npm run build && npm run migrate'
+     sudo -u rxnaija --preserve-env bash -c 'set -a; . ./.env.production; set +a; npm install && npm --prefix client install --include=dev && npm run build && npm run migrate'
 
 3. Start everything:
 
