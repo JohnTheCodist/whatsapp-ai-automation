@@ -245,6 +245,12 @@ router.get('/conditions/registry', requireAuth, async (req, res, next) => {
       join customers c on c.id = pc.customer_id
       where pc.pharmacy_id = ${req.pharmacyId}
         and pc.status = 'CONFIRMED_BY_PURCHASE'
+        -- Filtered on READ as well as on write. A customer can be promoted to
+        -- trade after rows were already written for them — the engine stops
+        -- adding, but what it wrote earlier is still sitting there. Excluding
+        -- here means the register is correct immediately rather than after
+        -- someone remembers to re-run an evaluation and purge.
+        and c.customer_type = 'retail'
       order by pc.condition_code, pc.last_observed desc nulls last
     `;
 

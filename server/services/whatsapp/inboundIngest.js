@@ -26,6 +26,7 @@ const { onCustomerMessage } = require('./conversationService');
 const { recordEvent } = require('../customers/customerEvents');
 const { PATIENT_EVENTS } = require('../customers/patientEventTypes');
 const { resolveCustomer } = require('../customers/customerIdentity');
+const { isTradeCode } = require('../customers/tradeAccess');
 const { env } = require('../../config/env');
 
 /** How long a customer-initiated reply window stays open. */
@@ -145,6 +146,46 @@ async function ingest(msg) {
           // transaction; a separate verification query would only re-read it.
           verifyEntity: false,
         });
+      }
+
+      // ---- trade QR ----
+      //
+      // A customer who arrived by scanning the pharmacy's wholesale code sends
+      // exactly that code as their first message, because the wa.me link
+      // prefills it. Marking the account here — inside the same transaction
+      // that resolved it — means the very next step, which prices their
+      // enquiry, already knows which tier they are on.
+      //
+      // UPGRADE ONLY, and never back. A retail customer who is given the code
+      // becomes a trade account; a trade account that later sends an ordinary
+      // message stays one. Downgrading on any non-code message would reset
+      // every wholesale buyer to retail on their second sentence.
+      //
+      // The `= 'retail'` guard makes this idempotent and keeps the write off
+      // the hot path: a returning trade customer re-sending the code does not
+      // rewrite the row, and no event is recorded twice.
+      if (text) {
+        const [pharm] = await tx`
+          select wholesale_code from pharmacies where id = ${pharmacyId}
+        `;
+        if (pharm?.wholesale_code && isTradeCode(text, pharm.wholesale_code)) {
+          const [upgraded] = await tx`
+            update customers set customer_type = 'wholesale'
+            where id = ${customerId} and customer_type = 'retail'
+            returning id
+          `;
+          if (upgraded) {
+            await recordEvent(tx, {
+              pharmacyId, customerId, eventType: PATIENT_EVENTS.PATIENT_INFORMATION_CAPTURED,
+              actorType: 'system', entityType: 'customer', entityId: customerId,
+              // Worth an audit row: it changes what this customer is quoted
+              // and removes them from the clinical register, and "why is this
+              // account on trade pricing" has to be answerable later.
+              metadata: { change: 'customer_type', to: 'wholesale', via: 'trade_qr' },
+              verifyEntity: false,
+            });
+          }
+        }
       }
 
       const customer = { id: customerId };

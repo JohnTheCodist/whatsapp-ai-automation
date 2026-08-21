@@ -128,6 +128,28 @@ function resolvePurchases(rows = []) {
  */
 async function evaluateAndStore(pharmacyId, customerId, { now = new Date(), persist = true } = {}) {
   assertPharmacyId(pharmacyId);
+
+  // Checked HERE as well as in evaluatePharmacy's query, because this is a
+  // public entry point: the per-customer evaluate route calls it directly,
+  // and a filter that only exists in the batch path is one route away from
+  // being bypassed. Cheap, and it keeps the rule in the function that
+  // enforces it rather than in whoever remembers to filter first.
+  const [who] = await getSql()`
+    select customer_type from customers
+    where id = ${customerId} and pharmacy_id = ${pharmacyId}
+  `;
+  if (who?.customer_type === 'wholesale') {
+    return {
+      customerId,
+      skipped: 'wholesale_account',
+      findings: [],
+      // Named rather than silent: a caller asking why a trade account has no
+      // conditions should get an answer, not an empty list that looks like
+      // "we looked and found nothing".
+      reason: 'Trade accounts are not clinically profiled — purchases are stock, not personal use.',
+    };
+  }
+
   const datasetVersion = getNafdacDatasetVersion();
   const rows = await loadPatientPurchases(pharmacyId, customerId);
   const purchases = resolvePurchases(rows);
@@ -215,11 +237,23 @@ async function evaluateAndStore(pharmacyId, customerId, { now = new Date(), pers
 async function evaluatePharmacy(pharmacyId, { now = new Date(), limit = 1000 } = {}) {
   assertPharmacyId(pharmacyId);
   const db = getSql();
+  // Trade accounts are excluded, not scored lower.
+  //
+  // A vendor buying metformin every month produces textbook diabetes
+  // evidence: many deduplicated purchases, high product-match confidence,
+  // consistent over months. The engine would confirm it, and the register a
+  // pharmacist is meant to act on would fill up with businesses — worse the
+  // more successful the wholesale side gets.
+  //
+  // A business is not a patient with weak evidence. It is not a patient, so
+  // it does not enter the pipeline at all.
   const patients = await db`
     select distinct o.customer_id
     from orders o
+    join customers c on c.id = o.customer_id
     where o.pharmacy_id = ${pharmacyId}
       and o.status = any(${DISPENSED_STATUSES})
+      and c.customer_type = 'retail'
     limit ${limit}
   `;
 
