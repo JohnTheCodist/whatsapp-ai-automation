@@ -1,0 +1,34 @@
+# Keep the build context small and keep secrets out of the image.
+#
+# .env FIRST, and it is the line that matters most. Without it, `COPY server/`
+# would bake DATABASE_URL, the service-role key and SESSION_ENCRYPTION_KEY
+# into an image layer — readable by anyone who can pull it, and still present
+# even if a later layer deletes the file.
+**/.env
+**/.env.*
+!**/.env.example
+
+# Installed fresh in the image; copying host modules would also carry
+# platform-specific binaries built for Windows.
+**/node_modules
+client/dist
+
+.git
+.github
+.hallmark
+.claude
+
+# Test and local tooling — nothing in the request path imports these.
+server/tests
+tmp
+logs
+*.log
+
+# Source PDFs and datasets that are not read at runtime.
+**/*.pdf
+
+# Deployment configs for the VM route; irrelevant inside a container.
+deploy
+
+**/.DS_Store
+**/Thumbs.db
