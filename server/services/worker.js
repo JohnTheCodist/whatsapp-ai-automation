@@ -295,7 +295,7 @@ async function fail(db, job, err) {
  * number that fails to be recognised is not a quiet failure: it means the
  * pharmacist gets sold to by their own assistant.
  */
-function isStaffNumber(waPhone, notifyPhone) {
+function phoneMatchesStaff(waPhone, notifyPhone) {
   if (!waPhone || !notifyPhone) return false;
   const digits = (s) => String(s).replace(/\D/g, '');
   const a = digits(waPhone);
@@ -306,6 +306,28 @@ function isStaffNumber(waPhone, notifyPhone) {
   // cannot collide into a false positive.
   const tail = (s) => s.slice(-9);
   return a === b || (a.length >= 9 && b.length >= 9 && tail(a) === tail(b));
+}
+
+/**
+ * Is this inbound message from the pharmacy's own alert number?
+ *
+ * Phone match alone misses a real case: WhatsApp is migrating this account
+ * to LID addressing (see senderIdentity.js), and a message addressed by LID
+ * without the phone-number alt JID leaves wa_phone NULL — a real staff
+ * reply that phoneMatchesStaff can never see, no matter how it is compared.
+ * Falling through from there sends the reply to the sales assistant instead
+ * of confirming or rejecting the order.
+ *
+ * notifyLid has no source of truth to resolve up front — there is no API
+ * here for "what LID does this phone number have" — so it is learned
+ * opportunistically: the first message that proves itself by phone AND
+ * carries a LID teaches processInbound that LID for next time (see below).
+ * Until it is learned, a LID-only reply from a brand-new staff number is
+ * still missed once; every reply after the first phone-bearing one matches.
+ */
+function isStaffNumber(waPhone, waLid, notifyPhone, notifyLid) {
+  if (phoneMatchesStaff(waPhone, notifyPhone)) return true;
+  return Boolean(waLid && notifyLid && waLid === notifyLid);
 }
 
 /**
@@ -488,10 +510,10 @@ async function processInbound(db, job) {
   const [row] = await db`
     select m.id, m.body,
            conv.id as conversation_id, conv.mode, conv.context, conv.last_menu_choice,
-           cust.id as customer_id, cust.wa_phone, cust.wa_jid, cust.display_name, cust.full_name,
+           cust.id as customer_id, cust.wa_phone, cust.wa_jid, cust.wa_lid, cust.display_name, cust.full_name,
            cust.onboarded_at,
            ph.name as pharmacy_name, ph.reply_mode, ph.sending_paused,
-           ph.notify_phone,
+           ph.notify_phone, ph.notify_lid,
            (select phone from pharmacy_profile pp where pp.pharmacy_id = ph.id) as pharmacy_phone,
            ph.bot_name, ph.assistant_tone, ph.menu_enabled, ph.welcome_note,
            ph.daily_reply_cap, ph.hourly_conversation_cap,
@@ -523,7 +545,15 @@ async function processInbound(db, job) {
   // it SENDS a briefing there, which contains the customer's name, their
   // medicines and their complaint. A number trusted to receive all of that
   // is not made less trustworthy by being allowed to answer.
-  if (isStaffNumber(row.wa_phone, row.notify_phone)) {
+  if (isStaffNumber(row.wa_phone, row.wa_lid, row.notify_phone, row.notify_lid)) {
+    // Learn the LID this reply proved itself under, so the NEXT one still
+    // matches even if it carries no phone number at all — see isStaffNumber.
+    // Only on a fresh phone match, and only when it disagrees with what is
+    // already stored, so this stays a single cheap write on the rare message
+    // that actually teaches us something rather than a write on every reply.
+    if (row.wa_lid && row.wa_lid !== row.notify_lid && phoneMatchesStaff(row.wa_phone, row.notify_phone)) {
+      await db`update pharmacies set notify_lid = ${row.wa_lid} where id = ${job.pharmacy_id}`;
+    }
     return handleStaffMessage(db, job, row);
   }
 
@@ -1622,4 +1652,8 @@ module.exports = {
   // lives, and it is worth proving against a real database rather than
   // waiting ten minutes of wall clock for the loop to call it.
   sweepIdlePharmacistHandoffs, PHARMACIST_IDLE_TAKEBACK_MINUTES,
+  // Exported for tests. This is the whole "is this the pharmacy's own staff"
+  // decision, pure and DB-free, and worth proving directly rather than only
+  // through a full processInbound run.
+  isStaffNumber,
 };

@@ -113,3 +113,22 @@ test('an unknown pharmacy id returns null rather than throwing', { skip: SKIP &&
   const r = await pharmacies.updateAssistantSettings(crypto.randomUUID(), { botName: 'X' });
   assert.equal(r, null);
 });
+
+test('changing the alert number clears the LID cached for the old one', { skip: SKIP && skipReason }, async () => {
+  // worker.js learns notify_lid from a staff reply so it can still recognise
+  // that person on a later message with no phone number at all (LID
+  // addressing — see the migration comment on notify_lid). If the pharmacy
+  // then hands the alert number to someone else, that stale LID must not go
+  // on quietly answering as staff — it belongs to a different person now.
+  await pharmacies.updateAssistantSettings(ctx.pharmacyId, { notifyPhone: '2348011112222' });
+  await db`update pharmacies set notify_lid = '198350347493478' where id = ${ctx.pharmacyId}`;
+
+  const unchanged = await pharmacies.updateAssistantSettings(ctx.pharmacyId, { botName: 'Bola' });
+  assert.equal(unchanged.notify_phone, '2348011112222', 'sanity: alert number untouched by this call');
+  let [row] = await db`select notify_lid from pharmacies where id = ${ctx.pharmacyId}`;
+  assert.equal(row.notify_lid, '198350347493478', 'a call that never mentions notifyPhone must not clear it');
+
+  await pharmacies.updateAssistantSettings(ctx.pharmacyId, { notifyPhone: '2348033334444' });
+  [row] = await db`select notify_lid from pharmacies where id = ${ctx.pharmacyId}`;
+  assert.equal(row.notify_lid, null, 'a genuinely new alert number must not inherit the old one\'s LID');
+});

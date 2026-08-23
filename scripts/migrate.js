@@ -23,7 +23,13 @@ async function main() {
     process.exit(1);
   }
 
-  const sql = postgres(url, { max: 1, connect_timeout: 15 });
+  // prepare:false for the same reason server/services/db.js sets it: a
+  // pooled connection (pgbouncer/Supabase in transaction mode) can hand this
+  // session a different backend per statement, which has never seen a
+  // statement prepared on an earlier one — postgres.js prepares by default,
+  // so leaving this out fails as "prepared statement ... does not exist" the
+  // moment DATABASE_URL points at a pooled connection instead of a direct one.
+  const sql = postgres(url, { max: 1, connect_timeout: 15, prepare: false });
 
   try {
     await sql`

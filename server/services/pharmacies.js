@@ -311,11 +311,18 @@ async function updateAssistantSettings(pharmacyId, fields = {}) {
     : undefined;
 
   const current = await db`
-    select bot_name, assistant_tone, welcome_note, menu_enabled, notify_phone, notify_on_new_order,
+    select bot_name, assistant_tone, welcome_note, menu_enabled, notify_phone, notify_lid, notify_on_new_order,
            public_whatsapp_number
     from pharmacies where id = ${pharmacyId}
   `;
   if (!current.length) return null;
+
+  // worker.js caches the LID that proved out as this alert number, so a
+  // staff reply is still recognised on a message carrying no phone number —
+  // see notify_lid's migration comment. That cache is only valid for the
+  // number it was learned against: swap the alert number to someone else's
+  // phone and the OLD LID must not go on quietly answering as staff.
+  const notifyPhoneChanged = notifyPhone !== undefined && notifyPhone !== current[0].notify_phone;
 
   const [row] = await db`
     update pharmacies set
@@ -324,6 +331,7 @@ async function updateAssistantSettings(pharmacyId, fields = {}) {
       welcome_note = ${welcomeNote !== undefined ? welcomeNote : current[0].welcome_note},
       menu_enabled = ${'menuEnabled' in fields ? Boolean(fields.menuEnabled) : current[0].menu_enabled},
       notify_phone = ${notifyPhone !== undefined ? notifyPhone : current[0].notify_phone},
+      notify_lid = ${notifyPhoneChanged ? null : current[0].notify_lid},
       notify_on_new_order = ${'notifyOnNewOrder' in fields ? Boolean(fields.notifyOnNewOrder) : current[0].notify_on_new_order},
       public_whatsapp_number = ${publicWhatsappNumber !== undefined ? publicWhatsappNumber : current[0].public_whatsapp_number},
       updated_at = now()
