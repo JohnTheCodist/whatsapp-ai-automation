@@ -36,8 +36,12 @@ export default function AuthGate() {
     if (!authConfigured) { setChecking(false); return undefined; }
 
     let cancelled = false;
+    let lastUserId;
     supabase.auth.getSession().then(({ data }) => {
-      if (!cancelled) { setSession(data?.session || null); setChecking(false); }
+      if (cancelled) return;
+      lastUserId = data?.session?.user?.id || null;
+      setSession(data?.session || null);
+      setChecking(false);
     });
 
     // Covers sign-in, sign-out, token refresh and a session restored in
@@ -45,9 +49,17 @@ export default function AuthGate() {
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
       if (cancelled) return;
       setSession(s);
-      // Force a fresh membership lookup: the previous answer belonged to
-      // whoever was signed in before.
-      setPharmacy(null);
+      // Supabase fires this on a plain token refresh too — notably every
+      // time the tab regains focus, even though who is signed in has not
+      // changed. Resetting pharmacy (and so re-fetching it) on every one of
+      // those was what could bounce an already-onboarded owner back to
+      // onboarding on nothing more than a transient failure of that
+      // refetch. Only re-look-up when the signed-in user actually changed.
+      const userId = s?.user?.id || null;
+      if (userId !== lastUserId) {
+        lastUserId = userId;
+        setPharmacy(null);
+      }
     });
 
     return () => { cancelled = true; sub?.subscription?.unsubscribe(); };
@@ -55,23 +67,40 @@ export default function AuthGate() {
 
   // Does this user actually belong to a pharmacy yet?
   useEffect(() => {
-    if (!authConfigured || !session || pharmacy) return undefined;
+    // pharmacy !== null, NOT a truthy check: `false` is a valid, resolved
+    // answer ("signed in, no pharmacy yet") and must stop this effect from
+    // re-firing just as much as an actual pharmacy object does. A truthy
+    // check let `false` slip through, and since onAuthStateChange resets
+    // pharmacy to null on every auth event it sees, the two together made
+    // this hammer /api/pharmacies/me in a tight loop instead of ever
+    // settling into onboarding.
+    if (!authConfigured || !session || pharmacy !== null) return undefined;
     let cancelled = false;
     (async () => {
-      try {
-        const r = await fetch('/api/pharmacies/me', { signal: AbortSignal.timeout(20000) });
-        if (cancelled) return;
-        if (r.ok) {
-          const j = await r.json();
-          const p = j.pharmacy || j;
-          if (p?.id) { setActivePharmacyId(p.id); setPharmacy(p); return; }
+      // Up to 3 tries: only a 403 (NO_MEMBERSHIP) or 404 is requireAuth/this
+      // route's way of actually saying "no pharmacy yet". Anything else — a
+      // 401 from a token race, a 500, a dropped connection, a timeout — is a
+      // failed request, not an answer, and must not be read as one. Treating
+      // it as one is what previously sent an already-onboarded owner back to
+      // onboarding whenever this fetch merely failed once.
+      for (let attempt = 0; attempt < 3 && !cancelled; attempt += 1) {
+        try {
+          const r = await fetch('/api/pharmacies/me', { signal: AbortSignal.timeout(20000) });
+          if (cancelled) return;
+          if (r.ok) {
+            const j = await r.json();
+            const p = j.pharmacy || j;
+            if (p?.id) { setActivePharmacyId(p.id); setPharmacy(p); return; }
+          }
+          if (r.status === 403 || r.status === 404) { setPharmacy(false); return; }
+        } catch {
+          // network error / timeout — fall through to retry below
         }
-        // 403/404 here is the normal "signed in, no pharmacy yet" state that
-        // onboarding exists for — not an error worth showing.
-        setPharmacy(false);
-      } catch {
-        if (!cancelled) setPharmacy(false);
+        if (attempt < 2) await new Promise((res) => setTimeout(res, 1000 * (attempt + 1)));
       }
+      // Exhausted retries without a confirmed answer either way. Stay on the
+      // loading screen rather than guessing — a stuck spinner is
+      // recoverable, a wrong onboarding redirect looks like data loss.
     })();
     return () => { cancelled = true; };
   }, [session, pharmacy]);
