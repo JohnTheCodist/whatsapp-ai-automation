@@ -28,6 +28,15 @@
 const { normalizeProductName, normalizeProductText, extractStrength, extractForm, extractPackSize } =
   require('../ingestion/productNormalizer');
 const { parseCurrency } = require('../ingestion/dataCleaner');
+const { fuzzyResolveGeneric } = require('../ingestion/nafdacLookup');
+
+// identifyDrug() sources that are NOT already anchored to a known entry —
+// pattern_inference/partial_pattern strip strength/form and keep whatever
+// text is left, fuzzy_brand_match found a close BRAND (not generic) name.
+// Only these are worth checking against NAFDAC; brand_knowledge_base is
+// already a real match and re-checking it would only add a chance to
+// overwrite a correct identity with a wrong fuzzy one.
+const UNANCHORED_SOURCES = new Set(['pattern_inference', 'partial_pattern', 'fuzzy_brand_match']);
 
 /**
  * Is this "generic name" real, or just the product name echoed back?
@@ -105,6 +114,40 @@ function buildProduct(row, fields) {
 
   const identity = normalizeProductName(rawName);
 
+  // --- NAFDAC anchor, for an identity the KB only pattern-guessed at -------
+  //
+  // identifyDrug()'s pattern step strips strength/form and keeps whatever
+  // text is left as "the generic" — it never checks that text against
+  // anything, so "Cirpofloxacin 500mg" becomes its own recognised identity,
+  // distinct from "Ciprofloxacin 500mg". fuzzyResolveGeneric() checks that
+  // leftover text against NAFDAC's real generic-name list, one name at a
+  // time, and — critically — refuses to answer if more than one registered
+  // generic is close enough to be a candidate. That refusal is what keeps
+  // this safe: a real Look-Alike-Sound-Alike pair (Hydralazine/Hydroxyzine,
+  // Prednisone/Prednisolone) sitting a couple of edits apart must never be
+  // picked between by spelling alone, so it is left exactly as unresolved
+  // as it was before this check existed.
+  let resolvedGeneric = identity.generic;
+  if (!identity.recognized || UNANCHORED_SOURCES.has(identity.source)) {
+    const nafdacMatch = fuzzyResolveGeneric(identity.generic || rawName);
+    if (nafdacMatch && nafdacMatch.matchType === 'fuzzy') {
+      resolvedGeneric = nafdacMatch.generic;
+      issues.push({
+        field: 'name',
+        reason: 'name_matched_via_nafdac',
+        value: rawName,
+        detail: `"${identity.generic || rawName}" is not a spelling we recognise, but it is ` +
+          `${nafdacMatch.distance} character${nafdacMatch.distance === 1 ? '' : 's'} from ` +
+          `"${nafdacMatch.generic}", which is registered with NAFDAC. Treated as the same product ` +
+          `as other listings of "${nafdacMatch.generic}".`,
+      });
+    } else if (nafdacMatch && nafdacMatch.matchType === 'exact' && identity.generic) {
+      // Same drug, just NAFDAC's canonical casing/spacing — not a
+      // correction worth telling anyone about.
+      resolvedGeneric = nafdacMatch.generic;
+    }
+  }
+
   // --- facts, from the file first -----------------------------------------
   //
   // Explicit columns beat anything parsed out of the name, which beats the
@@ -144,7 +187,20 @@ function buildProduct(row, fields) {
   const stockTracked = Boolean(fields.stock_qty);
   const stockQty = stockTracked ? toInt(stockRaw) : null;
   if (stockTracked && stockQty === null && clean(stockRaw) !== null) {
-    issues.push({ field: 'stock_qty', reason: 'unparseable_stock', value: clean(stockRaw) });
+    // A negative number parsed fine — it just isn't a valid quantity. Calling
+    // that "unparseable" tells the owner nothing they can act on; a shelf
+    // count of -5 is a data-entry problem, not a formatting one.
+    const parsedNegative = parseCurrency(stockRaw);
+    if (parsedNegative !== null && Number.isFinite(parsedNegative) && parsedNegative < 0) {
+      issues.push({
+        field: 'stock_qty',
+        reason: 'negative_stock',
+        value: clean(stockRaw),
+        detail: 'Stock quantity cannot be negative. Treated as unknown — please check this row.',
+      });
+    } else {
+      issues.push({ field: 'stock_qty', reason: 'unparseable_stock', value: clean(stockRaw) });
+    }
   }
 
   // --- expiry --------------------------------------------------------------
@@ -158,30 +214,62 @@ function buildProduct(row, fields) {
     });
   }
 
-  const genericFromReference = isRealGeneric(identity.generic, rawName) ? identity.generic : null;
+  const genericFromReference = isRealGeneric(resolvedGeneric, rawName) ? resolvedGeneric : null;
 
   const dataFlags = [];
   if (priceKobo === null) dataFlags.push('no_price');
   if (!genericFromReference && !clean(get('generic_name'))) dataFlags.push('unrecognised_product');
   if (issues.some((i) => i.reason === 'strength_differs_from_reference')) dataFlags.push('strength_from_file');
+  if (issues.some((i) => i.reason === 'name_matched_via_nafdac')) dataFlags.push('nafdac_typo_corrected');
   if (expiry && expiry.getTime() < Date.now()) dataFlags.push('expired');
 
   return {
     product: {
       name: rawName,
-      // DETERMINISTIC, derived only from the product text.
-      //
-      // NOT identity.canonicalId. That looks like a stable drug identifier
-      // and is not — it is a counter assigned in the order products are first
-      // seen in a process. Measured 2026-08-29: across two runs of the same
-      // code, Augmentin and Panadol swapped DRUG-10000 and DRUG-10001 purely
+      // DETERMINISTIC, derived only from the product text plus a KB lookup
+      // that is itself a pure function of that text — never from
+      // identity.canonicalId. That looks like a stable drug identifier and is
+      // not — it is a counter assigned in the order products are first seen
+      // in a process. Measured 2026-08-29: across two runs of the same code,
+      // Augmentin and Panadol swapped DRUG-10000 and DRUG-10001 purely
       // because the input order differed. Keying on it would, on the next
       // upload, merge one drug's row into another drug's data.
       //
-      // The cost of using text is that "AMOXIL CAP 500MG x100" and
-      // "Amoxil 500mg Capsule" stay two rows. That is the safe direction:
-      // a duplicate is visible and fixable, a silent merge is neither.
-      natural_key: `TEXT:${normalizeProductText(rawName)}`,
+      // The anchor is resolvedGeneric, not raw text, when it's known. Plain
+      // TEXT normalization only lowercases and trims, so "Metformin500mg" and
+      // "Metformin 500mg" — the same drug, spaced differently — produced two
+      // natural_keys and showed up as two products. resolvedGeneric collapses
+      // that: it comes from the same brand/pattern lookup for both spellings
+      // ("Metformin"), independent of input whitespace, and — unlike
+      // canonicalId — depends only on the input text and the static KB, so it
+      // is stable across runs and process restarts.
+      //
+      // A genuine misspelling ("Cirpofloxacin" vs "Ciprofloxacin") IS
+      // collapsed here, but only via the NAFDAC anchor above — never by
+      // comparing two uploaded spellings to each other directly. The
+      // difference matters: comparing this row's text to NAFDAC's ~950 real
+      // generic names, one at a time, with an ambiguity guard that refuses to
+      // pick between two close candidates, cannot merge a real
+      // look-alike-sound-alike pair (Hydralazine/Hydroxyzine,
+      // Prednisone/Prednisolone) — there is no "other row" for it to get
+      // confused with. Comparing two uploaded rows to each other instead
+      // would risk exactly that. Anything NAFDAC has no opinion on falls back
+      // to normalizeProductText(rawName) exactly as before: a visible,
+      // fixable duplicate rather than a silent, unverifiable merge.
+      //
+      // Strength and form are appended from the FACTS computed above (file
+      // first, KB last), not re-derived from identity.canonical — that field
+      // bakes in the KB's own form guess, which is inconsistent for the same
+      // drug across spacing variants (measured: "Omeprazole20mg" guessed
+      // Tablet, "Omeprazole 20mg" guessed Capsule) and would silently split
+      // the very products this anchor exists to merge. Appending form also
+      // keeps "Diclofenac Gel" and "Diclofenac Cream" apart even though
+      // normalizeProductText folds gel/cream into one word for sales
+      // analytics — an upload of one must never silently overwrite the
+      // other.
+      natural_key: `TEXT:${resolvedGeneric ? normalizeProductText(resolvedGeneric) : normalizeProductText(rawName)}` +
+        `${strength ? `::${normaliseStrength(strength)}` : ''}` +
+        `${form ? `::${String(form).trim().toLowerCase()}` : ''}`,
       generic_name: clean(get('generic_name')) || genericFromReference,
       brand_name:   clean(get('brand_name')) || null,
       category:     clean(get('category')) || identity.category || null,

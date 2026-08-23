@@ -46,6 +46,7 @@ export default function UploadCatalogue({ view = 'all' }) {
   const [overrides, setOverrides] = useState({});
   const [report, setReport] = useState(null);
   const [products, setProducts] = useState(null);
+  const [duplicates, setDuplicates] = useState(null);
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const fileRef = useRef(null);
@@ -54,10 +55,15 @@ export default function UploadCatalogue({ view = 'all' }) {
     try { setProducts(await api('/products?limit=25')); } catch { /* counts panel is optional */ }
   }, []);
 
+  const loadDuplicates = useCallback(async () => {
+    try { setDuplicates(await api('/duplicates')); } catch { /* advisory only */ }
+  }, []);
+
   useEffect(() => {
     api('/fields').then(setMeta).catch(() => {});
     loadProducts();
-  }, [loadProducts]);
+    loadDuplicates();
+  }, [loadProducts, loadDuplicates]);
 
   async function onFile(e) {
     const file = e.target.files?.[0];
@@ -88,6 +94,7 @@ export default function UploadCatalogue({ view = 'all' }) {
       setReport(res);
       setAnalysis(null);
       loadProducts();
+      loadDuplicates();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -328,6 +335,42 @@ export default function UploadCatalogue({ view = 'all' }) {
           <div className="mt-2 max-h-80 overflow-y-auto rounded border border-slate-200">
             {products.products.map((p) => (
               <ProductRow key={p.id} product={p} naira={naira} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ---- names that look alike but can't be confirmed either way ---- */}
+      {showProducts && duplicates?.pairs?.length > 0 && !analysis && (
+        <div className="mt-6 border-t border-slate-100 pt-4">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-amber-700">
+            Worth a second look ({duplicates.pairs.length})
+          </h3>
+          <p className="mt-1 text-xs text-slate-500">
+            These names are close enough that they might be the same product misspelled — but
+            neither matched anything in the NAFDAC drug registry, which does not list every drug on
+            the Nigerian market, so we cannot confirm it either way. Check by hand: if it is a typo,
+            fix the name in your source file and re-upload; if they are genuinely two different
+            products, nothing needs to change.
+          </p>
+          <div className="mt-2 space-y-2">
+            {duplicates.pairs.map((pair) => (
+              <div
+                key={`${pair.a.id}-${pair.b.id}`}
+                className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate">
+                    {pair.a.name}
+                    {pair.a.strength && <span className="text-amber-700"> · {pair.a.strength}</span>}
+                  </span>
+                  <span className="shrink-0 text-amber-500">vs</span>
+                  <span className="min-w-0 truncate text-right">
+                    {pair.b.name}
+                    {pair.b.strength && <span className="text-amber-700"> · {pair.b.strength}</span>}
+                  </span>
+                </div>
+              </div>
             ))}
           </div>
         </div>

@@ -17,7 +17,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { NIGERIAN_BRANDS, FORM_SYNONYMS } = require('./productNormalizer');
+const { NIGERIAN_BRANDS, FORM_SYNONYMS, levenshtein } = require('./productNormalizer');
 
 // ---- configuration ------------------------------------------------------
 
@@ -369,6 +369,78 @@ function fuzzyLookupProduct(rawName) {
   }
 
   return { source: null, entries: [], bestMatch: null };
+}
+
+/**
+ * Resolve free text against NAFDAC's generic-name index, tolerating a small
+ * spelling slip — deliberately narrow, and deliberately willing to answer
+ * "not sure" rather than guess.
+ *
+ * WHY THIS EXISTS
+ * identifyDrug()'s pattern-based fallback (productNormalizer.js) turns
+ * "Cirpofloxacin 500mg" into its OWN recognised identity — generic
+ * "Cirpofloxacin" — by just stripping the strength. It has no way to tell
+ * that from a genuine second product; it never checks the misspelling
+ * against anything. This does: NAFDAC's ~950 distinct generics are actual
+ * registered drug names, so a name that's one or two edits from exactly one
+ * of them and from nothing else is real typo evidence, not a coincidence.
+ *
+ * THE AMBIGUITY GUARD IS THE POINT
+ * A small edit distance is not enough on its own — Look-Alike-Sound-Alike
+ * drug pairs are a known medication-safety hazard precisely because two
+ * REAL, DIFFERENT drugs can sit one or two edits apart (Hydralazine /
+ * Hydroxyzine, Prednisone / Prednisolone). If the closest NAFDAC generic and
+ * the second-closest are within the same distance of each other, this
+ * refuses to pick between them — silence here is a duplicate that stays
+ * visible and fixable; a wrong pick is two medications quietly merged into
+ * one, which is the harder mistake to notice and undo.
+ *
+ * @returns {{generic:string, confidence:number, matchType:'exact'|'fuzzy', distance:number}|null}
+ */
+function fuzzyResolveGeneric(name) {
+  if (!name) return null;
+  const query = String(name).toLowerCase().trim();
+  if (!query) return null;
+
+  // Exact hit: just the canonical NAFDAC casing/spacing, not a correction.
+  if (genericIndex.has(query)) {
+    const entries = genericIndex.get(query);
+    return { generic: entries[0].generic, confidence: 1, matchType: 'exact', distance: 0 };
+  }
+
+  // Below this length, a couple of edits reaches too much of the index to
+  // mean anything ("Zinc" is one edit from several unrelated short words).
+  if (query.length < 6) return null;
+
+  const maxDist = query.length >= 9 ? 2 : 1;
+  let bestKey = null;
+  let bestDist = Infinity;
+  let secondDist = Infinity;
+
+  for (const key of genericIndex.keys()) {
+    if (Math.abs(key.length - query.length) > maxDist) continue;
+    const dist = levenshtein(query, key);
+    if (dist > maxDist) continue;
+    if (dist < bestDist) {
+      secondDist = bestDist;
+      bestDist = dist;
+      bestKey = key;
+    } else if (dist < secondDist) {
+      secondDist = dist;
+    }
+  }
+
+  // Tie or near-tie between the top two candidates: exactly the LASA
+  // scenario above. Report nothing rather than guess.
+  if (!bestKey || secondDist <= bestDist) return null;
+
+  const entries = genericIndex.get(bestKey);
+  return {
+    generic: entries[0].generic,
+    confidence: Math.max(0.5, 1 - bestDist / query.length),
+    matchType: 'fuzzy',
+    distance: bestDist,
+  };
 }
 
 // ---- manufacturer-aware brand variants ----------------------------------
@@ -782,6 +854,7 @@ module.exports = {
   lookupByBrand,
   lookupByGeneric,
   fuzzyLookupProduct,
+  fuzzyResolveGeneric,
   fuzzySearchBrand,
   enrichFromNafdac,
   getBrandVariants,

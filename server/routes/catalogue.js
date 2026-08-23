@@ -17,6 +17,7 @@ const { requireAuth } = require('../middleware/auth');
 const { getSql, assertPharmacyId, readWithRetry } = require('../services/db');
 const { stageUpload, confirmAndImport } = require('../services/catalogue/catalogueImport');
 const { FIELD_DISPLAY, TIER_DISPLAY } = require('../services/catalogue/catalogueFields');
+const { findUnverifiedDuplicates } = require('../services/catalogue/duplicateReview');
 
 const router = express.Router();
 
@@ -196,6 +197,21 @@ router.get('/products', requireAuth, async (req, res, next) => {
         price: p.price_kobo === null ? null : p.price_kobo / 100,
       })),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Names that look like the same product but couldn't be confirmed either
+ * way — not found in NAFDAC, which doesn't list every drug on the market, so
+ * this is a pointer for the pharmacist to check, never an automatic merge.
+ */
+router.get('/duplicates', requireAuth, async (req, res, next) => {
+  try {
+    assertPharmacyId(req.pharmacyId);
+    const pairs = await findUnverifiedDuplicates(req.pharmacyId);
+    res.json({ pairs });
   } catch (err) {
     next(err);
   }

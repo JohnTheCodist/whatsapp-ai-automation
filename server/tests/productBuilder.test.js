@@ -74,6 +74,48 @@ test('different products never share a natural_key', () => {
   assert.equal(new Set(keys).size, 4, 'a collision here merges unrelated products into one row');
 });
 
+test('a recognised drug collapses to one product regardless of spacing around the strength', () => {
+  // Real messy files write the same drug both ways: "Metformin500mg" from one
+  // supplier's export, "Metformin 500mg" from another's. Plain text
+  // normalization only lowercases and trims, so these produced two
+  // natural_keys and showed up as two catalogue rows for the same drug.
+  const a = buildProduct({ Product: 'Metformin500mg', Price: '₦3,173.96' }, F).product;
+  const b = buildProduct({ Product: 'Metformin 500mg', Price: '₦3,173.96' }, F).product;
+  assert.equal(a.natural_key, b.natural_key, 'the same drug spelled with or without a space must collapse to one row');
+});
+
+test('a misspelled drug name merges into the correctly spelled one when NAFDAC confirms it', () => {
+  // "Cirpofloxacin" isn't a real spelling, but it's two edits from
+  // "Ciprofloxacin" and nothing else registered with NAFDAC is that close —
+  // real typo evidence, not a coincidence. Two spellings of one drug on a
+  // pharmacist's shelf must not become two catalogue rows.
+  const typo = buildProduct({ Product: 'Cirpofloxacin 500mg', Price: '₦676.59' }, F).product;
+  const correct = buildProduct({ Product: 'Ciprofloxacin 500mg', Price: '₦676.59' }, F).product;
+  assert.equal(typo.natural_key, correct.natural_key, 'a NAFDAC-confirmed misspelling must collapse into the same row as the correct spelling');
+  assert.equal(typo.generic_name, 'Ciprofloxacin');
+  assert.ok(typo.data_flags.includes('nafdac_typo_corrected'), 'the correction must be visible, never silent');
+});
+
+test('a name with no unambiguous NAFDAC match stays a separate, visible row', () => {
+  // Nothing in the reference data is close to either of these, so there is
+  // nothing to safely anchor to — this must fall back to the old behaviour:
+  // a visible, fixable duplicate rather than an unverifiable merge.
+  const a = buildProduct({ Product: 'Zzz Herbal Mix 500mg', Price: '₦100' }, F).product;
+  const b = buildProduct({ Product: 'Zzy Herbal Mix 500mg', Price: '₦100' }, F).product;
+  assert.notEqual(a.natural_key, b.natural_key);
+});
+
+test('a gel and a cream of the same drug do not share a natural_key', () => {
+  // normalizeProductText's own synonym table treats gel/cream/ointment/lotion
+  // as one word for fuzzy grouping in sales analytics — measured: it turns
+  // "Diclofenac Gel" into the text "diclofenac cream". Left alone, a real
+  // Diclofenac Cream upload would silently overwrite the Gel row on upsert.
+  const fields = { ...F, form: { rawHeader: 'Form' } };
+  const gel = buildProduct({ Product: 'Diclofenac', Form: 'Gel', Price: '₦500' }, fields).product;
+  const cream = buildProduct({ Product: 'Diclofenac', Form: 'Cream', Price: '₦500' }, fields).product;
+  assert.notEqual(gel.natural_key, cream.natural_key, 'a collision here merges two different formulations into one row');
+});
+
 test('an unknown product is flagged rather than given an invented generic', () => {
   // The reference data answers "Cotton Wool" as the generic name of
   // "Cotton Wool 100g" — an echo, not knowledge.
@@ -93,6 +135,15 @@ test('a real generic is still taken from the reference data', () => {
 test('price is stored as integer kobo', () => {
   assert.equal(buildProduct({ Product: 'Panadol', Price: '₦1,250.00' }, F).product.price_kobo, 125000);
   assert.equal(toKobo('₦0.50'), 50);
+});
+
+test('NGN as a text prefix parses the same as the ₦ symbol', () => {
+  // "NGN 4,410.28" is as common in these files as "₦4,410.28" — stripping
+  // only the symbol left the letters glued to the digits ("NGN4410.28"),
+  // which is not a number, and a real price was dropped as missing.
+  assert.equal(toKobo('NGN 1,250.00'), 125000);
+  assert.equal(toKobo('NGN562.75'), 56275);
+  assert.equal(toKobo('1250 NGN'), 125000);
 });
 
 test('a missing price is flagged but the product is still imported', () => {
@@ -130,6 +181,15 @@ test('unparseable stock is flagged rather than guessed', () => {
   const { product, issues } = buildProduct({ Product: 'Panadol', Price: '₦100', Stock: 'plenty' }, F);
   assert.equal(product.stock_qty, null);
   assert.ok(issues.some((i) => i.reason === 'unparseable_stock'));
+});
+
+test('a negative stock count is flagged as negative, not as unparseable', () => {
+  // A messy pharmacy export can carry -5 for a shelf count. It parses fine
+  // as a number — it just is not a valid quantity, which is a different
+  // problem than a value the code could not read at all.
+  const { product, issues } = buildProduct({ Product: 'Panadol', Price: '₦100', Stock: -5 }, F);
+  assert.equal(product.stock_qty, null);
+  assert.ok(issues.some((i) => i.reason === 'negative_stock'), 'the owner should be told the number was negative, not that it was gibberish');
 });
 
 // ---- expiry ----

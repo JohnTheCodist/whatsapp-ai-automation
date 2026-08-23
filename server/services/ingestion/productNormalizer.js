@@ -723,6 +723,11 @@ function normalizeProductName(raw) {
   baseResult.manufacturer = id.manufacturer;
   baseResult.confidence = id.confidence;
   baseResult.recognized = true;
+  // How id.generic was arrived at — brand_knowledge_base and fuzzy_brand_match
+  // are already anchored to a known entry; pattern_inference/partial_pattern
+  // are just "strip strength/form and hope", the case productBuilder needs to
+  // separately verify against NAFDAC before trusting it as an identity.
+  baseResult.source = id.source || null;
 
   // Track transformations
   if (name.toLowerCase() !== canonical.toLowerCase()) {
@@ -786,6 +791,7 @@ module.exports = {
   normalizeProductNames,
   identifyDrug,
   lookupBrand,
+  levenshtein,
   extractStrength,
   extractForm,
   extractPackSize,
