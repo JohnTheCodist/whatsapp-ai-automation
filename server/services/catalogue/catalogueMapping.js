@@ -76,17 +76,39 @@ const SUPPLEMENTARY = {
   barcode: ['barcode', 'bar code', 'ean', 'upc', 'gtin', 'scan code'],
 };
 
-function claimSupplementary(unmapped, alreadyTaken) {
+/** Which canonical field, if any, the shared stack assigned this raw header. */
+function headerClaimedAs(mapping, rawHeader) {
+  for (const [canonical, detail] of Object.entries(mapping)) {
+    if (detail.rawHeader === rawHeader) return canonical;
+  }
+  return null;
+}
+
+/**
+ * Claim sku/barcode columns.
+ *
+ * Scans every header, not just the ones the shared stack left unmapped.
+ * "Item ID" is an exact synonym for `sku`, but the shared dictionary has no
+ * `sku` slot to put it in — so it settles for the closest thing it does have,
+ * `invoice_number` (a SALES-only field), on a 57% fuzzy match to "txn id".
+ * Left alone, that false claim counts toward looksLikeSalesExport and gets a
+ * genuine catalogue rejected as a sales report.
+ *
+ * A header already doing real catalogue work (claimed as `name`, `price`,
+ * etc.) is never stolen — only a header the catalogue would otherwise throw
+ * away is up for reclaiming.
+ */
+function claimSupplementary(headers, mapping, alreadyTaken) {
   const claimed = {};
-  for (const col of unmapped || []) {
-    const raw = col.rawHeader ?? col;
+  for (const raw of headers || []) {
     const normalised = normalizeHeader(raw);
     for (const [field, synonyms] of Object.entries(SUPPLEMENTARY)) {
       if (alreadyTaken.has(field) || claimed[field]) continue;
-      if (synonyms.includes(normalised)) {
-        claimed[field] = { rawHeader: raw, confidence: 0.95, tier: 'auto', source: `exact match: "${normalised}"` };
-        break;
-      }
+      if (!synonyms.includes(normalised)) continue;
+      const claimedAs = headerClaimedAs(mapping, raw);
+      if (claimedAs && CANONICAL_TO_CATALOGUE[claimedAs]) continue; // already a real catalogue field
+      claimed[field] = { rawHeader: raw, confidence: 0.95, tier: 'auto', source: `exact match: "${normalised}"` };
+      break;
     }
   }
   return claimed;
@@ -128,9 +150,6 @@ function analyseCatalogue(rows, options = {}) {
   const schema = detectSchema(records);
   const resolved = resolveMapping(schema);
 
-  // --- ask the detector what kind of file this is -------------------------
-  const salesFields = SALES_ONLY_CANONICALS.filter((f) => resolved.mapping[f]);
-
   // --- translate canonical -> catalogue -----------------------------------
   const fields = {};
   for (const [canonical, detail] of Object.entries(resolved.mapping)) {
@@ -166,12 +185,23 @@ function analyseCatalogue(rows, options = {}) {
   }
 
   // --- sku / barcode -------------------------------------------------------
-  // Scanning `ignored` as well as `unmapped` on purpose: the shared stack
-  // actively IGNORES barcode columns, because analytics had no use for one.
-  // Only looking at `unmapped` silently lost it.
+  // Scanning every header, not just `unmapped`/`ignored`: the shared stack
+  // actively IGNORES barcode columns (analytics had no use for one), but it
+  // also sometimes MAPS an sku-shaped header to a sales-only field for lack
+  // of anything better ("Item ID" -> invoice_number on a 57% fuzzy match to
+  // "txn id"). claimSupplementary refuses to steal a header already doing
+  // real catalogue work, so this is safe to run over the full header list.
   const taken = new Set(Object.keys(fields));
-  const claimable = [...(resolved.unmapped || []), ...(resolved.ignored || [])];
-  Object.assign(fields, claimSupplementary(claimable, taken));
+  const supplementary = claimSupplementary(headers, resolved.mapping, taken);
+  Object.assign(fields, supplementary);
+
+  // --- ask the detector what kind of file this is -------------------------
+  // A header just reclaimed above was never real sales evidence — it was the
+  // shared dictionary's best guess for a header it has no true home for.
+  const reclaimedHeaders = new Set(Object.values(supplementary).map((f) => f.rawHeader));
+  const salesFields = SALES_ONLY_CANONICALS.filter(
+    (f) => resolved.mapping[f] && !reclaimedHeaders.has(resolved.mapping[f].rawHeader),
+  );
 
   // --- what is NOT being imported -----------------------------------------
   //

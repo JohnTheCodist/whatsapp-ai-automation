@@ -31,9 +31,15 @@ const MAX_ISSUES_STORED = 500;
  * `defval: null` matters: without it SheetJS omits empty cells entirely, so
  * rows have different key sets and a column that is blank in the first row
  * disappears from the header list.
+ *
+ * `codepage: 65001` matters for CSV. Without it, SheetJS's CSV reader falls
+ * back to a non-UTF-8 codepage and every multi-byte character is mangled —
+ * measured: a UTF-8 "₦" (e2 82 a6) came out as "â¦". The price then fails to
+ * parse and the row is flagged `no_price`, even though the file had a real
+ * price. .xlsx files carry their own encoding and are unaffected.
  */
 function parseWorkbook(buffer, filename) {
-  const workbook = xlsx.read(buffer, { type: 'buffer', cellDates: true });
+  const workbook = xlsx.read(buffer, { type: 'buffer', cellDates: true, codepage: 65001 });
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) throw new Error(`${filename} contains no sheets.`);
 

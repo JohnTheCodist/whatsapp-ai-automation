@@ -113,6 +113,22 @@ test('one incidental sales-ish column does not condemn a real catalogue', () => 
   assert.equal(r.looksLikeSalesExport, false);
 });
 
+test('an item code column is not mistaken for sales evidence', () => {
+  // The shared dictionary has no `sku` slot, so a header like "ItemID" —
+  // an exact synonym for sku — gets fuzzy-matched to `invoice_number`
+  // instead (a SALES-only field), on nothing more than a 57% token overlap
+  // with "txn id". Measured: paired with one other incidental sales-ish
+  // header, that false claim alone flagged a genuine catalogue upload as a
+  // sales export and blocked the import.
+  const r = analyseCatalogue([
+    { ItemID: 'P1000', DrugName: 'Panadol', UnitPrice: money(1250), ReorderLevel: 10 },
+    { ItemID: 'P1001', DrugName: 'Augmentin', UnitPrice: money(6400), ReorderLevel: 20 },
+  ]);
+  assert.equal(r.fields.sku?.rawHeader, 'ItemID', 'an item code column is a catalogue field, not a sales signal');
+  assert.equal(r.looksLikeSalesExport, false);
+  assert.equal(r.ok, true);
+});
+
 // ---- the gaps the shared dictionary does not cover ----
 
 test('sku and barcode are claimed, which the shared dictionary has no concept of', () => {

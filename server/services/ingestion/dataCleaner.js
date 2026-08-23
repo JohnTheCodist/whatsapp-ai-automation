@@ -374,7 +374,15 @@ function parseYYYYMMDD(val) {
 function parseCurrency(val) {
   if (val == null || val === '') return null;
   if (typeof val === 'number') return Number.isFinite(val) ? val : null;
-  const cleaned = String(val).replace(/[₦$€£¥,\s]/g, '').trim();
+  // NGN as TEXT, not a symbol: "NGN 4,410.28" is as common in these files as
+  // "₦4,410.28", and stripping only the symbol left the letters glued to the
+  // digits ("NGN4410.28"), which Number() cannot parse — a real price was
+  // being dropped as missing. Matched case-insensitively and only as a
+  // leading/trailing token so it cannot eat digits from anywhere else.
+  const cleaned = String(val)
+    .replace(/^\s*ngn\s*|\s*ngn\s*$/gi, '')
+    .replace(/[₦$€£¥,\s]/g, '')
+    .trim();
   if (cleaned === '' || cleaned === '-') return null;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
