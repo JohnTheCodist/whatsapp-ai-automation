@@ -13,7 +13,7 @@
  * "we're open 25:00–08:00" is a sentence this product must never send.
  */
 
-const { getSql, assertPharmacyId } = require('./db');
+const { getSql, assertPharmacyId, isRetryableConnectionError } = require('./db');
 const { generateTradeCode } = require('./whatsapp/tradeCode');
 const { isValidTone, DEFAULT_TONE } = require('./ai/assistantTone');
 const { normalizeMsisdn } = require('./whatsapp/senderIdentity');
@@ -172,6 +172,19 @@ async function createPharmacy(userId, { name }) {
   // Slug collision is expected — two "City Pharmacy" tenants is normal.
   // Retry the whole transaction rather than pre-checking, because a
   // pre-check races with any concurrent signup.
+  //
+  // A connection fault (the pool handed this attempt an already-dead pooled
+  // socket — see readWithRetry's doc comment in db.js) also retries here,
+  // bounded to one extra try, not the full 5. This is safe in the case that
+  // actually happens: the fault interrupts the transaction before COMMIT, so
+  // Postgres has already rolled it back and nothing was written. It is
+  // NOT provably safe in the rarer case where Postgres committed but the
+  // acknowledgment itself was lost in the same socket death — that retry
+  // would insert a second pharmacy. Accepted deliberately: the alternative
+  // (no retry) is "onboarding cannot complete on a flaky pooler" every time,
+  // which is worse, and MAX_PHARMACIES_PER_USER plus this being a visible,
+  // ownable row bounds the damage if the rare case is ever hit.
+  let connectionRetryUsed = false;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const slug = attempt === 0 ? base : `${base}-${slugSuffix()}`;
     try {
@@ -192,6 +205,11 @@ async function createPharmacy(userId, { name }) {
       });
     } catch (err) {
       if (isUniqueViolation(err, 'slug')) continue;
+      if (isRetryableConnectionError(err) && !connectionRetryUsed) {
+        connectionRetryUsed = true;
+        attempt -= 1; // does not consume a slug attempt
+        continue;
+      }
       throw err;
     }
   }

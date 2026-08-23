@@ -20,7 +20,7 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const { env } = require('../config/env');
-const { getSql } = require('../services/db');
+const { getSql, readWithRetry } = require('../services/db');
 
 let supabase = null;
 function getSupabase() {
@@ -126,13 +126,17 @@ async function verifyUser(req, res) {
 
 async function getMemberships(userId) {
   const db = getSql();
-  return db`
+  // readWithRetry: this runs on every authenticated request. A dead-on-handoff
+  // pooled connection here otherwise surfaces as "signed in, but the dashboard
+  // never loads" — indistinguishable from a real outage to whoever hits it,
+  // and it is a plain read, so a retry cannot duplicate anything.
+  return readWithRetry(() => db`
     select m.pharmacy_id, m.role, p.name, p.status
     from pharmacy_members m
     join pharmacies p on p.id = m.pharmacy_id
     where m.user_id = ${userId}
     order by m.created_at
-  `;
+  `);
 }
 
 /** Valid session required. No membership required — for pharmacy creation. */
