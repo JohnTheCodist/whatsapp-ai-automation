@@ -23,7 +23,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Overview from './Overview.jsx';
 import AiPerformance from './AiPerformance.jsx';
-import ConnectWhatsApp from './ConnectWhatsApp.jsx';
 import UploadCatalogue from './UploadCatalogue.jsx';
 import Consultations from './Consultations.jsx';
 import Inbox from './Inbox.jsx';

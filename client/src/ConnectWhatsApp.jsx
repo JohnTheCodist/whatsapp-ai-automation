@@ -117,7 +117,13 @@ export default function ConnectWhatsApp() {
     es.onerror = () => log('sse', 'stream dropped — the browser will retry');
 
     return () => es.close();
-  }, [log, refresh]);
+    // loadInbox belongs here: the 'message' handler above calls it, and an
+    // effect that closes over a function it does not declare will keep
+    // calling the FIRST version of it forever. Safe to add — log, refresh and
+    // loadInbox are all useCallback(..., []) with no dependencies of their
+    // own, so the references never change and this stream is still opened
+    // exactly once per mount rather than reconnecting on every render.
+  }, [log, refresh, loadInbox]);
 
   async function connect() {
     setBusy('connect'); setError(null); setSelfTest(null);
