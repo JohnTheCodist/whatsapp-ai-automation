@@ -110,9 +110,16 @@ function tidyWhitespace(text) {
  * terse, which turns a scannable list back into a paragraph. Only splits
  * where a bullet marker genuinely follows sentence-ending punctuation, so a
  * "•" used mid-sentence is left alone.
+ *
+ * The colon is in that set because it is how a list is introduced — "here
+ * are my picks: • Panadol — ₦1,300." left the FIRST product welded to the
+ * lead-in sentence while every later one broke correctly, so a three-item
+ * list came out as a paragraph followed by two bullets. It is still
+ * punctuation-anchored rather than splitting on every "•", which is what
+ * keeps a separator usage ("Open 9am • 5pm daily") intact.
  */
 function breakBullets(text) {
-  return text.replace(/([.!?])\s+•\s*/g, '$1\n• ');
+  return text.replace(/([.!?:])\s+•\s*/g, '$1\n• ');
 }
 
 /**
