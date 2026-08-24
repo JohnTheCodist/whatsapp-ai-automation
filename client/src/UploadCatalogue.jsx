@@ -340,39 +340,59 @@ export default function UploadCatalogue({ view = 'all' }) {
         </div>
       )}
 
-      {/* ---- names that look alike but can't be confirmed either way ---- */}
-      {showProducts && duplicates?.pairs?.length > 0 && !analysis && (
+      {/* ---- names that look alike but can't be confirmed either way ----
+          Two different findings, deliberately shown differently. The pairs
+          are a QUESTION only a person can answer, so they are listed. The
+          re-upload count is an ANSWER nobody has to think about, so it is one
+          sentence — listing those too would bury the handful that matter
+          under a pile that resolves itself. */}
+      {showProducts && !analysis
+        && (duplicates?.pairs?.length > 0 || duplicates?.willMergeOnReimport > 0) && (
         <div className="mt-6 border-t border-slate-100 pt-4">
-          <h3 className="text-xs font-medium uppercase tracking-wide text-amber-700">
-            Worth a second look ({duplicates.pairs.length})
-          </h3>
-          <p className="mt-1 text-xs text-slate-500">
-            These names are close enough that they might be the same product misspelled — but
-            neither matched anything in the NAFDAC drug registry, which does not list every drug on
-            the Nigerian market, so we cannot confirm it either way. Check by hand: if it is a typo,
-            fix the name in your source file and re-upload; if they are genuinely two different
-            products, nothing needs to change.
-          </p>
-          <div className="mt-2 space-y-2">
-            {duplicates.pairs.map((pair) => (
-              <div
-                key={`${pair.a.id}-${pair.b.id}`}
-                className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 truncate">
-                    {pair.a.name}
-                    {pair.a.strength && <span className="text-amber-700"> · {pair.a.strength}</span>}
-                  </span>
-                  <span className="shrink-0 text-amber-500">vs</span>
-                  <span className="min-w-0 truncate text-right">
-                    {pair.b.name}
-                    {pair.b.strength && <span className="text-amber-700"> · {pair.b.strength}</span>}
-                  </span>
-                </div>
+          {duplicates.pairs.length > 0 && (
+            <>
+              <h3 className="text-xs font-medium uppercase tracking-wide text-amber-700">
+                Worth a second look ({duplicates.pairs.length})
+              </h3>
+              <p className="mt-1 text-xs text-slate-500">
+                These names are close enough to be the same product misspelled — but the NAFDAC
+                drug registry cannot name at least one of them, and it does not list every drug on
+                the Nigerian market, so nothing here can tell them apart for you. Check by hand: if
+                it is a typo, fix the name in your source file and re-upload; if they really are two
+                different products, nothing needs to change.
+              </p>
+              <div className="mt-2 space-y-2">
+                {duplicates.pairs.map((pair) => (
+                  <div
+                    key={`${pair.a.id}-${pair.b.id}`}
+                    className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate">
+                        {pair.a.name}
+                        {pair.a.strength && <span className="text-amber-700"> · {pair.a.strength}</span>}
+                      </span>
+                      <span className="shrink-0 text-amber-500">vs</span>
+                      <span className="min-w-0 truncate text-right">
+                        {pair.b.name}
+                        {pair.b.strength && <span className="text-amber-700"> · {pair.b.strength}</span>}
+                      </span>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
+
+          {duplicates.willMergeOnReimport > 0 && (
+            <p className={`text-xs text-slate-500 ${duplicates.pairs.length > 0 ? 'mt-3' : ''}`}>
+              {duplicates.willMergeOnReimport === 1
+                ? 'One other pair of near-identical names is'
+                : `${duplicates.willMergeOnReimport} other pairs of near-identical names are`}{' '}
+              already recognised in the drug registry and will be merged into a single product the
+              next time you upload this file. Nothing to decide.
+            </p>
+          )}
         </div>
       )}
     </section>

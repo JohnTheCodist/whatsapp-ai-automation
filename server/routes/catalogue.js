@@ -210,8 +210,12 @@ router.get('/products', requireAuth, async (req, res, next) => {
 router.get('/duplicates', requireAuth, async (req, res, next) => {
   try {
     assertPharmacyId(req.pharmacyId);
-    const pairs = await findUnverifiedDuplicates(req.pharmacyId);
-    res.json({ pairs });
+    // { pairs, willMergeOnReimport } — the second is a COUNT of near-identical
+    // pairs NAFDAC can name on both sides, which the importer already
+    // collapses. They need a re-upload, not a decision, so they are reported
+    // as a number rather than as more rows to read.
+    const review = await findUnverifiedDuplicates(req.pharmacyId);
+    res.json(review);
   } catch (err) {
     next(err);
   }
