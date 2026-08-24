@@ -70,6 +70,55 @@ test('an unidentifiable sender is dropped — neither list could be checked', ()
   }
 });
 
+/**
+ * The staff alert line in allowlist mode.
+ *
+ * A pharmacy piloting on two numbers still gets "New order — reply 1 to
+ * confirm" sent to notify_phone, so discarding the reply here meant the
+ * order could never be confirmed from the phone the alert arrived on, with
+ * nothing anywhere saying why.
+ */
+const STAFF = '2348036607553';
+
+test('the staff alert line survives allowlist mode without being listed', () => {
+  const d = shouldIngest({
+    ingestMode: 'allowlist', phone: STAFF, allowlist: [CUSTOMER], notifyPhone: STAFF,
+  });
+  assert.equal(d.ingest, true);
+});
+
+test('the staff line is matched on digits, not on how it was typed', () => {
+  assert.equal(
+    shouldIngest({
+      ingestMode: 'allowlist', phone: STAFF, allowlist: [], notifyPhone: '08036607553',
+    }).ingest,
+    true,
+  );
+});
+
+test('an unrelated sender is still dropped when a staff line is configured', () => {
+  const d = shouldIngest({
+    ingestMode: 'allowlist', phone: FRIEND, allowlist: [CUSTOMER], notifyPhone: STAFF,
+  });
+  assert.equal(d.ingest, false);
+  assert.equal(d.reason, 'not_allowlisted');
+});
+
+test('blocking beats being the staff line — the more deliberate instruction wins', () => {
+  const d = shouldIngest({
+    ingestMode: 'allowlist', phone: STAFF, allowlist: [], blocked: [STAFF], notifyPhone: STAFF,
+  });
+  assert.equal(d.ingest, false);
+  assert.equal(d.reason, 'blocked_sender');
+});
+
+test('no staff line configured leaves allowlist mode exactly as it was', () => {
+  assert.equal(
+    shouldIngest({ ingestMode: 'allowlist', phone: STAFF, allowlist: [CUSTOMER] }).ingest,
+    false,
+  );
+});
+
 test('an unknown ingest_mode KEEPS the message', () => {
   // The opposite of conductPolicy, and deliberately so. A typo in a config
   // value should not silently discard real customers, because nothing will

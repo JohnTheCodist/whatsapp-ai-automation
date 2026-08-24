@@ -76,7 +76,7 @@ async function ingest(msg) {
   //    +234..." would defeat most of the point.
   const [scope] = await db`
     select
-      ph.ingest_mode,
+      ph.ingest_mode, ph.notify_phone,
       coalesce(array(select wa_phone from outbound_allowlist where pharmacy_id = ph.id), '{}') as allowlist,
       coalesce(array(select wa_phone from blocked_senders where pharmacy_id = ph.id), '{}') as blocked
     from pharmacies ph where ph.id = ${pharmacyId}
@@ -87,6 +87,9 @@ async function ingest(msg) {
     phone: phoneNumber,
     allowlist: scope?.allowlist || [],
     blocked: scope?.blocked || [],
+    // So a staff reply to an order alert survives allowlist mode — see
+    // shouldIngest. Without it the alert goes out and the answer is dropped.
+    notifyPhone: scope?.notify_phone || null,
     fromMe: Boolean(msg.fromMe),
     defaultCountryCode: env.defaultCountryCode,
   });

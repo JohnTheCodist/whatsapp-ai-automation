@@ -35,6 +35,7 @@ const { normalizeMsisdn } = require('./senderIdentity');
  * @param {string}   args.phone
  * @param {string[]} [args.allowlist]
  * @param {string[]} [args.blocked]         never stored, in either mode
+ * @param {string}   [args.notifyPhone]     the pharmacy's own staff alert line
  * @param {boolean}  [args.fromMe]          the owner's own outgoing message
  * @param {string}   [args.defaultCountryCode]
  * @returns {{ingest: boolean, reason: string}}
@@ -44,6 +45,7 @@ function shouldIngest({
   phone,
   allowlist = [],
   blocked = [],
+  notifyPhone = null,
   fromMe = false,
   defaultCountryCode = '234',
 }) {
@@ -70,7 +72,19 @@ function shouldIngest({
     const allowSet = new Set(
       (allowlist || []).map((n) => normalizeMsisdn(n, defaultCountryCode)).filter(Boolean)
     );
-    if (!allowSet.has(normalised)) {
+    // The staff alert line is allowlisted by the fact that it IS the alert
+    // line — the pharmacy named it in settings, and the system already sends
+    // it order briefings containing a customer's name, medicines and
+    // complaint. Requiring it to ALSO appear in the pilot allowlist meant a
+    // pharmacy testing on two numbers got the "reply 1 to confirm" alert and
+    // had the reply silently discarded here, before anything could act on it.
+    //
+    // Checked AFTER the block list on purpose. Blocking a number is the more
+    // deliberate, more specific instruction of the two, and a configuration
+    // that both blocks a number and names it as the alert line is a mistake
+    // that should fail towards storing less, not more.
+    const staffLine = normalizeMsisdn(notifyPhone, defaultCountryCode);
+    if (!allowSet.has(normalised) && !(staffLine && staffLine === normalised)) {
       return { ingest: false, reason: 'not_allowlisted' };
     }
   }
