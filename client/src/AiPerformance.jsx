@@ -20,6 +20,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { IconAi } from './Icons.jsx';
 
 const naira = (n) => `₦${Number(n || 0).toLocaleString('en-NG')}`;
 
@@ -95,7 +96,9 @@ export default function AiPerformance({ onNavigate }) {
           All-time, not last-24h: this is the "is it worth it" question, and a
           single quiet day should not make the answer look bad. */}
       <section>
-        <h3 className="mb-2 text-sm font-medium text-slate-700">🤖 AI performance</h3>
+        <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
+          <span className="ui-icon-chip"><IconAi width={13} height={13} /></span>AI performance
+        </h3>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           <Card label="AI conversations" value={dash(ai?.conversations)} sub="Threads the assistant handled" />
           <Card label="Product requests" value={dash(ai?.productRequests)} sub="Asked about something specific" />

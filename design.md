@@ -49,6 +49,58 @@ one changes nothing about how the other reads.
 - `--ui-accent`      oklch(70% 0.135 165)
 - `--ui-accent-ink`  oklch(46% 0.105 165)
 
+### Chrome is dark; the canvas is not
+
+The rail and the header stopped being the same surface as the work area. A
+light rail sitting at the same weight as the content it frames read as
+"nothing decided this is chrome" — the single biggest gap against a real
+product, reported directly. Everything a pharmacist reads and edits stays on
+the light paper above; the frame around it is dark, same 165° anchor hue as
+`--ui-accent`, so it reads as this product's chrome and not a bolted-on
+dark-mode toggle sitting next to a light app.
+
+Scoped by redefining the `--ui-*` tokens on `nav[aria-label="Sections"]` and
+`header` in `index.css` — nothing else. Both elements already read
+`--ui-surface` / `--ui-ink` / `--ui-line` etc through Tailwind
+arbitrary-value classes (`bg-[var(--ui-surface)]`, `text-[var(--ui-ink-soft)]`),
+the same mechanism the palette retarget above relies on, so every existing
+utility on every descendant repaints for free. No `!important`, no component
+touched — nothing is fought, the utilities are handed a different value for
+the token they already resolve through.
+
+- `--ui-rail-bg`          oklch(16% 0.012 165) — the chrome surface, never `#000`
+- `--ui-rail-bg-raised`   oklch(21% 0.016 165) — hover/active rows, the search field. Lighter, not darker: the dark-mode elevation rule
+- `--ui-rail-ink`         oklch(94% 0.006 165) — primary label on chrome
+- `--ui-rail-ink-soft`    oklch(74% 0.010 165) — default nav label
+- `--ui-rail-ink-faint`   oklch(55% 0.010 165) — eyebrow ("Workspace", "Connection")
+- `--ui-rail-line`        oklch(28% 0.010 165) — hairline on chrome
+- `--ui-rail-accent-wash` oklch(22% 0.020 165) — active item background — a lift in tone, not a colour fill
+- `--ui-rail-accent-ink`  oklch(78% 0.110 165) — active item label/icon — lightened + desaturated per the dark-mode recipe
+
+The brand mark (the solid emerald square at the top of the rail) needed no
+change — a saturated fill sitting directly on dark chrome is exactly the
+"mark pops against the frame" move a real product makes.
+
+### Icon-chip, and a ban on emoji as icons
+
+A card or section heading that anchors on an icon uses a small tinted
+rounded-square (`.ui-icon-chip` in `index.css`) — `background:
+var(--ui-accent-wash)`, `color: var(--ui-accent-ink)`, 24px, 6px radius, icon
+at 13px inside. Never a bare glyph floating next to the text.
+
+**Emoji are banned as icons** — 🤖, 👥, ❤️, 🛒, 👤, 💬, 🔕, 📈 and their kind.
+Several screens used them as a shortcut ("put something next to this label")
+before this pass; a 🤖 stood in for "AI-assisted sales" on the screen a
+pharmacy owner opens first. Colourful pictographic emoji are one of the
+fastest ways a screen reads as generated rather than designed — they carry a
+platform's own illustration style, not this product's, and render
+differently release to release and device to device. Every spot that used
+one now draws from `Icons.jsx` instead.
+
+This is narrower than "no emoji anywhere." A conventional monochrome status
+glyph — ✓, ✗, ★, →, ✨ for an AI-generate action — rendered in the theme's
+own ink colour is normal UI chrome, not this problem, and stays allowed.
+
 ### Semantic colour is NOT the accent
 
 Red, amber and green mean things, and bending them toward the brand is how an
@@ -77,7 +129,23 @@ an unreadable screen.
 - Numerals: **always** `tabular-nums` wherever figures stack or update in
   place — counts that shift width as they change read as flicker.
 - Section label: 10–11px, `uppercase`, `0.12em` tracking, `--ui-ink-faint`
-- Screen title: 15px/600 · Card figure: 24–30px/600
+- Screen title: 15px/700 · Card figure: 24–30px/700
+
+### Weight
+
+`font-semibold` resolved to Tailwind's stock 600 everywhere — legible, but
+next to a considered surface it reads as merely adequate rather than
+authoritative. Retargeted the same way colour and radius already are:
+Tailwind v4 exposes `--font-weight-*` as theme tokens the same way it
+exposes `--color-*`, so bumping two lines in the `@theme` block reweights
+every screen title, card figure and section heading in the app at once — no
+`.jsx` touched.
+
+- `--font-weight-semibold: 700` (was 600)
+- `--font-weight-bold: 800` (was 700)
+- `font-medium` is deliberately untouched — bumping it too would blur the
+  distinction between a label and a heading, which is the thing weight
+  exists to signal.
 
 ## Controls
 
@@ -174,6 +242,18 @@ existing `onNavigate('orders')` deep-link keeps working.
   --ui-accent-ink:  oklch(46% 0.105 165);
   --ui-accent-wash: oklch(96.5% 0.032 165);
 
+  /* Dark chrome — rail + header only, applied by redefining the tokens
+     above scoped to those two elements. See Theme § Chrome is dark. */
+  --ui-rail-bg:          oklch(16% 0.012 165);
+  --ui-rail-bg-raised:   oklch(21% 0.016 165);
+  --ui-rail-ink:         oklch(94% 0.006 165);
+  --ui-rail-ink-soft:    oklch(74% 0.010 165);
+  --ui-rail-ink-faint:   oklch(55% 0.010 165);
+  --ui-rail-line:        oklch(28% 0.010 165);
+  --ui-rail-accent-wash: oklch(22% 0.020 165);
+  --ui-rail-accent-ink:  oklch(78% 0.110 165);
+
+  --font-weight-semibold: 700; --font-weight-bold: 800;
   --radius-md: 10px; --radius-lg: 12px; --radius-xl: 16px;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --dur-fast: 140ms;

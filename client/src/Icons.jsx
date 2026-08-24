@@ -10,9 +10,22 @@
  * catalogue rather than a box. Staff should be able to learn the rail once
  * and then hit it without reading.
  *
- * All are 24x24, currentColor, 1.6 stroke. Consistent weight matters more
- * than any individual glyph: mismatched stroke widths are the fastest way to
- * make a nav look assembled rather than designed.
+ * All are 24x24, currentColor, 2 stroke. Consistent weight matters more than
+ * any individual glyph: mismatched stroke widths are the fastest way to make
+ * a nav look assembled rather than designed. Was 1.6 — thin enough that
+ * against the rest of the surface it read as tentative rather than drawn on
+ * purpose; 2 is the same weight the reference chrome uses.
+ *
+ * EMOJI ARE NOT ICONS
+ * A handful of screens used to reach for 🤖 / 👥 / 🛒 / 👤 / 🔕 / 💬 / ❤️ /
+ * 📈 as a shortcut for "put something next to this label" — a robot for "AI
+ * sales", a shopping cart for "order". Emoji are the single fastest way a
+ * screen reads as generated rather than designed: they carry a platform's
+ * own illustration style, not this one's, and render differently release to
+ * release. Every one of those spots now draws from this file instead. See
+ * design.md's Icon-chip section — the ban is on colourful pictographic
+ * emoji specifically; a plain ✓ / ✗ / ★ rendered in the theme's ink colour
+ * is a conventional status glyph, not this problem, and stays allowed.
  */
 
 const base = {
@@ -21,7 +34,7 @@ const base = {
   viewBox: '0 0 24 24',
   fill: 'none',
   stroke: 'currentColor',
-  strokeWidth: 1.6,
+  strokeWidth: 2,
   strokeLinecap: 'round',
   strokeLinejoin: 'round',
   'aria-hidden': 'true',
@@ -157,6 +170,47 @@ export const IconInfo = (p) => (
     <circle cx="12" cy="12" r="9" />
     <path d="M12 11v5" />
     <path d="M12 7.75v.5" />
+  </svg>
+);
+
+/** Replaces the ❤️ emoji on the chronic register — see this file's header. */
+export const IconHeart = (p) => (
+  <svg {...base} {...p}>
+    <path d="M12 20s-7-4.35-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 5c-2.5 4.65-9.5 9-9.5 9z" />
+  </svg>
+);
+
+/** Replaces the 📈 emoji on the revenue & growth heading. */
+export const IconTrendUp = (p) => (
+  <svg {...base} {...p}>
+    <path d="M3 16l6-6 4 4 8-8" />
+    <path d="M15 6h6v6" />
+  </svg>
+);
+
+/** A single person — the pharmacist-handoff timeline events, distinct from
+ *  IconCustomers' two-person mark so "one pharmacist" reads differently from
+ *  "the whole patient base". */
+export const IconPerson = (p) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="8" r="3.6" />
+    <path d="M4.5 20a7.5 7.5 0 0 1 15 0" />
+  </svg>
+);
+
+/** Filled — a timeline marker, not a rating control, so it reads as a dot
+ *  with a point rather than an invitation to click five of them. */
+export const IconStar = (p) => (
+  <svg {...base} fill="currentColor" stroke="none" {...p}>
+    <path d="M12 3.5l2.6 5.6 6.1.7-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6-4.5-4.2 6.1-.7z" />
+  </svg>
+);
+
+/** "Customer notified" on the timeline — a reply going back out. */
+export const IconReply = (p) => (
+  <svg {...base} {...p}>
+    <path d="M9 8 4 12l5 4" />
+    <path d="M4 12h9a6 6 0 0 1 6 6v1" />
   </svg>
 );
 

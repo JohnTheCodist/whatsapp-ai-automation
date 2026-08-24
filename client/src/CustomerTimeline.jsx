@@ -14,6 +14,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { IconInbox, IconOrders, IconPerson, IconBellOff, IconStar, IconReply } from './Icons.jsx';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -25,25 +26,41 @@ const FILTERS = [
 
 // Icon + label per event type. Never rely on colour alone (section 10) —
 // each category also gets a distinct glyph, not just a tint.
+//
+// `icon` is a component, not an emoji — this map used to hold 💬 / 🛒 / 👤 /
+// 🔕 (design.md's Icon-chip section bans that as an icon source outright).
+// Every entry draws from Icons.jsx now, including the two that were already
+// plain Unicode (★, ↩) before the switch — a timeline where some rows are
+// hand-drawn icons and others are whatever glyph the OS font ships is its
+// own, quieter version of the same inconsistency.
 const EVENT_META = {
-  PATIENT_CREATED:        { icon: '★', label: 'Became a customer',              tone: 'slate' },
-  CONVERSATION_STARTED:   { icon: '💬', label: 'Started a conversation',         tone: 'slate' },
-  CONVERSATION_RESOLVED:  { icon: '💬', label: 'Conversation resolved',          tone: 'slate' },
-  MESSAGE_RECEIVED:       { icon: '💬', label: 'Customer asked',                 tone: 'blue' },
-  MESSAGE_SENT:           { icon: '↩', label: 'Customer notified',               tone: 'slate' },
-  ORDER_CREATED:          { icon: '🛒', label: 'Order sent to pharmacy',         tone: 'amber' },
-  ORDER_STOCK_HELD:       { icon: '🛒', label: 'Stock held',                     tone: 'amber' },
-  ORDER_SENT_TO_PHARMACY: { icon: '🛒', label: 'Sent to pharmacy',               tone: 'amber' },
-  ORDER_CONFIRMED:        { icon: '🛒', label: 'Order confirmed',                tone: 'teal' },
-  ORDER_REJECTED:         { icon: '🛒', label: 'Order rejected',                 tone: 'red' },
-  ORDER_READY:            { icon: '🛒', label: 'Ready for collection',           tone: 'teal' },
-  ORDER_COMPLETED:        { icon: '🛒', label: 'Order completed',                tone: 'slate' },
-  ORDER_CANCELLED:        { icon: '🛒', label: 'Order cancelled',                tone: 'slate' },
-  ORDER_HOLD_EXPIRED:     { icon: '🛒', label: 'Reservation expired, unconfirmed', tone: 'red' },
-  PHARMACIST_HANDOFF:     { icon: '👤', label: 'Passed to a pharmacist',         tone: 'amber' },
-  PHARMACIST_RESPONDED:   { icon: '👤', label: 'Pharmacist responded',           tone: 'teal' },
-  COMMUNICATION_OPTED_OUT:{ icon: '🔕', label: 'Opted out of WhatsApp messages', tone: 'red' },
+  PATIENT_CREATED:        { icon: IconStar,  label: 'Became a customer',              tone: 'slate' },
+  CONVERSATION_STARTED:   { icon: IconInbox, label: 'Started a conversation',         tone: 'slate' },
+  CONVERSATION_RESOLVED:  { icon: IconInbox, label: 'Conversation resolved',          tone: 'slate' },
+  MESSAGE_RECEIVED:       { icon: IconInbox, label: 'Customer asked',                 tone: 'blue' },
+  MESSAGE_SENT:           { icon: IconReply, label: 'Customer notified',              tone: 'slate' },
+  ORDER_CREATED:          { icon: IconOrders, label: 'Order sent to pharmacy',        tone: 'amber' },
+  ORDER_STOCK_HELD:       { icon: IconOrders, label: 'Stock held',                    tone: 'amber' },
+  ORDER_SENT_TO_PHARMACY: { icon: IconOrders, label: 'Sent to pharmacy',              tone: 'amber' },
+  ORDER_CONFIRMED:        { icon: IconOrders, label: 'Order confirmed',               tone: 'teal' },
+  ORDER_REJECTED:         { icon: IconOrders, label: 'Order rejected',                tone: 'red' },
+  ORDER_READY:            { icon: IconOrders, label: 'Ready for collection',          tone: 'teal' },
+  ORDER_COMPLETED:        { icon: IconOrders, label: 'Order completed',               tone: 'slate' },
+  ORDER_CANCELLED:        { icon: IconOrders, label: 'Order cancelled',               tone: 'slate' },
+  ORDER_HOLD_EXPIRED:     { icon: IconOrders, label: 'Reservation expired, unconfirmed', tone: 'red' },
+  PHARMACIST_HANDOFF:     { icon: IconPerson, label: 'Passed to a pharmacist',        tone: 'amber' },
+  PHARMACIST_RESPONDED:   { icon: IconPerson, label: 'Pharmacist responded',          tone: 'teal' },
+  COMMUNICATION_OPTED_OUT:{ icon: IconBellOff, label: 'Opted out of WhatsApp messages', tone: 'red' },
 };
+
+/** The fallback for an event type nothing has written a renderer for yet. */
+function DotIcon(p) {
+  return (
+    <svg viewBox="0 0 24 24" width={p.width} height={p.height} aria-hidden="true">
+      <circle cx="12" cy="12" r="3" fill="currentColor" />
+    </svg>
+  );
+}
 
 const TONE_DOT = {
   slate: 'bg-slate-300', blue: 'bg-blue-400', amber: 'bg-amber-400',
@@ -112,7 +129,7 @@ function EventLine({ event, onOpenConversation }) {
         + 'Add it to EVENT_META in CustomerTimeline.jsx to give it an icon and wording.'
       );
     }
-    meta = { icon: '•', label: humanizeEventType(event.eventType), tone: 'slate' };
+    meta = { icon: DotIcon, label: humanizeEventType(event.eventType), tone: 'slate' };
   }
   const m = event.metadata || {};
 
@@ -134,9 +151,12 @@ function EventLine({ event, onOpenConversation }) {
       <div className="flex items-baseline justify-between gap-3">
         <p className="text-xs text-slate-400">{timeLabel(event.occurredAt)}</p>
       </div>
-      <p className="mt-0.5 text-sm text-slate-800">
-        <span aria-hidden="true">{meta.icon}</span> {meta.label}
-        {detail && <> — {detail}</>}
+      <p className="mt-0.5 flex items-start gap-1.5 text-sm text-slate-800">
+        <meta.icon width={13} height={13} className="mt-0.5 shrink-0 text-slate-400" />
+        <span>
+          {meta.label}
+          {detail && <> — {detail}</>}
+        </span>
       </p>
       {canOpen && (
         <button

@@ -13,15 +13,22 @@
  */
 
 import { useEffect, useState } from 'react';
+import { IconCustomers, IconAi, IconHeart, IconTrendUp } from './Icons.jsx';
 
 const naira = (n) => `₦${Number(n || 0).toLocaleString('en-NG')}`;
 
-/** A headline figure, with the sentence that says what it actually means. */
-function Big({ icon, label, value, hint }) {
+/**
+ * A headline figure, with the sentence that says what it actually means.
+ *
+ * Icon takes the component, not an emoji — this card used to render 🤖 for
+ * "AI-assisted sales", which is exactly the "reads as generated, not
+ * designed" tell design.md's Icon-chip section now bans outright.
+ */
+function Big({ Icon, label, value, hint }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5">
       <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-        <span aria-hidden="true">{icon}</span>{label}
+        <span className="ui-icon-chip"><Icon width={13} height={13} /></span>{label}
       </p>
       <p className="mt-2 text-3xl font-semibold tabular-nums text-slate-900">{value}</p>
       <p className="mt-1 text-xs text-slate-500">{hint}</p>
@@ -53,7 +60,9 @@ function Chronic({ conditions }) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-sm font-medium text-slate-700">❤️ Chronic register</h3>
+        <h3 className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          <span className="ui-icon-chip"><IconHeart width={13} height={13} /></span>Chronic register
+        </h3>
         <span className="text-xs text-slate-500">confirmed by purchase history</span>
       </div>
 
@@ -174,7 +183,9 @@ function Growth({ trend, days }) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-sm font-medium text-slate-700">📈 Revenue &amp; customer growth</h3>
+        <h3 className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          <span className="ui-icon-chip"><IconTrendUp width={13} height={13} /></span>Revenue &amp; customer growth
+        </h3>
         <span className="text-xs text-slate-500">last {days} days</span>
       </div>
 
@@ -448,19 +459,19 @@ export default function Overview({ onNavigate }) {
           since "Chronic Patients Tracked" is not self-evident. */}
       <section className="grid gap-3 sm:grid-cols-3">
         <Big
-          icon="👥"
+          Icon={IconCustomers}
           label="Total patients"
           value={ins ? ins.headline.totalPatients.toLocaleString('en-NG') : '—'}
           hint="How large your customer base is"
         />
         <Big
-          icon="🤖"
+          Icon={IconAi}
           label="AI-assisted sales"
           value={ins ? naira(ins.headline.aiAssistedSales) : '—'}
           hint="Revenue generated through AI conversations"
         />
         <Big
-          icon="❤️"
+          Icon={IconHeart}
           label="Chronic patients tracked"
           value={ins ? ins.headline.chronicTracked.toLocaleString('en-NG') : '—'}
           hint="Patients RxNaija is following from purchase history"

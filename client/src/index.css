@@ -60,6 +60,18 @@
      slow or blocked font request never leaves the dashboard unreadable,
      only momentarily on its second-choice face. */
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  /* Weight, retargeted the same way colour and radius already are. Every
+     `font-semibold` in the app — screen titles, card figures, section
+     headings — was resolving to Tailwind's stock 600, which reads as
+     legible rather than authoritative next to a considered surface. This is
+     the one-line version of going through every heading by hand: every
+     existing `font-semibold`/`font-bold` gets heavier at once, nothing in
+     any .jsx file has to change. `font-medium` (small labels, rail items) is
+     left at its default — bumping it too would blur the distinction between
+     a label and a heading, which is the thing weight is supposed to signal. */
+  --font-weight-semibold: 700;
+  --font-weight-bold: 800;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -96,6 +108,22 @@
   --ui-accent:     oklch(70% 0.135 165);
   --ui-accent-ink: oklch(46% 0.105 165);
   --ui-accent-wash:oklch(96.5% 0.032 165);
+
+  /* The dark-chrome palette — rail + header only, applied by redefining the
+     tokens above scoped to those two elements, further down this file. Same
+     165° anchor as --ui-accent throughout, so the chrome reads as this
+     product's dark, not a generic near-black. Values follow the dark-mode
+     recipe: paper 12–18% lightness (never #000), ink 92–96% (never #fff),
+     elevation gets LIGHTER not darker, accent gains lightness and loses
+     chroma to stay legible on a dark fill. */
+  --ui-rail-bg:          oklch(16% 0.012 165);
+  --ui-rail-bg-raised:   oklch(21% 0.016 165);
+  --ui-rail-ink:         oklch(94% 0.006 165);
+  --ui-rail-ink-soft:    oklch(74% 0.010 165);
+  --ui-rail-ink-faint:   oklch(55% 0.010 165);
+  --ui-rail-line:        oklch(28% 0.010 165);
+  --ui-rail-accent-wash: oklch(22% 0.020 165);
+  --ui-rail-accent-ink:  oklch(78% 0.110 165);
 }
 
 body {
@@ -191,25 +219,50 @@ main [class*="rounded"][class*="border"] [class*="rounded"][class*="border"] {
   box-shadow: none;
 }
 
-/* ── the rail ──
-   A hairline instead of a full-strength border, and a paper tone a shade off
-   the content area. The reference separates its sidebar by TONE rather than
-   by a hard line, which is what stops the shell feeling like a table. */
-/* Matched on the aria-label, not a utility class: the label is what the rail
-   IS, so it survives restyling, while `w-[214px]` is an implementation detail
-   that could change on any layout tweak and silently drop this styling. */
-nav[aria-label="Sections"] {
-  background: linear-gradient(
-    to bottom,
-    oklch(99.2% 0.002 106),
-    oklch(97.8% 0.004 130)
-  ) !important;
-  border-right-color: var(--ui-line-soft) !important;
+/* ── chrome: the rail and the header are dark; the canvas is not ──
+   A light rail sitting at the same weight as the content it frames reads as
+   "nothing decided this is chrome" — the gap that mattered most against a
+   real product. The frame goes dark; everything a pharmacist actually reads
+   and edits stays on the light paper. Same anchor hue as the accent (165°)
+   throughout, so it reads as this product's chrome, not a bolted-on
+   dark-mode toggle sitting next to a light app.
+
+   REDEFINED, NOT OVERRIDDEN. nav and header already read --ui-surface /
+   --ui-ink / --ui-line etc through Tailwind arbitrary-value classes
+   (bg-[var(--ui-surface)], text-[var(--ui-ink-soft)], ...) — the same
+   mechanism the whole palette retarget at the top of this file relies on.
+   Redefining those custom properties on the two chrome elements means every
+   descendant utility already in App.jsx and AccountMenu.jsx repaints for
+   free: no !important, no component touched, because nothing is being
+   fought — the utilities are just handed a different value for the token
+   they already resolve through.
+
+   Matched on the aria-label, not a utility class: the label is what the
+   rail IS, so it survives restyling, while `w-[214px]` is an implementation
+   detail that could change on any layout tweak and silently drop this. */
+nav[aria-label="Sections"],
+header {
+  --ui-surface:      var(--ui-rail-bg);
+  /* Lighter, not darker — a raised surface on dark chrome gets closer to
+     white, per the dark-mode elevation rule. Used for hover/active rail rows
+     and, further down, the search field's own background. */
+  --ui-sunk:         var(--ui-rail-bg-raised);
+  --ui-ink:          var(--ui-rail-ink);
+  --ui-ink-soft:     var(--ui-rail-ink-soft);
+  --ui-ink-faint:    var(--ui-rail-ink-faint);
+  --ui-line:         var(--ui-rail-line);
+  --ui-line-soft:    var(--ui-rail-line);
+  /* The active nav item's chip + label. A lift in tone plus a saturated,
+     lightened accent for the label — not a flat colour fill, which on dark
+     chrome would read as a solid block rather than "this one is selected". */
+  --ui-accent-wash:  var(--ui-rail-accent-wash);
+  --ui-accent-ink:   var(--ui-rail-accent-ink);
 }
 
 /* Section labels in the rail — the small, wide-tracked greys the reference
    uses to group navigation. Targets the existing uppercase labels rather
-   than requiring a new class on them. */
+   than requiring a new class on them. Colour comes from the redefinition
+   above; only the type treatment is stated here. */
 nav[aria-label="Sections"] .uppercase,
 .ui-eyebrow {
   letter-spacing: 0.12em;
@@ -218,13 +271,20 @@ nav[aria-label="Sections"] .uppercase,
   font-weight: 500;
 }
 
-/* ── top bar ──
-   Sits on the page rather than boxing it: no shadow until the content
-   beneath actually scrolls under it. */
-header {
-  backdrop-filter: saturate(1.15) blur(6px);
-  background: oklch(100% 0 0 / 0.86) !important;
-  border-bottom-color: var(--ui-line-soft) !important;
+/* The one control that lives inside dark chrome: the header's patient
+   search field. The global input rule two sections down paints every input
+   --ui-surface, which — now that --ui-surface means "dark chrome" inside
+   this element — would make the field the exact colour of the bar it sits
+   on. It needs the RAISED tone instead, so it reads as a field on a dark
+   bar rather than a hole cut into it. */
+header input[type="text"],
+header input:not([type]) {
+  background: var(--ui-rail-bg-raised);
+  border-color: var(--ui-rail-line) !important;
+}
+header input:focus {
+  background: var(--ui-rail-bg-raised);
+  border-color: var(--ui-rail-accent-ink) !important;
 }
 
 /* ── tables ──
@@ -282,6 +342,15 @@ input:focus, select:focus, textarea:focus {
 .ui-chip::before {
   content: ""; width: 6px; height: 6px; border-radius: 999px;
   background: var(--ui-accent);
+}
+/* A card or section heading anchoring on an icon uses this, never a bare
+   glyph floating next to the text and never an emoji standing in for one —
+   see design.md's Icon-chip section for why the second ban is explicit. */
+.ui-icon-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
+  background: var(--ui-accent-wash);
+  color: var(--ui-accent-ink);
 }
 /* The reference's primary action is near-black, not brand-coloured — it
    keeps the emerald meaning "live/healthy" instead of also meaning "button". */
