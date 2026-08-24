@@ -110,9 +110,20 @@ router.get('/', requireAuth, async (req, res, next) => {
         (select count(*)::int from orders
            where pharmacy_id = ${pid} and status = 'rejected'
              and created_at > now() - interval '7 days') as rejected_7d,
-        (select count(*)::int from orders
-           where pharmacy_id = ${pid} and status = 'expired'
-             and created_at > now() - interval '7 days') as expired_7d,
+        -- NOT `status = 'expired'` — orders has never had that value in its
+        -- check constraint (see 0001_init.sql), so that filter always
+        -- returned zero, silently, for every pharmacy that ever shipped this
+        -- query. A hold timing out writes status='cancelled' with an
+        -- order_status_history row stamped actor_type='system' instead (see
+        -- expireStaleHolds in orderService.js) — that pairing is what
+        -- orderEventType() elsewhere already uses to tell "the pharmacy
+        -- expired this hold" apart from an ordinary cancellation, so this
+        -- reads the same signal rather than inventing a second one.
+        (select count(distinct o.id)::int from orders o
+           join order_status_history h on h.order_id = o.id
+           where o.pharmacy_id = ${pid}
+             and h.to_status = 'cancelled' and h.actor_type = 'system'
+             and o.created_at > now() - interval '7 days') as expired_7d,
 
         -- ---- catalogue health ----
         (select count(*)::int from products

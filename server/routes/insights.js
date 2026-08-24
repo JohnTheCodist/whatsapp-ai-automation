@@ -35,6 +35,21 @@ const TREND_DAYS = 30;
 
 const naira = (kobo) => Math.round(Number(kobo || 0)) / 100;
 
+/**
+ * Week-over-week change, or null when it cannot mean anything.
+ *
+ * null rather than a number for two cases a plain division gets wrong:
+ * previous = 0 (any current value is technically "infinite" growth, which is
+ * not a percentage a reader can act on), and current = previous = 0 (nothing
+ * happened either week, which is not "0% change" — that phrase implies
+ * something happened and held steady). The client shows no arrow rather than
+ * a manufactured one.
+ */
+function pctChange(current, previous) {
+  if (previous === 0) return null;
+  return Math.round(((current - previous) / previous) * 1000) / 10;
+}
+
 router.get('/', requireAuth, async (req, res, next) => {
   try {
     assertPharmacyId(req.pharmacyId);
@@ -48,6 +63,7 @@ router.get('/', requireAuth, async (req, res, next) => {
       topProducts,
       aiPerf,
       conditions,
+      weekly,
     ] = await Promise.all([
 
       // ---- the three headline figures --------------------------------------
@@ -208,6 +224,84 @@ router.get('/', requireAuth, async (req, res, next) => {
         where pharmacy_id = ${P}
         group by condition_code
       `,
+
+      // ---- this week, against the week before it ---------------------------
+      //
+      // One row of scalar subqueries, same shape as overview.js, for the same
+      // reason: these come from four different tables (conversations,
+      // product_requests, orders, handoffs) with no natural join key between
+      // them at the grain this screen needs, so a join would fan out rows
+      // instead of counting them. "Current" is the last 7 days; "previous" is
+      // the 7 days before that, for the week-over-week arrows the summary
+      // cards show — a single number never says whether it is getting better
+      // or worse on its own.
+      db`
+        select
+          (select count(*)::int from conversations
+             where pharmacy_id = ${P} and created_at > now() - interval '7 days') as conversations_current,
+          (select count(*)::int from conversations
+             where pharmacy_id = ${P} and created_at <= now() - interval '7 days'
+               and created_at > now() - interval '14 days') as conversations_previous,
+
+          -- Every row here is a customer who asked for something this
+          -- pharmacy's catalogue does not have — see 0011_product_requests.sql.
+          -- "Unmet" excludes 'accepted': that status means the pharmacist's
+          -- alternative sold, which is a conversion, not lost demand.
+          (select count(*)::int from product_requests
+             where pharmacy_id = ${P} and created_at > now() - interval '7 days') as requests_current,
+          (select count(*)::int from product_requests
+             where pharmacy_id = ${P} and created_at <= now() - interval '7 days'
+               and created_at > now() - interval '14 days') as requests_previous,
+          (select count(*)::int from product_requests
+             where pharmacy_id = ${P} and created_at > now() - interval '7 days'
+               and status <> 'accepted') as requests_unmet_current,
+
+          (select count(*)::int from orders
+             where pharmacy_id = ${P} and created_at > now() - interval '7 days') as orders_current,
+          (select count(*)::int from orders
+             where pharmacy_id = ${P} and created_at <= now() - interval '7 days'
+               and created_at > now() - interval '14 days') as orders_previous,
+          (select count(*)::int from orders
+             where pharmacy_id = ${P} and status = 'completed'
+               and created_at > now() - interval '7 days') as completed_current,
+
+          (select coalesce(sum(total_kobo), 0)::bigint from orders
+             where pharmacy_id = ${P} and status in ('confirmed', 'ready', 'completed')
+               and created_at > now() - interval '7 days') as value_current_kobo,
+          (select coalesce(sum(total_kobo), 0)::bigint from orders
+             where pharmacy_id = ${P} and status in ('confirmed', 'ready', 'completed')
+               and created_at <= now() - interval '7 days'
+               and created_at > now() - interval '14 days') as value_previous_kobo,
+
+          -- The pharmacist explicitly said no.
+          (select count(*)::int from orders
+             where pharmacy_id = ${P} and status = 'rejected'
+               and created_at > now() - interval '7 days') as rejected_current,
+          (select coalesce(sum(total_kobo), 0)::bigint from orders
+             where pharmacy_id = ${P} and status = 'rejected'
+               and created_at > now() - interval '7 days') as rejected_value_kobo,
+
+          -- Stock held, nobody confirmed before the hold ran out. NOT
+          -- `status = 'expired'` — see overview.js's comment on the same
+          -- query for why that value has never once matched a real row.
+          -- actor_type = 'system' is what expireStaleHolds stamps on the
+          -- history row, the same signal orderEventType() already reads to
+          -- call this ORDER_HOLD_EXPIRED rather than an ordinary cancellation.
+          (select count(distinct o.id)::int from orders o
+             join order_status_history h on h.order_id = o.id
+             where o.pharmacy_id = ${P} and h.to_status = 'cancelled' and h.actor_type = 'system'
+               and o.created_at > now() - interval '7 days') as hold_expired_current,
+          (select coalesce(sum(o.total_kobo), 0)::bigint from orders o
+             join order_status_history h on h.order_id = o.id
+             where o.pharmacy_id = ${P} and h.to_status = 'cancelled' and h.actor_type = 'system'
+               and o.created_at > now() - interval '7 days') as hold_expired_value_kobo,
+
+          (select count(*)::int from handoffs
+             where pharmacy_id = ${P} and requested_at > now() - interval '7 days') as interventions_current,
+          (select count(*)::int from handoffs
+             where pharmacy_id = ${P} and requested_at <= now() - interval '7 days'
+               and requested_at > now() - interval '14 days') as interventions_previous
+      `,
     ]);
 
     const h = headline[0];
@@ -227,6 +321,28 @@ router.get('/', requireAuth, async (req, res, next) => {
     const conversionBase = Math.max(perf.product_requests, perf.converted_conversations);
     const conversionRate = conversionBase > 0
       ? Math.min(100, Math.round((perf.converted_conversations / conversionBase) * 1000) / 10)
+      : null;
+
+    const wk = weekly[0];
+
+    // How much of this week's conversation load never reached a person —
+    // the same "what worked" figure a pharmacist actually asks for, not just
+    // a raw intervention count. null rather than 0 when there were no
+    // conversations at all, so an idle pharmacy reads as "no data" and not
+    // as "the assistant handled 0%", which would look like a failure.
+    const aiHandledPct = wk.conversations_current > 0
+      ? Math.round(((wk.conversations_current - wk.interventions_current) / wk.conversations_current) * 1000) / 10
+      : null;
+
+    // The headline funnel's own conversion figure — ORDERS placed against
+    // CONVERSATIONS this week, deliberately a different ratio from
+    // `conversionRate` above (which is orders against REQUESTS, an
+    // all-time figure used elsewhere on this screen). Two different
+    // questions: that one asks "of the people who asked for something
+    // specific, how many bought", this one asks "of everyone who wrote in
+    // this week, how many became an order".
+    const weekConversionRate = wk.conversations_current > 0
+      ? Math.round((wk.orders_current / wk.conversations_current) * 1000) / 10
       : null;
 
     res.json({
@@ -281,6 +397,45 @@ router.get('/', requireAuth, async (req, res, next) => {
         interventions: perf.interventions,
       },
       windowDays: TREND_DAYS,
+
+      // ---- this week, for the performance summary + funnel -----------------
+      week: {
+        conversations: wk.conversations_current,
+        conversationsChangePct: pctChange(wk.conversations_current, wk.conversations_previous),
+        productRequests: wk.requests_current,
+        productRequestsChangePct: pctChange(wk.requests_current, wk.requests_previous),
+        orders: wk.orders_current,
+        ordersChangePct: pctChange(wk.orders_current, wk.orders_previous),
+        completed: wk.completed_current,
+        confirmedValue: naira(wk.value_current_kobo),
+        confirmedValueChangePct: pctChange(Number(wk.value_current_kobo), Number(wk.value_previous_kobo)),
+        interventions: wk.interventions_current,
+        interventionsChangePct: pctChange(wk.interventions_current, wk.interventions_previous),
+        aiHandledPct,
+        conversionRate: weekConversionRate,
+      },
+
+      // ---- orders that were on their way to a sale and did not get there ---
+      //
+      // Two real, monetised reasons — the pharmacist said no, or nobody
+      // confirmed before the hold ran out. Deliberately NOT a third
+      // "abandoned" bucket: nothing in this system tracks a customer walking
+      // away mid-conversation before ordering, so a figure for it would be
+      // invented, not measured.
+      lostOrders: {
+        rejected: { count: wk.rejected_current, value: naira(wk.rejected_value_kobo) },
+        holdExpired: { count: wk.hold_expired_current, value: naira(wk.hold_expired_value_kobo) },
+      },
+
+      // Demand the catalogue could not meet at all — a different kind of
+      // loss from lostOrders above (no order was ever possible), and no
+      // price attaches to it: the product was never in the catalogue, so
+      // there is no verified figure to put next to it. See product_requests'
+      // own migration comment — this is also the restocking signal.
+      unmetDemand: {
+        requested7d: wk.requests_current,
+        unresolved7d: wk.requests_unmet_current,
+      },
     });
   } catch (err) {
     next(err);

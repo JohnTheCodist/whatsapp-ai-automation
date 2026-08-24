@@ -262,6 +262,24 @@ export const IconSignOut = (p) => (
 );
 
 /** The connected-socket indicator. A plug, because that is what it means. */
+/** "Needs attention" section marker — a triangle, not a red dot: this is
+ *  queued opportunity a pharmacist should look at, not an emergency. */
+export const IconAlertTriangle = (p) => (
+  <svg {...base} {...p}>
+    <path d="M12 4 2.5 20h19L12 4z" />
+    <path d="M12 10.5v4" />
+    <path d="M12 17.5v.1" />
+  </svg>
+);
+
+/** "What's working" section marker. */
+export const IconCheckCircle = (p) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="m8.5 12.5 2.5 2.5 5-5.5" />
+  </svg>
+);
+
 export const IconLink = (p) => (
   <svg {...base} {...p}>
     <path d="M10 13a5 5 0 0 0 7.5.5l3-3A5 5 0 0 0 13.5 3.5L12 5" />

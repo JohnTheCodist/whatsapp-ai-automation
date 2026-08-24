@@ -124,6 +124,20 @@
   --ui-rail-line:        oklch(28% 0.010 165);
   --ui-rail-accent-wash: oklch(22% 0.020 165);
   --ui-rail-accent-ink:  oklch(78% 0.110 165);
+
+  /* Data bars — funnels, breakdowns, anything whose LENGTH is the number.
+     Ink, not the accent: design.md reserves emerald for identity and health,
+     and a bar measuring lost revenue is neither. It was emerald anyway, which
+     read as generic-dashboard-green, and amber on the loss breakdown was the
+     same mistake twice — amber means "queued work" in this system, not
+     "this quantity is larger than that one".
+
+     Near-square rather than a pill. A full-radius bar is the friendly default
+     every generated dashboard ships; 2px reads as a printed financial chart,
+     which is the register this screen is actually in. */
+  --ui-bar:        var(--ui-ink);
+  --ui-bar-track:  oklch(95.5% 0.004 150);
+  --ui-radius-bar: 2px;
 }
 
 body {

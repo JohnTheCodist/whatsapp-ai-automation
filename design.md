@@ -81,6 +81,27 @@ The brand mark (the solid emerald square at the top of the rail) needed no
 change — a saturated fill sitting directly on dark chrome is exactly the
 "mark pops against the frame" move a real product makes.
 
+### Data bars are ink, never the accent
+
+Anything whose LENGTH is the number — funnel steps, breakdown bars, the
+reply-cap meter — is drawn in `--ui-bar` (which resolves to `--ui-ink`) on a
+`--ui-bar-track` ground. Not emerald, and not amber.
+
+Both were in use before this rule existed and both were wrong for the same
+reason: the funnel was `teal-500`, which spends the identity/health colour on
+decoration, and the loss breakdown was `amber-400`, which claims "queued
+work" for bars that are only encoding magnitude. A reader who has learned
+that amber means something cannot unlearn it for one chart. Semantic colour
+is reserved above; a bar is not a status.
+
+`--ui-radius-bar` is **2px**, not a pill. A full-radius bar is the friendly
+default every generated dashboard ships; a near-square end reads as a printed
+financial chart, which is the register these screens are actually in.
+
+Colour returns only where it means something: the amber/teal insight cards
+keep their tint, and the reply-cap meter turns amber past 80% because that IS
+a status.
+
 ### Icon-chip, and a ban on emoji as icons
 
 A card or section heading that anchors on an icon uses a small tinted
@@ -224,6 +245,22 @@ existing `onNavigate('orders')` deep-link keeps working.
 - Density — a queue may be denser than a settings form.
 - Whether a segmented control is present.
 
+## Tab strips inside a screen
+
+**One tab idiom in this app.** When a screen holds more sections than one
+scroll should carry, it splits them with the strip Settings.jsx established
+and AiPerformance.jsx reuses: `role="tablist"`, roving `tabIndex` (only the
+selected tab is a tab stop), arrow keys that wrap, Home/End, and an active
+tab raised onto a bottom rule — `-mb-px`, border on three sides, surface
+fill. A second tab pattern in the same product is how a UI starts feeling
+assembled rather than designed.
+
+Split tabs by the **question each answers**, never by data source. AI
+Performance is Performance / Opportunity / Operations — "how did the week
+go", "where is money leaking", "is the machine running" — which is why
+catalogue readiness sits under Opportunity: an unpriced product is a
+blocked sale, not plumbing.
+
 ## Exports
 
 ### tokens.css
@@ -252,6 +289,11 @@ existing `onNavigate('orders')` deep-link keeps working.
   --ui-rail-line:        oklch(28% 0.010 165);
   --ui-rail-accent-wash: oklch(22% 0.020 165);
   --ui-rail-accent-ink:  oklch(78% 0.110 165);
+
+  /* Data bars — see Theme § Data bars are ink. */
+  --ui-bar:        var(--ui-ink);
+  --ui-bar-track:  oklch(95.5% 0.004 150);
+  --ui-radius-bar: 2px;
 
   --font-weight-semibold: 700; --font-weight-bold: 800;
   --radius-md: 10px; --radius-lg: 12px; --radius-xl: 16px;
