@@ -29,6 +29,7 @@ import CustomerQrCode from './CustomerQrCode.jsx';
 import TradeQrCode from './TradeQrCode.jsx';
 import PharmacyHoursSettings from './PharmacyHoursSettings.jsx';
 import ConnectWhatsApp from './ConnectWhatsApp.jsx';
+import CatalogueSync from './CatalogueSync.jsx';
 import { IconSearch } from './Icons.jsx';
 
 /**
@@ -99,6 +100,18 @@ const GROUPS = [
               </section>
             ),
           },
+        ],
+      },
+      {
+        id: 'stock-sync',
+        label: 'Stock sync',
+        title: 'Stock sync',
+        // Sits beside WhatsApp rather than under the catalogue on purpose:
+        // both are an outside system this depends on staying connected, and
+        // both fail the same silent way — still running, no longer working.
+        blurb: 'Keep the catalogue current from the computer that runs your stock software.',
+        tabs: [
+          { id: 'devices', label: 'Connected computers', render: () => <CatalogueSync /> },
         ],
       },
     ],
