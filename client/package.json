@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "lint": "eslint .",
+    "build": "eslint . && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -17,8 +18,13 @@
     "whatsapp-ai-automation": "file:.."
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@tailwindcss/vite": "^4.3.2",
     "@vitejs/plugin-react": "^4.3.1",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^17.11.0",
     "tailwindcss": "^4.3.2",
     "vite": "^5.4.0"
   }
