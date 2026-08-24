@@ -40,9 +40,25 @@ say "${BEFORE} → ${AFTER}"
 # VITE_* are read at BUILD time, so the env file has to be sourced here and
 # not merely present for the service. Without it the dashboard builds with
 # sign-in silently disabled and no error until someone tries to log in.
+#
+# Recorded BEFORE the build so the check after it can prove vite actually ran.
+# See the verification block below for why that is not paranoia.
+BUILD_STARTED="$(date +%s)"
+
 say "Installing and building"
+# `set -e` INSIDE the subshell, not just on the outer script.
+#
+# The outer set -euo pipefail does not reach in here: `bash -c` is a new shell
+# with its own options, and only the LAST command's exit status escapes back
+# out. So a failing `npm --prefix client install` in the middle used to be
+# swallowed whole — the subshell carried on to the next line and the deploy
+# reported success. The explicit `cd` is the same defence: this used to rely on
+# sudo happening to preserve the outer cd, which is a configuration detail of
+# the box rather than something this script states.
 sudo -u "$APP_USER" --preserve-env bash -c '
-  set -a; . '"$APP_DIR"'/.env.production; set +a
+  set -eo pipefail
+  cd '"$APP_DIR"'
+  set -a; . ./.env.production; set +a
   npm install --omit=dev --no-audit --no-fund
   # --include=dev is REQUIRED here even though this is production.
   # Sourcing .env.production above sets NODE_ENV=production, which makes npm
@@ -56,13 +72,38 @@ sudo -u "$APP_USER" --preserve-env bash -c '
   npm run build
 '
 
+# PROVE THE BUILD RAN. This is the check whose absence shipped a stale
+# dashboard once already: git advanced to the new commit, migrations ran, the
+# service restarted, /api/health returned ok — and client/dist was still the
+# PREVIOUS build, because the build step had quietly done nothing. Every
+# signal the deploy looked at was green, because a stale bundle serves exactly
+# as healthily as a fresh one. Only the browser knew.
+#
+# vite rewrites dist/index.html on every successful build, so an mtime older
+# than this run means it did not run, whatever the exit codes said.
+DIST_INDEX="$APP_DIR/client/dist/index.html"
+if [ ! -f "$DIST_INDEX" ]; then
+  printf '\n\033[1;31m==> client/dist/index.html is missing — the build did not produce a dashboard.\033[0m\n'
+  exit 1
+fi
+if [ "$(stat -c %Y "$DIST_INDEX")" -lt "$BUILD_STARTED" ]; then
+  printf '\n\033[1;31m==> client/dist was NOT rebuilt (index.html predates this run).\033[0m\n'
+  printf '    The service was left untouched rather than restarted onto a stale bundle.\n'
+  printf '    Run the build by hand to see the real error:\n\n'
+  printf "      sudo -u %s bash -c 'cd %s && set -a; . ./.env.production; set +a; npm run build'\n\n" \
+    "$APP_USER" "$APP_DIR"
+  exit 1
+fi
+
 # Migrations run BEFORE the restart, so the new code never starts against a
 # schema that predates it. These are additive (add column / add table), which
 # is what makes this order safe: the running old version tolerates the new
 # columns for the few seconds before it is replaced.
 say "Migrating"
 sudo -u "$APP_USER" --preserve-env bash -c '
-  set -a; . '"$APP_DIR"'/.env.production; set +a
+  set -eo pipefail
+  cd '"$APP_DIR"'
+  set -a; . ./.env.production; set +a
   npm run migrate
 '
 
