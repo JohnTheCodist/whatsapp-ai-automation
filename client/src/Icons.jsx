@@ -142,6 +142,17 @@ export const IconSearch = (p) => (
   </svg>
 );
 
+/**
+ * Reserved for the header's NotificationBell — the one and only bell in the
+ * app. It used to also stand for the header's ALERT SOUND toggle a few
+ * pixels to its left, which put two bell-shaped icons directly beside each
+ * other meaning two different things: one opens a list, the other mutes
+ * audio. Reported as looking like a mistake, correctly — a bell means
+ * "notifications" everywhere else in this app, so a second one right next
+ * to it read as a duplicate rather than a different control. The sound
+ * toggle now draws from IconVolumeOn/Off below instead, which is also the
+ * more honest glyph for what it does: this is a speaker, not an inbox.
+ */
 export const IconBellOn = (p) => (
   <svg {...base} {...p}>
     <path d="M18 8a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7" />
@@ -149,12 +160,32 @@ export const IconBellOn = (p) => (
   </svg>
 );
 
+/** Still used for a genuine bell-with-slash meaning — the customer timeline's
+ *  "opted out of WhatsApp messages" event. Not part of the header pair. */
 export const IconBellOff = (p) => (
   <svg {...base} {...p}>
     <path d="M18 8a6 6 0 0 0-9.3-5" />
     <path d="M6.3 6.3A6 6 0 0 0 6 8c0 6-2 7-2 7h13" />
     <path d="M13.7 20a2 2 0 0 1-3.4 0" />
     <path d="m3 3 18 18" />
+  </svg>
+);
+
+/** The header's alert-sound toggle, ON state — a speaker with sound reaching
+ *  out, not a bell. See IconBellOn's note for why this replaced a bell here. */
+export const IconVolumeOn = (p) => (
+  <svg {...base} {...p}>
+    <path d="M4 9.5v5h3.5L13 19V5L7.5 9.5z" />
+    <path d="M16.5 8.5a5 5 0 0 1 0 7" />
+    <path d="M19 6a8.5 8.5 0 0 1 0 12" />
+  </svg>
+);
+
+/** The header's alert-sound toggle, OFF/muted state. */
+export const IconVolumeOff = (p) => (
+  <svg {...base} {...p}>
+    <path d="M4 9.5v5h3.5L13 19V5L7.5 9.5z" />
+    <path d="M16.5 9.5 21 14M21 9.5l-4.5 4.5" />
   </svg>
 );
 

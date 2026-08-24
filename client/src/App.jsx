@@ -36,7 +36,7 @@ import NotificationBell from './NotificationBell.jsx';
 import { playOrderChime, playConsultationAlarm, unlockChime, isUnlocked } from './orderChime.js';
 import {
   IconOverview, IconConsultations, IconInbox, IconOrders, IconRequests,
-  IconCustomers, IconSetup, IconSearch, IconBellOn, IconBellOff, IconLink, IconAi,
+  IconCustomers, IconSetup, IconSearch, IconVolumeOn, IconVolumeOff, IconLink, IconAi,
   IconInventory, IconUpload, IconDeals,
 } from './Icons.jsx';
 
@@ -434,7 +434,7 @@ export default function App({ onSignOut, pharmacy = null, email = '' }) {
                   ? 'bg-teal-50 text-teal-700'
                   : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'}`}
             >
-              {soundOn && isUnlocked() ? <IconBellOn width={17} height={17} /> : <IconBellOff width={17} height={17} />}
+              {soundOn && isUnlocked() ? <IconVolumeOn width={17} height={17} /> : <IconVolumeOff width={17} height={17} />}
             </button>
 
             {/* The "needs you" bar and the "WhatsApp is not connected" banner
