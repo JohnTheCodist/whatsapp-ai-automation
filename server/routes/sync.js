@@ -225,13 +225,32 @@ router.post('/catalogue', requireDevice, handleUpload, async (req, res, next) =>
       unattended: true,
     });
 
+    // An unattended import that rejected more rows than it kept is not a
+    // success, whatever the columns matched.
+    //
+    // The mapping can still be right in shape and wrong in practice — a POS
+    // that starts writing prices as "N1,200" or dates in a new format leaves
+    // the headers untouched and every row unusable. Reported as "imported"
+    // that is a catalogue quietly going half-stale on a schedule with nobody
+    // watching, which is precisely the failure this whole feature is supposed
+    // to prevent rather than automate.
+    const mostlyRejected = report.rejected > report.imported;
+
     await recordSyncResult(device.id, {
-      status: 'imported',
-      detail: `${report.imported} products`,
-      succeeded: true,
+      status: mostlyRejected ? 'needs_review' : 'imported',
+      detail: mostlyRejected
+        ? `${report.rejected} of ${report.rejected + report.imported} rows could not be read — check the file`
+        : `${report.imported} products`,
+      // Not counted as a successful sync, so the dashboard's staleness clock
+      // keeps running and the pharmacy is told rather than reassured.
+      succeeded: !mostlyRejected,
     });
 
-    res.json({ status: 'imported', uploadId: staged.uploadId, ...report });
+    res.json({
+      status: mostlyRejected ? 'needs_review' : 'imported',
+      uploadId: staged.uploadId,
+      ...report,
+    });
   } catch (err) {
     // Recorded before rethrowing, so a failing sync is visible in the
     // dashboard rather than only in the server log.

@@ -1,0 +1,21 @@
+{
+  "name": "rxnaija-sync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sends a pharmacy's stock export to RxNaija on a schedule. Runs on the computer that holds their POS data.",
+  "//dependencies": "DELIBERATELY NONE. fetch, FormData and Blob are built into Node 18+, so uploading needs no library. A pharmacy PC must never have to run npm install, and a dependency-free program is what makes packaging this into one .exe straightforward later.",
+  "//engines": "Same 22.12 floor as the server, for one less version to reason about across the two.",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "bin": {
+    "rxnaija-sync": "index.js"
+  },
+  "scripts": {
+    "pair": "node index.js pair",
+    "sync": "node index.js sync",
+    "watch": "node index.js watch",
+    "status": "node index.js status",
+    "test": "node --test tests/*.test.js"
+  }
+}

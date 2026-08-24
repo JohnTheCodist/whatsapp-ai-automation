@@ -339,7 +339,18 @@ async function confirmAndImport(pharmacyId, uploadId, overrides = {}, { unattend
             ...(upload.analysis?.detectedButUnused || []).map((d) => d.rawHeader),
           ].filter(Boolean)),
         ];
-        await saveMapping(pharmacyId, { mapping: fields, columns });
+        // FLATTENED to field -> rawHeader, which is the shape `overrides`
+        // takes. `fields` is field -> { rawHeader }, and saving that shape
+        // meant feeding it back as overrides produced
+        // { rawHeader: { rawHeader: 'Product Name' } } — nested one level too
+        // deep. fields.name still existed, so the required-column guard
+        // passed, and every row then failed as missing_product_name. An
+        // import that quietly rejects all 5 of 5 rows, on a schedule, with
+        // nobody watching.
+        const flat = Object.fromEntries(
+          Object.entries(fields).map(([field, d]) => [field, d.rawHeader])
+        );
+        await saveMapping(pharmacyId, { mapping: flat, columns });
       } catch {
         // Never fail a successful import over remembering it. The products are
         // in; the worst case is that the next sync asks for confirmation again.
