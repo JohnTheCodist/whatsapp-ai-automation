@@ -281,7 +281,12 @@ async function confirmAndImport(pharmacyId, uploadId, overrides = {}) {
     issues: issues.slice(0, 100),
     flagged: {
       noPrice: unique.filter((p) => p.data_flags.includes('no_price')).length,
-      unrecognised: unique.filter((p) => p.data_flags.includes('unrecognised_product')).length,
+      // No `unrecognised` count here any more. It was computed on every
+      // import and never rendered — the report screen reads noPrice, expired
+      // and strengthFromFile and ignored it. Worth deleting rather than
+      // wiring up, because showing it would alarm people about nothing: it
+      // counts products whose generic name merely repeats the product name,
+      // so an ordinary catalogue reports most of itself as "unrecognised".
       expired: unique.filter((p) => p.data_flags.includes('expired')).length,
       strengthFromFile: unique.filter((p) => p.data_flags.includes('strength_from_file')).length,
     },

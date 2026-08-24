@@ -218,7 +218,19 @@ function buildProduct(row, fields) {
 
   const dataFlags = [];
   if (priceKobo === null) dataFlags.push('no_price');
-  if (!genericFromReference && !clean(get('generic_name'))) dataFlags.push('unrecognised_product');
+  // no_generic_name, NOT "unrecognised_product", which is what this was
+  // called and which describes something the check does not do. It fires
+  // whenever there is no generic worth SHOWING — and much the commonest
+  // reason for that is isRealGeneric rejecting a generic already contained in
+  // the product name. "Omeprazole 20mg" is a drug the registry knows
+  // perfectly well and was still labelled unrecognised.
+  //
+  // The old name was not merely untidy. duplicateReview was built on it in
+  // the belief that it meant "NAFDAC cannot confirm this name", and so put
+  // the wrong pairs in front of a pharmacist under a heading promising the
+  // opposite. A flag that reads as a stronger claim than it makes is one
+  // the next reader will misuse the same way.
+  if (!genericFromReference && !clean(get('generic_name'))) dataFlags.push('no_generic_name');
   if (issues.some((i) => i.reason === 'strength_differs_from_reference')) dataFlags.push('strength_from_file');
   if (issues.some((i) => i.reason === 'name_matched_via_nafdac')) dataFlags.push('nafdac_typo_corrected');
   if (expiry && expiry.getTime() < Date.now()) dataFlags.push('expired');

@@ -121,13 +121,13 @@ test('an unknown product is flagged rather than given an invented generic', () =
   // "Cotton Wool 100g" — an echo, not knowledge.
   const { product } = buildProduct({ Product: 'Cotton Wool 100g', Price: '₦500' }, F);
   assert.equal(product.generic_name, null, 'restating the product name is not a generic name');
-  assert.ok(product.data_flags.includes('unrecognised_product'));
+  assert.ok(product.data_flags.includes('no_generic_name'));
 });
 
 test('a real generic is still taken from the reference data', () => {
   const { product } = buildProduct({ Product: 'Amoxil 500mg', Price: '₦1,500' }, F);
   assert.equal(product.generic_name, 'Amoxicillin');
-  assert.ok(!product.data_flags.includes('unrecognised_product'));
+  assert.ok(!product.data_flags.includes('no_generic_name'));
 });
 
 // ---- price ----
