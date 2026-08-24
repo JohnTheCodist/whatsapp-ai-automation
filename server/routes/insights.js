@@ -282,8 +282,11 @@ router.get('/', requireAuth, async (req, res, next) => {
                and created_at > now() - interval '7 days') as rejected_value_kobo,
 
           -- Stock held, nobody confirmed before the hold ran out. NOT
-          -- `status = 'expired'` — see overview.js's comment on the same
-          -- query for why that value has never once matched a real row.
+          -- status = 'expired' (no backticks in this comment — a backtick
+          -- pair here closes the OUTER template literal this whole query
+          -- lives in and breaks the file) — see overview.js's comment on
+          -- the same query for why that value has never once matched a
+          -- real row.
           -- actor_type = 'system' is what expireStaleHolds stamps on the
           -- history row, the same signal orderEventType() already reads to
           -- call this ORDER_HOLD_EXPIRED rather than an ordinary cancellation.

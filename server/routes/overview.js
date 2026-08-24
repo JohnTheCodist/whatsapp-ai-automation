@@ -110,8 +110,12 @@ router.get('/', requireAuth, async (req, res, next) => {
         (select count(*)::int from orders
            where pharmacy_id = ${pid} and status = 'rejected'
              and created_at > now() - interval '7 days') as rejected_7d,
-        -- NOT `status = 'expired'` — orders has never had that value in its
-        -- check constraint (see 0001_init.sql), so that filter always
+        -- NOT status = 'expired' (no backticks around that — see the load-
+        -- bearing-filter comment above: a backtick pair in here closes the
+        -- OUTER template literal this whole query lives in and breaks the
+        -- file, exactly the way this one just did) — orders has never had
+        -- that value in its check constraint (see 0001_init.sql), so that
+        -- filter always
         -- returned zero, silently, for every pharmacy that ever shipped this
         -- query. A hold timing out writes status='cancelled' with an
         -- order_status_history row stamped actor_type='system' instead (see
