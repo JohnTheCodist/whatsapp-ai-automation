@@ -259,109 +259,7 @@ function TopProducts({ products, days }) {
   );
 }
 
-/**
- * "Needs you", as a bell rather than a band of cards.
- *
- * WHY THIS IS COLLAPSED
- * The three cards it replaces were the largest thing on the dashboard and,
- * in the normal case, all three read zero. A pharmacy that is keeping up saw
- * a permanent wall of "Nothing waiting" — so the most prominent region on
- * the page carried the least information, and staff learned to scroll past
- * the exact area that matters on the day it is not zero.
- *
- * Collapsed, the quiet state costs one line. The loud state is unmissable:
- * amber, a count, and it opens on click. Nothing is hidden that was not
- * already zero.
- */
-function NeedsYou({ waiting, total, onNavigate }) {
-  const [open, setOpen] = useState(false);
-  const quiet = total === 0;
-
-  const items = [
-    {
-      n: waiting.customers ?? 0,
-      label: 'waiting for a reply',
-      detail: 'Their last message has had no answer from anyone.',
-      go: 'inbox',
-    },
-    {
-      n: waiting.handoffs ?? 0,
-      label: 'need a pharmacist',
-      detail: 'Someone asked a question the assistant would not answer.',
-      go: 'inbox',
-    },
-    {
-      n: waiting.orders ?? 0,
-      label: 'orders to confirm',
-      detail: 'Stock is held until you confirm, or the hold expires.',
-      go: 'orders',
-    },
-  ].filter((i) => i.n > 0);
-
-  return (
-    <section
-      className={`rounded-lg border transition-colors ${
-        quiet ? 'border-slate-200 bg-white' : 'border-amber-300 bg-amber-50'
-      }`}
-    >
-      <button
-        type="button"
-        onClick={() => !quiet && setOpen((v) => !v)}
-        aria-expanded={quiet ? undefined : open}
-        // Nothing to expand when it is quiet, so it stops being a control
-        // rather than becoming a button that does nothing when pressed.
-        disabled={quiet}
-        className={`flex w-full items-center gap-3 px-4 py-3 text-left ${
-          quiet ? 'cursor-default' : 'cursor-pointer'
-        }`}
-      >
-        <span className="relative flex-none" aria-hidden="true">
-          <svg
-            width="18" height="18" viewBox="0 0 24 24" fill="none"
-            stroke={quiet ? '#94a3b8' : '#b45309'} strokeWidth="2"
-            strokeLinecap="round" strokeLinejoin="round"
-          >
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-          </svg>
-          {!quiet && (
-            <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-amber-50" />
-          )}
-        </span>
-
-        <span className={`text-sm ${quiet ? 'text-slate-500' : 'font-medium text-amber-900'}`}>
-          {quiet
-            ? 'Nothing needs you right now'
-            : `${total} ${total === 1 ? 'thing needs' : 'things need'} you`}
-        </span>
-
-        {!quiet && (
-          <span className="ml-auto text-xs text-amber-800">{open ? 'Hide' : 'Show'}</span>
-        )}
-      </button>
-
-      {!quiet && open && (
-        <ul className="border-t border-amber-200 px-4 py-2">
-          {items.map((i) => (
-            <li key={i.label} className="border-b border-amber-100 last:border-0">
-              <button
-                type="button"
-                onClick={() => onNavigate?.(i.go)}
-                className="flex w-full items-baseline gap-2 py-2 text-left hover:opacity-75"
-              >
-                <span className="text-base font-semibold tabular-nums text-amber-900">{i.n}</span>
-                <span className="text-sm text-amber-900">{i.label}</span>
-                <span className="ml-auto hidden text-xs text-amber-700 sm:block">{i.detail}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-export default function Overview({ onNavigate }) {
+export default function Overview() {
   const [data, setData] = useState(null);
   const [ins, setIns] = useState(null);
   const [error, setError] = useState(null);
@@ -414,9 +312,13 @@ export default function Overview({ onNavigate }) {
   // — they belong to AiPerformance now. Left in the response because that
   // screen fetches the same endpoint; destructuring them here would only
   // suggest this screen still shows them.
-  const { connection, waiting, limits } = data;
-  const connected = connection.status === 'connected';
-  const needsAttention = waiting.handoffs + waiting.orders + (waiting.customers || 0);
+  // connection and waiting are read by App.jsx's header bell now (see
+  // NotificationBell.jsx) — every screen needs to know about a disconnect or
+  // a pharmacist handoff, not only whoever happens to have Overview open.
+  // limits is the one piece still owned here: "sending is paused" is severe
+  // enough, and specific enough to what this screen is already reporting, to
+  // stay a standing banner rather than something a badge count can carry.
+  const { limits } = data;
 
   return (
     <div className="space-y-6">
@@ -427,28 +329,6 @@ export default function Overview({ onNavigate }) {
           <p className="mt-1 text-sm text-red-700">{limits.pausedReason || 'Paused automatically.'}</p>
         </div>
       )}
-      {!connected && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
-          <p className="font-medium text-amber-900">WhatsApp is not connected</p>
-          <p className="mt-1 text-sm text-amber-800">
-            Customers messaging you are not reaching the assistant.{' '}
-            <button onClick={() => onNavigate?.('setup')} className="underline">Go to Setup</button>
-          </p>
-        </div>
-      )}
-
-      {/* ---- waiting for a human ----
-          Collapsed to a bell. Three cards reading "0 / Nothing waiting" took
-          the widest, highest band on the page to say nothing is happening,
-          which is the normal state — so the loudest thing on the dashboard
-          was permanently noise. It now costs one line when idle and opens
-          only when there is something to open. The numbers are unchanged;
-          only how much room they take before they matter. */}
-      <NeedsYou
-        waiting={waiting}
-        total={needsAttention}
-        onNavigate={onNavigate}
-      />
 
       {/* ---- the three figures that describe the business ----
           Nothing operational here: no counts of today's messages, no

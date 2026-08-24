@@ -32,6 +32,7 @@ import Requests from './Requests.jsx';
 import Customers from './Customers.jsx';
 import Settings from './Settings.jsx';
 import AccountMenu from './AccountMenu.jsx';
+import NotificationBell from './NotificationBell.jsx';
 import { playOrderChime, playConsultationAlarm, unlockChime, isUnlocked } from './orderChime.js';
 import {
   IconOverview, IconConsultations, IconInbox, IconOrders, IconRequests,
@@ -436,6 +437,21 @@ export default function App({ onSignOut, pharmacy = null, email = '' }) {
               {soundOn && isUnlocked() ? <IconBellOn width={17} height={17} /> : <IconBellOff width={17} height={17} />}
             </button>
 
+            {/* The "needs you" bar and the "WhatsApp is not connected" banner
+                used to sit inline on Overview, permanently, whether or not
+                either had anything to say — reported as clutter, fairly:
+                neither fact is specific to that one screen. Collapsed into
+                this bell, fed by state App.jsx already polls regardless of
+                which tab is open, so the badge is live everywhere, not only
+                when Overview happens to be mounted. See NotificationBell.jsx
+                for what deliberately did NOT move here and why. */}
+            <NotificationBell
+              consultations={badges.consultations}
+              orders={badges.orders}
+              connected={connected}
+              onNavigate={setTab}
+            />
+
             {/* The "All systems go" pill stood here. It read the same
                 `connected` flag the rail's Connection panel already shows —
                 the same fact twice on one screen — so the corner now carries
@@ -574,10 +590,11 @@ export default function App({ onSignOut, pharmacy = null, email = '' }) {
               </div>
             )}
 
-            {/* onNavigate lets the Overview's cards be the way you get to the
-                work, rather than a wall of numbers you then have to act on by
-                hunting for the right section. */}
-            {tab === 'overview' && <Overview onNavigate={setTab} />}
+            {/* Overview no longer takes onNavigate — its two clickable-alert
+                sections (needs-you, WhatsApp disconnected) moved into the
+                header's NotificationBell, which owns navigating from them
+                now. AiPerformance's cards still link out on their own. */}
+            {tab === 'overview' && <Overview />}
             {tab === 'ai' && <AiPerformance onNavigate={setTab} />}
             {tab === 'consultations' && (
               <Consultations
