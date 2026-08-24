@@ -33,6 +33,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
+import FieldHint from './FieldHint.jsx';
 
 /** Digits only, no leading + — wa.me rejects punctuation. Mirrors the counter code. */
 function normalise(raw) {
@@ -170,14 +171,18 @@ export default function TradeQrCode() {
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5">
-      <h2 className="text-sm font-medium text-slate-800">Your trade QR code</h2>
-      <p className="mt-1 text-xs text-slate-500">
-        For buyers you already deal with. Scanning it puts that account on your
-        wholesale price list from their first message — automatically, and for good.
-      </p>
+      <h2 className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-800">
+        Your trade QR code
+        <FieldHint label="Your trade QR code">
+          For buyers you already deal with. Scanning it puts that account on
+          your wholesale price list from their first message — automatically,
+          and for good.
+        </FieldHint>
+      </h2>
 
       {/* Said before anything can be downloaded, because the mistake it
-          prevents is silent and expensive. */}
+          prevents is silent and expensive. Kept in the open, not behind the
+          hint above — this is the warning, not the background reading. */}
       <p className="mt-3 rounded border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
         <strong>Never put this on a flyer, a poster or social media.</strong> Anyone
         who scans it is quoted trade prices from then on. It belongs on invoices and
@@ -220,12 +225,15 @@ export default function TradeQrCode() {
         <div className="mt-4 grid gap-5 sm:grid-cols-[minmax(0,1fr)_auto]">
           <div className="min-w-0 space-y-3">
             <div>
-              <span className="text-sm font-medium text-slate-700">Your trade code</span>
+              <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                Your trade code
+                <FieldHint label="Your trade code">
+                  A buyer can also just type this to the pharmacy — the QR only
+                  saves them doing it. It has to be sent on its own, exactly as
+                  written.
+                </FieldHint>
+              </span>
               <p className="mt-1 font-mono text-base tracking-wide text-slate-900">{code}</p>
-              <p className="mt-1 text-xs text-slate-500">
-                A buyer can also just type this to the pharmacy — the QR only saves
-                them doing it. It has to be sent on its own, exactly as written.
-              </p>
             </div>
 
             {link && (

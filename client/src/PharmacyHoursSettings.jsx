@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import FieldHint from './FieldHint.jsx';
 
 const DAYS = [
   { key: 'mon', label: 'Monday' },
@@ -135,10 +136,13 @@ export default function PharmacyHoursSettings() {
         {error && <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
         <div>
-          <h3 className="text-sm font-medium text-slate-700">Opening hours</h3>
-          <p className="mt-1 text-xs text-slate-500">
-            Set every day independently — weekends included. A day left off just means it hasn&apos;t been set.
-          </p>
+          <h3 className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
+            Opening hours
+            <FieldHint label="Opening hours">
+              Set every day independently — weekends included. A day left off
+              just means it hasn't been set.
+            </FieldHint>
+          </h3>
           <div className="mt-3 space-y-2">
             {rows.map((row) => {
               const dayLabel = DAYS.find((d) => d.key === row.day).label;

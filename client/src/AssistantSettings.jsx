@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import FieldHint from './FieldHint.jsx';
 
 const MAX_BOT_NAME = 40;
 const MAX_WELCOME_NOTE = 300;
@@ -157,32 +158,46 @@ export default function AssistantSettings() {
           {error && <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
           <label className="block">
-            <span className="text-sm font-medium text-slate-700">Pharmacy name</span>
+            <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
+              Pharmacy name
+              <FieldHint label="Pharmacy name">
+                Shown to customers and used as the assistant's name if you don't set one below.
+              </FieldHint>
+            </span>
             <input
               value={pharmacyName}
               onChange={(e) => setPharmacyName(e.target.value)}
               placeholder="Sterling Pharmacy"
               className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
             />
-            <span className="mt-1 block text-xs text-slate-500">Shown to customers and used as the assistant's name if you don't set one below.</span>
           </label>
 
           <label className="block">
-            <span className="text-sm font-medium text-slate-700">Assistant name</span>
+            <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
+              Assistant name
+              <FieldHint label="Assistant name">
+                Optional. Leave blank to use "{pharmacyName || 'the pharmacy'}".
+              </FieldHint>
+            </span>
             <input
               value={botName}
               onChange={(e) => setBotName(e.target.value.slice(0, MAX_BOT_NAME))}
               placeholder={pharmacyName || 'e.g. Ada'}
               className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
             />
-            <span className="mt-1 block text-xs text-slate-500">
-              Optional. Leave blank to use "{pharmacyName || 'the pharmacy'}" — {botName.length}/{MAX_BOT_NAME}
-            </span>
+            {/* The counter stays inline, not behind the hint — it is the
+                current state of what you just typed, not background reading. */}
+            <span className="mt-1 block text-xs text-slate-400">{botName.length}/{MAX_BOT_NAME}</span>
           </label>
 
           <label className="block">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-slate-700">Welcome note</span>
+              <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                Welcome note
+                <FieldHint label="Welcome note">
+                  One line shown right after the greeting. Optional.
+                </FieldHint>
+              </span>
               <button
                 type="button"
                 onClick={generateNote}
@@ -200,9 +215,7 @@ export default function AssistantSettings() {
               rows={3}
               className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
             />
-            <span className="mt-1 block text-xs text-slate-500">
-              One line shown right after the greeting. Optional — {welcomeNote.length}/{MAX_WELCOME_NOTE}
-            </span>
+            <span className="mt-1 block text-xs text-slate-400">{welcomeNote.length}/{MAX_WELCOME_NOTE}</span>
           </label>
 
           <label className="flex items-center gap-2">
@@ -218,8 +231,14 @@ export default function AssistantSettings() {
               this is — and what arrives on it — is the cheapest guard. */}
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
             <label className="block">
-              <span className="text-sm font-medium text-slate-700">
+              <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
                 Staff alert number
+                <FieldHint label="Staff alert number">
+                  New orders and pharmacist escalations are sent here, and whoever
+                  holds it can reply <strong>1</strong> to confirm or{' '}
+                  <strong>2</strong> to reject without opening this dashboard.
+                  Leave blank for no alerts.
+                </FieldHint>
               </span>
               <input
                 value={notifyPhone}
@@ -228,12 +247,11 @@ export default function AssistantSettings() {
                 inputMode="tel"
                 className="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm"
               />
+              {/* The one fact that must never be a click away: this is the
+                  distinction that prevents the silent mix-up the surrounding
+                  box exists to guard against (see the comment above it). */}
               <span className="mt-1 block text-xs text-slate-500">
-                A <strong>staff member's own phone</strong> — not the pharmacy line
-                customers message. New orders and pharmacist escalations are sent
-                here, and whoever holds it can reply <strong>1</strong> to confirm or
-                <strong> 2</strong> to reject without opening this dashboard. Leave
-                blank for no alerts.
+                A <strong>staff member's own phone</strong> — not the pharmacy line customers message.
               </span>
             </label>
           </div>
@@ -253,15 +271,18 @@ export default function AssistantSettings() {
 
         {/* ---- live preview ---- */}
         <div>
-          <span className="text-sm font-medium text-slate-700">Preview</span>
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
+            Preview
+            <FieldHint label="Preview">
+              This is the exact message the assistant sends — "Chidi" is a
+              stand-in; real customers are greeted using their own WhatsApp name.
+            </FieldHint>
+          </span>
           <div className="mt-1 rounded-lg bg-[#e5ddd5] p-3">
             <div className="max-w-[95%] whitespace-pre-wrap rounded-lg bg-white px-3 py-2 text-sm shadow-sm">
               {previewText || (pharmacyName.trim() ? '…' : 'Enter a pharmacy name to see the greeting.')}
             </div>
           </div>
-          <p className="mt-2 text-xs text-slate-500">
-            This is the exact message the assistant sends — "Chidi" is a stand-in; real customers are greeted using their own WhatsApp name.
-          </p>
         </div>
       </div>
     </section>

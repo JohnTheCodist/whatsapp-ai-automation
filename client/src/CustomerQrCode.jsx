@@ -29,6 +29,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
+import FieldHint from './FieldHint.jsx';
 
 /** Digits only, and never a leading +: wa.me rejects punctuation outright. */
 function normalise(raw) {
@@ -190,17 +191,23 @@ export default function CustomerQrCode() {
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5">
-      <h2 className="text-sm font-medium text-slate-800">Your customer QR code</h2>
-      <p className="mt-1 text-xs text-slate-500">
-        Print this for the counter, or post it. Scanning opens WhatsApp with your
-        pharmacy already selected and the first message typed.
-      </p>
+      <h2 className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-800">
+        Your customer QR code
+        <FieldHint label="Your customer QR code">
+          Print this for the counter, or post it. Scanning opens WhatsApp with
+          your pharmacy already selected and the first message typed.
+        </FieldHint>
+      </h2>
 
       <div className="mt-4 grid gap-5 sm:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0 space-y-3">
           <label className="block">
-            <span className="text-sm font-medium text-slate-700">
+            <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
               The number customers message
+              <FieldHint label="The number customers message">
+                Saved once and printed. Reconnecting or re-pairing WhatsApp does
+                not change it — a local number starting 0 becomes +234 automatically.
+              </FieldHint>
             </span>
             <input
               value={number}
@@ -209,10 +216,6 @@ export default function CustomerQrCode() {
               inputMode="tel"
               className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
             />
-            <span className="mt-1 block text-xs text-slate-500">
-              Saved once and printed. Reconnecting or re-pairing WhatsApp does not
-              change it — a local number starting 0 becomes +234 automatically.
-            </span>
           </label>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -255,16 +258,18 @@ export default function CustomerQrCode() {
           )}
 
           <label className="block">
-            <span className="text-sm font-medium text-slate-700">First message (optional)</span>
+            <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
+              First message (optional)
+              <FieldHint label="First message">
+                Pre-typed for the customer so they only have to press send.
+              </FieldHint>
+            </span>
             <input
               value={greeting}
               onChange={(e) => setGreeting(e.target.value.slice(0, 80))}
               placeholder="Hello"
               className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
             />
-            <span className="mt-1 block text-xs text-slate-500">
-              Pre-typed for the customer so they only have to press send.
-            </span>
           </label>
 
           {link && (

@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import FieldHint from './FieldHint.jsx';
 
 const STATUS_STYLES = {
   connected:    'bg-emerald-50 text-emerald-700 ring-emerald-200',
@@ -201,12 +202,13 @@ export default function ConnectWhatsApp() {
       {/* ---- pair ---- */}
       {!isConnected && (
         <div className="mt-6 border-t border-slate-100 pt-6">
-          <label className="block text-sm font-medium" htmlFor="phone">
+          <label className="inline-flex items-center gap-1.5 text-sm font-medium" htmlFor="phone">
             WhatsApp number
+            <FieldHint label="WhatsApp number">
+              International format, digits only, including country code.
+              Nigeria example: 2348012345678
+            </FieldHint>
           </label>
-          <p className="mt-1 text-xs text-slate-500">
-            International format, digits only, including country code. Nigeria example: 2348012345678
-          </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <input
               id="phone"

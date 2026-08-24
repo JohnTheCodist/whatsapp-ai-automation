@@ -145,6 +145,21 @@ export const IconBellOff = (p) => (
   </svg>
 );
 
+/**
+ * The "there is more to say about this field" mark.
+ *
+ * Drawn at a lighter weight than the nav set: it sits beside a label rather
+ * than in a rail, and at 1.6 next to 13px text it reads as a warning sign
+ * instead of a quiet offer of help.
+ */
+export const IconInfo = (p) => (
+  <svg {...base} strokeWidth={1.5} {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v5" />
+    <path d="M12 7.75v.5" />
+  </svg>
+);
+
 /** Points down when the account menu is shut, and is rotated when it is open. */
 export const IconChevronDown = (p) => (
   <svg {...base} {...p}>

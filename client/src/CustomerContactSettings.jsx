@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import FieldHint from './FieldHint.jsx';
 
 /**
  * Stored canonical digits (234801...) -> "+234 801 234 5678".
@@ -103,17 +104,20 @@ export default function CustomerContactSettings() {
         {error && <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
         <label className="block max-w-sm">
-          <span className="text-sm font-medium text-slate-700">Customer support phone</span>
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
+            Customer support phone
+            <FieldHint label="Customer support phone">
+              Shown to customers when the assistant cannot resolve a request and
+              direct pharmacy assistance is needed. Any format works — it's
+              stored and matched consistently either way.
+            </FieldHint>
+          </span>
           <input
             value={phone}
             onChange={(e) => setPhone(e.target.value.slice(0, 40))}
             placeholder="0801 234 5678"
             className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
           />
-          <span className="mt-1 block text-xs text-slate-500">
-            This number may be shown to customers when the assistant cannot resolve a request and direct
-            pharmacy assistance is needed. Any format works — it&apos;s stored and matched consistently either way.
-          </span>
           {/* What a customer will actually be told — the editable box above
               stays a plain text field, but the number this system sends over
               WhatsApp is always this grouped, obviously-a-phone-number form. */}
