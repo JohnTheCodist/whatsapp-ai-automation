@@ -1,0 +1,19 @@
+# Line endings.
+#
+# This repo is edited on Windows and RUN on Linux, and core.autocrlf=true has
+# no opinion about which files must stay LF. A shell script is the case where
+# that matters: bash on the VPS reads a CRLF line as ending in a literal \r,
+# which surfaces as `$'\r': command not found` or `bad interpreter` — an error
+# that points at the shell rather than at the line endings that caused it.
+#
+# Anything the server executes or reads as text is pinned to LF here so it
+# cannot depend on which machine last touched it.
+*.sh      text eol=lf
+Caddyfile text eol=lf
+*.service text eol=lf
+*.sql     text eol=lf
+
+# Windows-side tooling keeps CRLF.
+*.ps1     text eol=crlf
+*.cmd     text eol=crlf
+*.bat     text eol=crlf
