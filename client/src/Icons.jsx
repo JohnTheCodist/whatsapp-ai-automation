@@ -145,6 +145,22 @@ export const IconBellOff = (p) => (
   </svg>
 );
 
+/** Points down when the account menu is shut, and is rotated when it is open. */
+export const IconChevronDown = (p) => (
+  <svg {...base} {...p}>
+    <path d="m6 9 6 6 6-6" />
+  </svg>
+);
+
+/** A door with an arrow leaving it — not a power symbol, which reads as "shut
+ *  the computer down" to someone glancing at a shop-floor screen. */
+export const IconSignOut = (p) => (
+  <svg {...base} {...p}>
+    <path d="M15 17v1.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2V7" />
+    <path d="M10 12h11m0 0-3-3m3 3-3 3" />
+  </svg>
+);
+
 /** The connected-socket indicator. A plug, because that is what it means. */
 export const IconLink = (p) => (
   <svg {...base} {...p}>

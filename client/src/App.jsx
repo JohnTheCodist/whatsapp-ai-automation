@@ -30,10 +30,8 @@ import Inbox from './Inbox.jsx';
 import Orders from './Orders.jsx';
 import Requests from './Requests.jsx';
 import Customers from './Customers.jsx';
-import AssistantSettings from './AssistantSettings.jsx';
-import CustomerContactSettings from './CustomerContactSettings.jsx';
-import CustomerQrCode from './CustomerQrCode.jsx';
-import PharmacyHoursSettings from './PharmacyHoursSettings.jsx';
+import Settings from './Settings.jsx';
+import AccountMenu from './AccountMenu.jsx';
 import { playOrderChime, playConsultationAlarm, unlockChime, isUnlocked } from './orderChime.js';
 import {
   IconOverview, IconConsultations, IconInbox, IconOrders, IconRequests,
@@ -133,9 +131,15 @@ function sectionFor(tab) {
   return PARENT_OF[tab] || SECTIONS.find((s) => s.id === tab) || SECTIONS[0];
 }
 
-export default function App({ onSignOut }) {
+export default function App({ onSignOut, pharmacy = null, email = '' }) {
   const [tab, setTab] = useState('overview');
   const [health, setHealth] = useState(null);
+  // The name shown in the account chip. Handed down by AuthGate when there is
+  // a session; fetched here only for the DEV_AUTH_BYPASS path, which renders
+  // App directly and so has no pharmacy to pass. Seeded from the prop rather
+  // than fetched-then-replaced, so the common case never flashes a
+  // placeholder name.
+  const [pharmacyName, setPharmacyName] = useState(pharmacy?.name || '');
   // Badge counts live in the shell so a staff member on the Orders tab still
   // sees that someone is waiting in Consultations. A count only visible from
   // inside the tab it describes is useless.
@@ -168,6 +172,23 @@ export default function App({ onSignOut }) {
   useEffect(() => {
     fetch('/api/health').then((r) => r.json()).then(setHealth).catch(() => setHealth({ status: 'unreachable' }));
   }, []);
+
+  // Keeps the chip in step when the pharmacy is renamed in Settings, and
+  // covers the bypass path that mounts App with no pharmacy prop at all.
+  useEffect(() => {
+    if (pharmacy?.name) { setPharmacyName(pharmacy.name); return undefined; }
+    let cancelled = false;
+    fetch('/api/pharmacies/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        const p = j?.pharmacy || j;
+        if (!cancelled && p?.name) setPharmacyName(p.name);
+      })
+      // No name is a chip that says "Your pharmacy" — not worth an error
+      // state on a shell that is otherwise working.
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [pharmacy?.name]);
 
   useEffect(() => {
     let cancelled = false;
@@ -304,18 +325,10 @@ export default function App({ onSignOut }) {
         })}
 
         <div className="mt-auto pt-3">
-          {/* Only when a real session exists. Under DEV_AUTH_BYPASS there is
-              nothing to sign out OF, and a button that silently does nothing
-              is worse than its absence. */}
-          {onSignOut && (
-            <button
-              type="button"
-              onClick={onSignOut}
-              className="mb-2 w-full rounded-[9px] px-2.5 py-1.5 text-left text-[12px] text-[var(--ui-ink-soft)] hover:bg-[var(--ui-sunk)] hover:text-[var(--ui-ink)]"
-            >
-              Sign out
-            </button>
-          )}
+          {/* Sign out is no longer here — it lives in the account menu at the
+              top right, next to the name of the account it signs you out of.
+              It used to sit directly above this connection panel, which put a
+              destructive once-a-day action in the corner staff scan most. */}
           <span className="block px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ui-ink-faint)]">
             Connection
           </span>
@@ -368,14 +381,13 @@ export default function App({ onSignOut }) {
       <div className="flex min-w-0 flex-1 flex-col">
         {/* ---- top bar ---- */}
         <header className="sticky top-0 z-10 flex h-14 items-center gap-4 border-b border-[var(--ui-line)] bg-[var(--ui-surface)] px-5">
-          <div className="min-w-0">
-            <p className="truncate text-[13px] font-semibold tracking-tight text-[var(--ui-ink)]">
-              Sterling Pharmacy
-            </p>
-            <p className="truncate text-[11px] text-[var(--ui-ink-faint)]">WhatsApp assistant</p>
-          </div>
+          {/* The pharmacy's name used to be hardcoded here as "Sterling
+              Pharmacy" — one tenant's name shown to every tenant. It now
+              comes from the account chip on the right, which reads the real
+              one, so this corner is free for the search that was previously
+              squeezed between two blocks of text. */}
 
-          <form onSubmit={submitSearch} className="mx-auto hidden w-full max-w-md sm:block">
+          <form onSubmit={submitSearch} className="w-full max-w-md">
             <label className="relative block">
               <span className="sr-only">Search patients by name or phone</span>
               <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
@@ -420,14 +432,17 @@ export default function App({ onSignOut }) {
             >
               {soundOn && isUnlocked() ? <IconBellOn width={17} height={17} /> : <IconBellOff width={17} height={17} />}
             </button>
-            <span
-              className={`hidden items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium sm:flex ${
-                connected ? 'bg-teal-50 text-teal-700' : 'bg-red-50 text-red-700'
-              }`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-teal-500' : 'bg-red-500'}`} />
-              {health ? (connected ? 'All systems go' : health.status) : 'Checking…'}
-            </span>
+
+            {/* The "All systems go" pill stood here. It read the same
+                `connected` flag the rail's Connection panel already shows —
+                the same fact twice on one screen — so the corner now carries
+                the thing that was missing instead: whose workspace this is. */}
+            <AccountMenu
+              pharmacyName={pharmacyName}
+              email={email}
+              onOpenSettings={() => setTab(SETUP.id)}
+              onSignOut={onSignOut}
+            />
           </div>
         </header>
 
@@ -469,25 +484,30 @@ export default function App({ onSignOut }) {
         {/* ---- canvas ---- */}
         <main className="ui-canvas flex-1 px-5 py-6">
           <div className="mx-auto max-w-6xl">
-            <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
-              <div>
-                <h1 className="text-xl font-semibold tracking-tight text-[var(--ui-ink)]">{active.title}</h1>
-                {/* Inside a group the subtitle describes the SEGMENT, not the
-                    group: the h1 already says where you are, so repeating it
-                    underneath wastes the one line that could tell you what
-                    this particular list contains. */}
-                <p className="mt-0.5 text-sm text-[var(--ui-ink-soft)]">{SUBTITLE[tab] || SUBTITLE[active.id]}</p>
+            {/* Setup is the one screen that titles itself: its heading names
+                the settings AREA you are in ("Customer contact"), which a
+                fixed "Setup" above it would only repeat one level too high. */}
+            {tab !== SETUP.id && (
+              <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <h1 className="text-xl font-semibold tracking-tight text-[var(--ui-ink)]">{active.title}</h1>
+                  {/* Inside a group the subtitle describes the SEGMENT, not the
+                      group: the h1 already says where you are, so repeating it
+                      underneath wastes the one line that could tell you what
+                      this particular list contains. */}
+                  <p className="mt-0.5 text-sm text-[var(--ui-ink-soft)]">{SUBTITLE[tab] || SUBTITLE[active.id]}</p>
+                </div>
+                {badges[tab] > 0 && (
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                      tab === 'consultations' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'
+                    }`}
+                  >
+                    {badges[tab]} waiting
+                  </span>
+                )}
               </div>
-              {badges[tab] > 0 && (
-                <span
-                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                    tab === 'consultations' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'
-                  }`}
-                >
-                  {badges[tab]} waiting
-                </span>
-              )}
-            </div>
+            )}
 
             {/* ---- segments ----
                 The three stages of one job, as a track you move along rather
@@ -579,26 +599,11 @@ export default function App({ onSignOut }) {
             {tab === 'inventory' && <UploadCatalogue view="products" />}
             {tab === 'inventory-upload' && <UploadCatalogue view="upload" />}
 
+            {/* Owns its own heading and rail — see Settings.jsx. The six
+                panels that used to be stacked here are unchanged; only which
+                one is on screen at a time is new. */}
             {tab === 'setup' && (
-              <div className="space-y-4">
-                <AssistantSettings />
-                {/* Directly under the assistant's own settings and above the
-                    pairing panel: the number it prefills comes from the
-                    connection, and the alert number it must not be confused
-                    with sits immediately above. */}
-                <CustomerQrCode />
-                <CustomerContactSettings />
-                <PharmacyHoursSettings />
-                <ConnectWhatsApp />
-                {/* The catalogue is no longer duplicated here — it has its own
-                    Inventory tab. Setup keeps only configuration. */}
-                <section className="rounded-lg border border-slate-200 bg-white p-5">
-                  <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">API status</h2>
-                  <pre className="mt-2 overflow-x-auto text-xs text-slate-600">
-                    {health ? JSON.stringify(health, null, 2) : 'Checking…'}
-                  </pre>
-                </section>
-              </div>
+              <Settings health={health} onBack={() => setTab('overview')} />
             )}
           </div>
         </main>

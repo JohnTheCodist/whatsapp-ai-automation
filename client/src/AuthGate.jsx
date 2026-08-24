@@ -153,5 +153,11 @@ export default function AuthGate() {
     );
   }
 
-  return <App onSignOut={handleSignOut} />;
+  return (
+    <App
+      onSignOut={handleSignOut}
+      pharmacy={pharmacy}
+      email={session.user?.email || ''}
+    />
+  );
 }
