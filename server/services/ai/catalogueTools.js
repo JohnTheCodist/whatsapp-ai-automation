@@ -105,6 +105,30 @@ function subgroupForProduct(row) {
   return subgroup;
 }
 
+/**
+ * Which price tier this customer is entitled to.
+ *
+ * Read from the customer record the worker loaded, never from anything the
+ * model or the customer supplied — the whole point of the trade code (0040)
+ * is that nobody can talk their way into wholesale pricing.
+ *
+ * An unrecognised value is retail. This is an allowlist rather than a
+ * `!== 'retail'` check because the failure directions are not symmetrical: a
+ * trade buyer shown retail prices complains, whereas a retail customer shown
+ * trade prices costs the pharmacy margin on every order silently.
+ */
+function priceTierOf(ctx) {
+  return ctx?.customer?.customer_type === 'wholesale';
+}
+
+/**
+ * The row the model sees.
+ *
+ * Every query below aliases the customer's own tier AS `price_kobo`, so this
+ * function — and therefore the model — only ever holds ONE price. That is
+ * deliberate and is what migration 0040 promised: a model that never receives
+ * both figures cannot quote the wrong one, however the conversation goes.
+ */
 function presentProduct(row) {
   return {
     id: row.id,
@@ -153,11 +177,13 @@ const TOOLS = [
       if (!query) return { products: [], note: 'No search term given.' };
 
       const db = getSql();
+      const wholesale = priceTierOf(ctx);
       // Trigram similarity, with a plain ILIKE arm so an exact substring
       // always wins regardless of how short the query is.
       const rows = await db`
         select id, name, generic_name, strength, form, pack_size, category,
-               price_kobo, stock_qty, stock_tracked,
+               case when ${wholesale} then wholesale_price_kobo else price_kobo end as price_kobo,
+               stock_qty, stock_tracked,
                greatest(
                  similarity(name, ${query}),
                  similarity(coalesce(generic_name, ''), ${query})
@@ -361,6 +387,7 @@ const TOOLS = [
       }
 
       const db = getSql();
+      const wholesale = priceTierOf(ctx);
       // "pain" must find the shelf labelled "Analgesic". Without this the
       // feature works only for categories whose clinical name happens to be
       // the everyday one, and an empty result looks like an empty shop.
@@ -381,7 +408,9 @@ const TOOLS = [
       // none of them is a claim about which medicine works better.
       const rows = await db`
         select p.id, p.name, p.generic_name, p.strength, p.form, p.pack_size,
-               p.category, p.price_kobo, p.stock_qty, p.stock_tracked,
+               p.category,
+               case when ${wholesale} then p.wholesale_price_kobo else p.price_kobo end as price_kobo,
+               p.stock_qty, p.stock_tracked,
                p.description, p.is_featured,
                (select count(*)::int from order_items oi
                   join orders o on o.id = oi.order_id
@@ -391,7 +420,10 @@ const TOOLS = [
         from products p
         where p.pharmacy_id = ${pharmacyId}
           and p.status = 'active'
-          and p.price_kobo is not null
+          -- Filtered on the customer's OWN tier: a product with no trade price
+          -- is not on the trade list, so a wholesale customer must not be
+          -- offered it at all rather than be offered it at the retail figure.
+          and (case when ${wholesale} then p.wholesale_price_kobo else p.price_kobo end) is not null
           and exists (
             select 1 from unnest(${terms}::text[]) as t(term)
             where p.category ilike '%' || t.term || '%'
@@ -399,7 +431,8 @@ const TOOLS = [
                or coalesce(p.generic_name,'') ilike '%' || t.term || '%'
           )
           and (p.stock_tracked = false or coalesce(p.stock_qty,0) > 0)
-        order by p.is_featured desc, times_bought desc, p.price_kobo
+        order by p.is_featured desc, times_bought desc,
+                 case when ${wholesale} then p.wholesale_price_kobo else p.price_kobo end
         -- Four, not six. Given six the model reads out all six as a price
         -- list, which is what a database does, not what a counter assistant
         -- does. Someone asking "what do you have for pain" wants to be helped
@@ -429,14 +462,17 @@ const TOOLS = [
         // pharmacy's own pick and price still order it.
         const candidates = await db`
           select p.id, p.name, p.generic_name, p.brand_name, p.strength, p.form, p.pack_size,
-                 p.category, p.price_kobo, p.stock_qty, p.stock_tracked,
+                 p.category,
+                 case when ${wholesale} then p.wholesale_price_kobo else p.price_kobo end as price_kobo,
+                 p.stock_qty, p.stock_tracked,
                  p.description, p.is_featured
           from products p
           where p.pharmacy_id = ${pharmacyId}
             and p.status = 'active'
-            and p.price_kobo is not null
+            and (case when ${wholesale} then p.wholesale_price_kobo else p.price_kobo end) is not null
             and (p.stock_tracked = false or coalesce(p.stock_qty,0) > 0)
-          order by p.is_featured desc, p.price_kobo
+          order by p.is_featured desc,
+                   case when ${wholesale} then p.wholesale_price_kobo else p.price_kobo end
           -- Bounded: this is resolved row-by-row against the registry in
           -- process, so it must not be able to walk an unbounded catalogue.
           limit 400

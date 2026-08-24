@@ -47,11 +47,24 @@ function parseWorkbook(buffer, filename) {
   return { rows, sheetName, sheetNames: workbook.SheetNames };
 }
 
+/** The tiers an upload can target. Anything else is a caller bug, not input. */
+const PRICE_TIERS = new Set(['retail', 'wholesale']);
+
 /**
  * Step 1. Parse, clean, analyse, stage. Nothing is written to products.
+ *
+ * `priceTier` decides which price column the eventual import writes, and
+ * NOTHING else. A trade price list is the same shape of file as a retail one —
+ * same headers, same messy vendor spellings, same NAFDAC codes — so it runs
+ * the identical detection, cleaning and identity-resolution stack. Branching
+ * the pipeline itself would mean two code paths that must stay in step
+ * forever, to serve one difference that lives entirely in the last statement.
  */
-async function stageUpload(pharmacyId, { filename, buffer, uploadedBy = null }) {
+async function stageUpload(pharmacyId, { filename, buffer, uploadedBy = null, priceTier = 'retail' }) {
   assertPharmacyId(pharmacyId);
+  if (!PRICE_TIERS.has(priceTier)) {
+    throw new Error(`Unknown price tier "${priceTier}".`);
+  }
   const db = getSql();
 
   const contentHash = crypto.createHash('sha256').update(buffer).digest('hex');
@@ -61,20 +74,21 @@ async function stageUpload(pharmacyId, { filename, buffer, uploadedBy = null }) 
   const [upload] = await db`
     insert into catalogue_uploads
       (pharmacy_id, uploaded_by, filename, content_hash, sheet_name,
-       status, detected_mapping, analysis, staged_rows, rows_total)
+       status, detected_mapping, analysis, staged_rows, rows_total, price_tier)
     values
       (${pharmacyId}, ${uploadedBy}, ${filename}, ${contentHash}, ${sheetName},
        ${analysis.ok ? 'awaiting_confirmation' : 'mapping'},
        ${db.json(mappingSummary(analysis))},
        ${db.json(publicAnalysis(analysis, sheetNames))},
        ${db.json(analysis.records || [])},
-       ${analysis.rowsOut || 0})
+       ${analysis.rowsOut || 0}, ${priceTier})
     returning id, status, created_at
   `;
 
   return {
     uploadId: upload.id,
     status: upload.status,
+    priceTier,
     ...publicAnalysis(analysis, sheetNames),
   };
 }
@@ -114,7 +128,7 @@ async function confirmAndImport(pharmacyId, uploadId, overrides = {}) {
   const db = getSql();
 
   const [upload] = await db`
-    select id, filename, status, analysis, staged_rows
+    select id, filename, status, analysis, staged_rows, price_tier
     from catalogue_uploads
     where id = ${uploadId} and pharmacy_id = ${pharmacyId}
   `;
@@ -179,6 +193,12 @@ async function confirmAndImport(pharmacyId, uploadId, overrides = {}) {
     });
   }
 
+  // Which price column this file feeds. Read from the upload row rather than
+  // passed in again, so the tier chosen when the file was staged is the tier
+  // it imports as — a confirm request cannot redirect a retail file into the
+  // trade prices.
+  const isWholesale = upload.price_tier === 'wholesale';
+
   let imported = 0;
   if (unique.length > 0) {
     await db.begin(async (tx) => {
@@ -198,7 +218,11 @@ async function confirmAndImport(pharmacyId, uploadId, overrides = {}) {
         pack_size: p.pack_size,
         sku: p.sku,
         barcode: p.barcode,
-        price_kobo: p.price_kobo,
+        // The ONE thing that differs between the two tiers. Everything above
+        // and below came out of the same cleaning stack either way — the file
+        // said "price", and which column that lands in is the whole feature.
+        price_kobo: isWholesale ? null : p.price_kobo,
+        wholesale_price_kobo: isWholesale ? p.price_kobo : null,
         stock_qty: p.stock_qty,
         stock_tracked: p.stock_tracked,
         expiry_date: p.expiry_date,
@@ -212,35 +236,71 @@ async function confirmAndImport(pharmacyId, uploadId, overrides = {}) {
         data_flags: tx.json(p.data_flags),
       }));
 
-      const result = await tx`
-        insert into products ${tx(payload,
-          'pharmacy_id', 'upload_id', 'name', 'natural_key', 'generic_name', 'brand_name',
-          'category', 'form', 'strength', 'pack_size', 'sku', 'barcode',
-          'price_kobo', 'stock_qty', 'stock_tracked', 'expiry_date', 'status', 'data_flags')}
-        on conflict (pharmacy_id, natural_key) do update set
-          upload_id     = excluded.upload_id,
-          name          = excluded.name,
-          generic_name  = coalesce(excluded.generic_name, products.generic_name),
-          brand_name    = coalesce(excluded.brand_name, products.brand_name),
-          category      = coalesce(excluded.category, products.category),
-          form          = coalesce(excluded.form, products.form),
-          strength      = coalesce(excluded.strength, products.strength),
-          pack_size     = coalesce(excluded.pack_size, products.pack_size),
-          sku           = coalesce(excluded.sku, products.sku),
-          barcode       = coalesce(excluded.barcode, products.barcode),
-          -- Price and stock are REPLACED, not coalesced. They are the whole
-          -- point of a re-upload: a product that has become unpriced must
-          -- stop being quoted, and keeping the old price would be worse than
-          -- having none.
-          price_kobo    = excluded.price_kobo,
-          stock_qty     = excluded.stock_qty,
-          stock_tracked = excluded.stock_tracked,
-          expiry_date   = coalesce(excluded.expiry_date, products.expiry_date),
-          status        = excluded.status,
-          data_flags    = excluded.data_flags,
-          updated_at    = now()
-        returning id
-      `;
+      const COLUMNS = [
+        'pharmacy_id', 'upload_id', 'name', 'natural_key', 'generic_name', 'brand_name',
+        'category', 'form', 'strength', 'pack_size', 'sku', 'barcode',
+        'price_kobo', 'wholesale_price_kobo', 'stock_qty', 'stock_tracked',
+        'expiry_date', 'status', 'data_flags',
+      ];
+
+      // Two statements rather than one with conditional SQL, because what they
+      // do on conflict is genuinely different — see each block. The INSERT
+      // half is identical: a product this pharmacy has never seen is created
+      // by whichever file mentions it first, at whichever tier that file was.
+      const result = isWholesale
+        ? await tx`
+          insert into products ${tx(payload, ...COLUMNS)}
+          on conflict (pharmacy_id, natural_key) do update set
+            -- A trade price list PRICES products; it does not redefine the
+            -- shelf. price_kobo, stock, status and data_flags are the retail
+            -- catalogue's to own and are deliberately untouched here: both
+            -- tiers describe ONE physical inventory, so a trade file with no
+            -- stock column must not zero the count the retail file set, and a
+            -- product missing from this file must not stop being sellable
+            -- retail. upload_id and name are left alone for the same reason —
+            -- they identify the catalogue that defines the product.
+            wholesale_price_kobo = excluded.wholesale_price_kobo,
+            generic_name  = coalesce(excluded.generic_name, products.generic_name),
+            brand_name    = coalesce(excluded.brand_name, products.brand_name),
+            category      = coalesce(excluded.category, products.category),
+            form          = coalesce(excluded.form, products.form),
+            strength      = coalesce(excluded.strength, products.strength),
+            pack_size     = coalesce(excluded.pack_size, products.pack_size),
+            sku           = coalesce(excluded.sku, products.sku),
+            barcode       = coalesce(excluded.barcode, products.barcode),
+            expiry_date   = coalesce(excluded.expiry_date, products.expiry_date),
+            updated_at    = now()
+          returning id
+        `
+        : await tx`
+          insert into products ${tx(payload, ...COLUMNS)}
+          on conflict (pharmacy_id, natural_key) do update set
+            upload_id     = excluded.upload_id,
+            name          = excluded.name,
+            generic_name  = coalesce(excluded.generic_name, products.generic_name),
+            brand_name    = coalesce(excluded.brand_name, products.brand_name),
+            category      = coalesce(excluded.category, products.category),
+            form          = coalesce(excluded.form, products.form),
+            strength      = coalesce(excluded.strength, products.strength),
+            pack_size     = coalesce(excluded.pack_size, products.pack_size),
+            sku           = coalesce(excluded.sku, products.sku),
+            barcode       = coalesce(excluded.barcode, products.barcode),
+            -- Price and stock are REPLACED, not coalesced. They are the whole
+            -- point of a re-upload: a product that has become unpriced must
+            -- stop being quoted, and keeping the old price would be worse than
+            -- having none.
+            price_kobo    = excluded.price_kobo,
+            stock_qty     = excluded.stock_qty,
+            stock_tracked = excluded.stock_tracked,
+            expiry_date   = coalesce(excluded.expiry_date, products.expiry_date),
+            status        = excluded.status,
+            data_flags    = excluded.data_flags,
+            -- NOT wholesale_price_kobo. A retail re-upload carries null in
+            -- that column for every row; setting it would silently wipe the
+            -- pharmacy's entire trade price list on a routine stock update.
+            updated_at    = now()
+          returning id
+        `;
       imported = result.length;
 
       await tx`

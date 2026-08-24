@@ -119,14 +119,14 @@ export default function TradeQrCode() {
       if (!r.ok) {
         throw new Error(
           j.code === 'FORBIDDEN_ROLE'
-            ? 'Only an owner can issue the trade code.'
-            : (j.error || 'Could not issue the trade code.'),
+            ? 'Only an owner can issue the wholesale code.'
+            : (j.error || 'Could not issue the wholesale code.'),
         );
       }
       setCode(j.pharmacy?.wholesale_code || '');
       setNotice(rotateIt
-        ? 'New code issued. Every previously printed trade code is now dead — reprint before sending more invoices.'
-        : 'Trade code issued. Put it on invoices and delivery notes, never on public material.');
+        ? 'New code issued. Every previously printed wholesale code is now dead — reprint before sending more invoices.'
+        : 'Wholesale code issued. Put it on invoices and delivery notes, never on public material.');
       setTimeout(() => setNotice(null), 8000);
     } catch (e) {
       setError(e.name === 'TimeoutError' ? 'The server did not respond — nothing was changed.' : e.message);
@@ -136,7 +136,7 @@ export default function TradeQrCode() {
     }
   };
 
-  const fileBase = `${(pharmacyName || 'pharmacy').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-trade-qr`;
+  const fileBase = `${(pharmacyName || 'pharmacy').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-wholesale-qr`;
 
   const download = useCallback((blob, ext) => {
     const url = URL.createObjectURL(blob);
@@ -173,8 +173,8 @@ export default function TradeQrCode() {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5">
       <h2 className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-800">
-        Your trade QR code
-        <FieldHint label="Your trade QR code">
+        Your wholesale QR code
+        <FieldHint label="Your wholesale QR code">
           For buyers you already deal with. Scanning it puts that account on
           your wholesale price list from their first message — automatically,
           and for good.
@@ -186,8 +186,8 @@ export default function TradeQrCode() {
           hint above — this is the warning, not the background reading. */}
       <p className="mt-3 rounded border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
         <strong>Never put this on a flyer, a poster or social media.</strong> Anyone
-        who scans it is quoted trade prices from then on. It belongs on invoices and
-        delivery notes. The counter code on the previous tab is the public one.
+        who scans it is quoted wholesale prices from then on. It belongs on invoices and
+        delivery notes. The retail code on the previous tab is the public one.
       </p>
 
       {!msisdn && (
@@ -207,16 +207,16 @@ export default function TradeQrCode() {
                 disabled={busy}
                 className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-40"
               >
-                {busy ? 'Issuing…' : 'Issue a trade code'}
+                {busy ? 'Issuing…' : 'Issue a wholesale code'}
               </button>
               <p className="mt-1.5 text-xs text-slate-500">
-                You do not have one yet, so no customer can reach trade pricing.
+                You do not have one yet, so no customer can reach wholesale pricing.
               </p>
             </>
           ) : (
             <p className="rounded border border-slate-300 bg-slate-50 px-2.5 py-2 text-xs text-slate-600">
-              No trade code has been issued. Only an owner can issue one — who a
-              pharmacy sells to at trade prices is a commercial decision.
+              No wholesale code has been issued. Only an owner can issue one — who a
+              pharmacy sells to at wholesale prices is a commercial decision.
             </p>
           )}
         </div>
@@ -227,8 +227,8 @@ export default function TradeQrCode() {
           <div className="min-w-0 space-y-3">
             <div>
               <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
-                Your trade code
-                <FieldHint label="Your trade code">
+                Your wholesale code
+                <FieldHint label="Your wholesale code">
                   A buyer can also just type this to the pharmacy — the QR only
                   saves them doing it. It has to be sent on its own, exactly as
                   written.
@@ -306,7 +306,7 @@ export default function TradeQrCode() {
                   className="w-[190px] rounded-lg border border-amber-300 p-2 [&>svg]:block [&>svg]:h-auto [&>svg]:w-full"
                   dangerouslySetInnerHTML={{ __html: svg }}
                 />
-                <p className="text-[10px] font-medium uppercase tracking-wide text-amber-800">Trade — not for public use</p>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-amber-800">Wholesale — not for public use</p>
                 <div className="flex gap-2">
                   <button
                     type="button"

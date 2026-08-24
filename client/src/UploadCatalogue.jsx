@@ -49,11 +49,23 @@ export default function UploadCatalogue({ view = 'all' }) {
   const [duplicates, setDuplicates] = useState(null);
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
+  // Which price list is being viewed and uploaded to. 'retail' | 'wholesale'.
+  //
+  // A VIEW, not a mode the pharmacy is left "in". Customers are always priced
+  // by their own account type (set by the trade QR code), so nothing a person
+  // does on this screen can change what any customer is quoted — which is why
+  // it is safe for this to be a switch rather than a setting.
+  const [tier, setTier] = useState('retail');
+  // The tier the user has ASKED for but not yet confirmed. Switching price
+  // lists mid-task is how a trade file gets uploaded into retail prices, so
+  // the change is stated before it happens rather than after.
+  const [pendingTier, setPendingTier] = useState(null);
   const fileRef = useRef(null);
+  const wholesale = tier === 'wholesale';
 
   const loadProducts = useCallback(async () => {
-    try { setProducts(await api('/products?limit=25')); } catch { /* counts panel is optional */ }
-  }, []);
+    try { setProducts(await api(`/products?limit=25&tier=${tier}`)); } catch { /* counts panel is optional */ }
+  }, [tier]);
 
   const loadDuplicates = useCallback(async () => {
     try { setDuplicates(await api('/duplicates')); } catch { /* advisory only */ }
@@ -72,6 +84,10 @@ export default function UploadCatalogue({ view = 'all' }) {
     try {
       const form = new FormData();
       form.append('file', file);
+      // The tier travels with the FILE, not with the confirm step. Whichever
+      // list was on screen when the file was chosen is the list it imports
+      // into, so switching tabs while a mapping is open cannot redirect it.
+      form.append('tier', tier);
       const res = await api('/upload', { method: 'POST', body: form });
       setUploadId(res.uploadId);
       setAnalysis(res);
@@ -124,15 +140,38 @@ export default function UploadCatalogue({ view = 'all' }) {
     <section className="rounded-lg border border-slate-200 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-medium">
-          {view === 'products' ? 'Your catalogue' : 'Upload catalogue'}
+          {view === 'products'
+            ? (wholesale ? 'Your wholesale prices' : 'Your catalogue')
+            : (wholesale ? 'Upload wholesale prices' : 'Upload catalogue')}
         </h2>
         {products?.counts && (
           <span className="font-mono text-xs text-slate-500 tabular-nums">
-            {products.counts.sellable} sellable · {products.counts.total} products
-            {products.counts.no_price > 0 && ` · ${products.counts.no_price} without a price`}
+            {products.counts.sellable} {wholesale ? 'priced' : 'sellable'} · {products.counts.total} products
+            {products.counts.no_price > 0
+              && ` · ${products.counts.no_price} without a ${wholesale ? 'wholesale ' : ''}price`}
           </span>
         )}
       </div>
+
+      <TierSwitch
+        tier={tier}
+        pending={pendingTier}
+        onRequest={(next) => { if (next !== tier) setPendingTier(next); }}
+        onCancel={() => setPendingTier(null)}
+        onConfirm={() => {
+          // A staged upload belongs to the tier it was staged for. Carrying a
+          // half-finished retail mapping across into the trade list is exactly
+          // the mistake the confirmation exists to prevent, so the switch
+          // clears it rather than leaving it on screen looking valid.
+          setTier(pendingTier);
+          setPendingTier(null);
+          setAnalysis(null);
+          setReport(null);
+          setUploadId(null);
+          setOverrides({});
+          setError(null);
+        }}
+      />
 
       {/* ---- pick a file ---- */}
       {showUpload && !analysis && !report && (
@@ -140,6 +179,17 @@ export default function UploadCatalogue({ view = 'all' }) {
           <p className="text-sm text-slate-600">
             Excel or CSV. Nothing is saved until you have checked the columns on the next screen.
           </p>
+          {wholesale && (
+            // Said before the file picker, not after the import. The single
+            // most likely mistake here is dropping a full retail catalogue in
+            // expecting it to replace everything, so what a trade file does —
+            // and does not do — is stated where it can still change the
+            // decision.
+            <p className="mt-2 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+              This file sets <strong>wholesale prices only</strong>. Rows are matched to products you
+              already have. Retail prices and stock are left untouched.
+            </p>
+          )}
           <input
             ref={fileRef}
             type="file"
@@ -334,7 +384,7 @@ export default function UploadCatalogue({ view = 'all' }) {
           </p>
           <div className="mt-2 max-h-80 overflow-y-auto rounded border border-slate-200">
             {products.products.map((p) => (
-              <ProductRow key={p.id} product={p} naira={naira} />
+              <ProductRow key={p.id} product={p} naira={naira} wholesale={wholesale} />
             ))}
           </div>
         </div>
@@ -407,6 +457,95 @@ export default function UploadCatalogue({ view = 'all' }) {
  * would be silently undone by the next upload. Only the two fields that
  * survive an import are editable.
  */
+/**
+ * Retail ⇄ Wholesale price list.
+ *
+ * WHY A SEGMENTED CONTROL AND NOT A TOGGLE
+ * A toggle labelled "wholesale" reads as ON/OFF — as though wholesale were a
+ * mode the shop could be left switched into overnight. It cannot: customers
+ * are priced by their own account type, set once by the wholesale QR code,
+ * and nothing here changes that. Two named segments say what this actually
+ * is — two price lists, one of which you are looking at.
+ *
+ * WHY THE SWITCH IS CONFIRMED
+ * The two lists look identical: same products, same table, same upload box.
+ * The only difference is a column of numbers, which is exactly the kind of
+ * difference someone does not notice before dropping a file in.
+ *
+ * Kept to two short lines. An explanation longer than the decision it
+ * supports stops being read at all, and this one is asking about a view.
+ */
+function TierSwitch({ tier, pending, onRequest, onCancel, onConfirm }) {
+  // The segment says the whole thing. A label plus a second explanatory line
+  // ("Retail — counter prices") is one idea written twice, and the second
+  // half is what makes a control look busier than the choice it offers.
+  const OPTIONS = [
+    { id: 'retail', label: 'Retail price' },
+    { id: 'wholesale', label: 'Wholesale price' },
+  ];
+
+  return (
+    <div className="mt-4">
+      <div
+        role="group"
+        aria-label="Price list"
+        className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1"
+      >
+        {OPTIONS.map((o) => {
+          const active = o.id === tier;
+          return (
+            <button
+              key={o.id}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onRequest(o.id)}
+              className={`rounded-md px-3 py-1.5 text-left text-sm transition ${
+                active
+                  ? 'bg-white font-medium text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {pending && (
+        // Amber, not red: this is a change worth reading, not a destructive
+        // act. Nothing is written until a file is actually imported.
+        <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-4">
+          <p className="text-sm font-medium text-amber-900">
+            {pending === 'wholesale'
+              ? 'Switch to wholesale prices?'
+              : 'Switch to retail prices?'}
+          </p>
+          <p className="mt-1 text-sm text-amber-800">
+            You will be viewing and uploading {pending} prices. The other price list and your
+            stock are not affected.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onConfirm}
+              className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white"
+            >
+              Switch
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProductRow({ product, naira }) {
   const [description, setDescription] = useState(product.description || '');
   const [featured, setFeatured] = useState(Boolean(product.is_featured));
@@ -447,7 +586,24 @@ function ProductRow({ product, naira }) {
           {product.name}
           {product.strength && <span className="text-slate-400"> · {product.strength}</span>}
         </span>
-        <span className="shrink-0 tabular-nums">{naira(product.price)}</span>
+        {/* A missing wholesale price is not "unpriced" — it is "not sold
+            wholesale", a different fact with a different fix, and an em-dash
+            shared with the retail view would hide the distinction. The retail
+            figure rides alongside as context: judging a wholesale price
+            without seeing the retail one beside it is the one thing this
+            screen exists to make easy. */}
+        {wholesale && product.price === null ? (
+          <span className="shrink-0 text-xs italic text-slate-400">no wholesale price</span>
+        ) : (
+          <span className="shrink-0 tabular-nums">
+            {naira(product.price)}
+            {wholesale && product.retailPrice !== null && (
+              <span className="ml-2 text-xs font-normal text-slate-400">
+                retail {naira(product.retailPrice)}
+              </span>
+            )}
+          </span>
+        )}
         <span className="w-20 shrink-0 text-right text-xs text-slate-500 tabular-nums">
           {product.stock_tracked ? `${product.stock_qty ?? '?'} in stock` : 'not tracked'}
         </span>

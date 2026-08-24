@@ -116,7 +116,7 @@ async function createOrder(pharmacyId, {
   // device name, a shop name, or an emoji — not something to put on a package.
   const nameCheck = getSql();
   const [named] = await nameCheck`
-    select full_name from customers where id = ${customerId} and pharmacy_id = ${pharmacyId}
+    select full_name, customer_type from customers where id = ${customerId} and pharmacy_id = ${pharmacyId}
   `;
   if (!named?.full_name) {
     return {
@@ -152,10 +152,20 @@ async function createOrder(pharmacyId, {
   const db = getSql();
   const ids = [...wanted.keys()];
 
+  // Which price this order is written at.
+  //
+  // Derived HERE from the customer record, for the same reason the name gate
+  // above is: it is a business rule, and a caller passing the tier in is a
+  // caller that can pass the wrong one. The assistant quoted this customer a
+  // tier; the order must commit at that same tier or the pharmacy sees a
+  // total that does not match what the customer was told.
+  const wholesale = named.customer_type === 'wholesale';
+
   // Scoped to the pharmacy: a product id from another tenant simply does not
   // resolve, so a leaked id cannot be ordered here.
   const products = await db`
-    select id, name, price_kobo, stock_qty, stock_tracked, status
+    select id, name, stock_qty, stock_tracked, status,
+           case when ${wholesale} then wholesale_price_kobo else price_kobo end as price_kobo
     from products
     where pharmacy_id = ${pharmacyId} and id = any(${ids})
   `;
@@ -178,7 +188,14 @@ async function createOrder(pharmacyId, {
       return {
         ok: false,
         code: 'NO_PRICE',
-        error: `${p.name} has no price in the catalogue, so it cannot be ordered here. A member of staff can confirm the price.`,
+        // Two different facts, told apart on purpose. A trade account hitting
+        // this has NOT found an unpriced product — the pharmacy simply has not
+        // put that item on its trade list, and the retail price it does have
+        // is not the price this customer is entitled to. Falling back to it
+        // would put a retail figure on a trade invoice.
+        error: wholesale
+          ? `${p.name} has no wholesale price, so it cannot be ordered here. A member of staff can confirm a price for it.`
+          : `${p.name} has no price in the catalogue, so it cannot be ordered here. A member of staff can confirm the price.`,
       };
     }
     // Checked here for a good error message, but NOT relied on — the real

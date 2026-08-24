@@ -61,13 +61,18 @@ const GROUPS = [
         blurb: 'The number customers message, and the two codes that take them there.',
         tabs: [
           { id: 'number', label: 'Public number', render: () => <CustomerContactSettings /> },
-          // Named "Counter" and "Trade" rather than both being "QR code":
+          // Named "Retail" and "Wholesale" rather than both being "QR code":
           // they point at the same line and differ only in the message they
           // prefill, and that difference decides which price list a customer
           // is quoted for good. A tab strip reading "QR code" twice is
           // exactly how the wrong one ends up on a flyer.
-          { id: 'qr', label: 'Counter QR', render: () => <CustomerQrCode /> },
-          { id: 'trade-qr', label: 'Trade QR', render: () => <TradeQrCode /> },
+          //
+          // "Wholesale", not "Trade", and the same word is used on the
+          // Inventory price switch and in customer_type. Three names for one
+          // concept — trade / wholesale / bulk — is how a pharmacist ends up
+          // unsure whether the "Trade QR" feeds the "Wholesale" price list.
+          { id: 'qr', label: 'Retail QR', render: () => <CustomerQrCode /> },
+          { id: 'trade-qr', label: 'Wholesale QR', render: () => <TradeQrCode /> },
         ],
       },
     ],

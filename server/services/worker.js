@@ -511,7 +511,7 @@ async function processInbound(db, job) {
     select m.id, m.body,
            conv.id as conversation_id, conv.mode, conv.context, conv.last_menu_choice,
            cust.id as customer_id, cust.wa_phone, cust.wa_jid, cust.wa_lid, cust.display_name, cust.full_name,
-           cust.onboarded_at,
+           cust.onboarded_at, cust.customer_type,
            ph.name as pharmacy_name, ph.reply_mode, ph.sending_paused,
            ph.notify_phone, ph.notify_lid,
            (select phone from pharmacy_profile pp where pp.pharmacy_id = ph.id) as pharmacy_phone,
@@ -1095,7 +1095,14 @@ async function processInbound(db, job) {
     customerId: row.customer_id,
     conversationId: row.conversation_id,
     // For the staff alert, so it can say who ordered rather than just a number.
-    customer: { display_name: row.display_name, full_name: row.full_name, wa_phone: row.wa_phone },
+    customer: {
+      display_name: row.display_name,
+      full_name: row.full_name,
+      wa_phone: row.wa_phone,
+      // Decides which price tier the catalogue tools return. Set once by the
+      // trade QR code (0040) and never inferred here.
+      customer_type: row.customer_type,
+    },
     botName: row.bot_name,
     tone: row.assistant_tone,
     // A menu choice is a bare digit, which tells the model nothing on its
@@ -1204,7 +1211,14 @@ async function processInbound(db, job) {
         });
         const r = await alertStaffOfConsultation(job.pharmacy_id, {
           briefing,
-          customer: { display_name: row.display_name, full_name: row.full_name, wa_phone: row.wa_phone },
+          customer: {
+      display_name: row.display_name,
+      full_name: row.full_name,
+      wa_phone: row.wa_phone,
+      // Decides which price tier the catalogue tools return. Set once by the
+      // trade QR code (0040) and never inferred here.
+      customer_type: row.customer_type,
+    },
         });
         console.log(JSON.stringify({
           level: r.sent ? 'info' : 'warn', msg: 'consultation alert', sent: r.sent, reason: r.reason,
@@ -1407,7 +1421,8 @@ async function sweepIdleConversations(db) {
 async function sweepUnhandledConsultations(db) {
   const due = await db`
     select h.id, h.pharmacy_id, h.conversation_id, h.category, h.requested_at,
-           h.reminder_count, cust.display_name, cust.full_name, cust.wa_phone, conv.context
+           h.reminder_count, cust.display_name, cust.full_name, cust.wa_phone,
+           cust.customer_type, conv.context
     from handoffs h
     join conversations conv on conv.id = h.conversation_id
     join customers cust on cust.id = conv.customer_id
@@ -1444,7 +1459,12 @@ async function sweepUnhandledConsultations(db) {
       });
       const r = await alertStaffOfConsultation(h.pharmacy_id, {
         briefing,
-        customer: { display_name: h.display_name, full_name: h.full_name, wa_phone: h.wa_phone },
+        customer: {
+          display_name: h.display_name,
+          full_name: h.full_name,
+          wa_phone: h.wa_phone,
+          customer_type: h.customer_type,
+        },
         isReminder: true,
       });
       console.log(JSON.stringify({

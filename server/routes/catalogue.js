@@ -66,9 +66,16 @@ router.post('/upload', requireAuth, handleUpload, async (req, res, next) => {
     if (!req.file) {
       return res.status(400).json({ error: 'No file was uploaded.', code: 'NO_FILE' });
     }
+    // Same allowlist reasoning as the products read: only an explicit
+    // 'wholesale' targets the trade prices. A typo'd tier imports as retail,
+    // which is visible and correctable; the reverse would quietly overwrite a
+    // pharmacy's trade list with retail figures.
+    const priceTier = req.body?.tier === 'wholesale' ? 'wholesale' : 'retail';
+
     const result = await stageUpload(req.pharmacyId, {
       filename: req.file.originalname,
       buffer: req.file.buffer,
+      priceTier,
       uploadedBy: req.user?.id && req.user.id !== '00000000-0000-0000-0000-000000000000'
         ? req.user.id
         : null,
@@ -149,6 +156,11 @@ router.get('/products', requireAuth, async (req, res, next) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
     const search = (req.query.q || '').trim();
 
+    // Which price tier this view is showing. Anything other than an explicit
+    // 'wholesale' is retail — an unrecognised value must not silently reveal
+    // trade prices, so this is an allowlist rather than a !== check.
+    const isWholesale = req.query.tier === 'wholesale';
+
     // Both reads run inside ONE retry unit rather than two.
     //
     // This endpoint failed in production with `read ECONNRESET` thrown by the
@@ -163,24 +175,34 @@ router.get('/products', requireAuth, async (req, res, next) => {
       const list = search
         ? await db`
             select id, name, generic_name, category, form, strength, pack_size,
-                   price_kobo, stock_qty, stock_tracked, status, data_flags, description, is_featured
+                   price_kobo, wholesale_price_kobo, stock_qty, stock_tracked,
+                   status, data_flags, description, is_featured
             from products
             where pharmacy_id = ${req.pharmacyId} and name ilike ${'%' + search + '%'}
             order by name limit ${limit}
           `
         : await db`
             select id, name, generic_name, category, form, strength, pack_size,
-                   price_kobo, stock_qty, stock_tracked, status, data_flags, description, is_featured
+                   price_kobo, wholesale_price_kobo, stock_qty, stock_tracked,
+                   status, data_flags, description, is_featured
             from products
             where pharmacy_id = ${req.pharmacyId}
             order by updated_at desc limit ${limit}
           `;
 
+      // Counted against the tier being VIEWED, not always retail. In the
+      // wholesale view "no price" has to mean "no trade price", or the
+      // headline figures describe a catalogue the user is not looking at.
       const [totals] = await db`
         select
           count(*)::int as total,
-          count(*) filter (where price_kobo is null)::int as no_price,
-          count(*) filter (where status = 'active' and price_kobo is not null)::int as sellable,
+          count(*) filter (
+            where (case when ${isWholesale} then wholesale_price_kobo else price_kobo end) is null
+          )::int as no_price,
+          count(*) filter (
+            where status = 'active'
+              and (case when ${isWholesale} then wholesale_price_kobo else price_kobo end) is not null
+          )::int as sellable,
           count(*) filter (where status = 'hidden')::int as hidden
         from products where pharmacy_id = ${req.pharmacyId}
       `;
@@ -189,13 +211,23 @@ router.get('/products', requireAuth, async (req, res, next) => {
     });
 
     res.json({
+      tier: isWholesale ? 'wholesale' : 'retail',
       counts,
-      products: rows.map((p) => ({
-        ...p,
-        // Naira for display. The assistant reads price_kobo; this is only so
-        // the dashboard does not do currency maths in the browser.
-        price: p.price_kobo === null ? null : p.price_kobo / 100,
-      })),
+      products: rows.map((p) => {
+        // The tier being viewed decides `price`. Both columns are still sent:
+        // the wholesale view shows the retail figure beside the trade one as
+        // context (that comparison is the point of a trade list), and a table
+        // that had to re-fetch to show it would flicker on every switch.
+        const active = isWholesale ? p.wholesale_price_kobo : p.price_kobo;
+        return {
+          ...p,
+          // Naira for display. The assistant reads the kobo columns; this is
+          // only so the dashboard does not do currency maths in the browser.
+          price: active === null ? null : active / 100,
+          retailPrice: p.price_kobo === null ? null : p.price_kobo / 100,
+          wholesalePrice: p.wholesale_price_kobo === null ? null : p.wholesale_price_kobo / 100,
+        };
+      }),
     });
   } catch (err) {
     next(err);
