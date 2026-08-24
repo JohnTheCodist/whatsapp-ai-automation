@@ -26,6 +26,7 @@ import { useMemo, useState } from 'react';
 import AssistantSettings from './AssistantSettings.jsx';
 import CustomerContactSettings from './CustomerContactSettings.jsx';
 import CustomerQrCode from './CustomerQrCode.jsx';
+import TradeQrCode from './TradeQrCode.jsx';
 import PharmacyHoursSettings from './PharmacyHoursSettings.jsx';
 import ConnectWhatsApp from './ConnectWhatsApp.jsx';
 import { IconSearch } from './Icons.jsx';
@@ -57,10 +58,16 @@ const GROUPS = [
         id: 'contact',
         label: 'Customer contact',
         title: 'Customer contact',
-        blurb: 'The number customers message, and the code that takes them there.',
+        blurb: 'The number customers message, and the two codes that take them there.',
         tabs: [
           { id: 'number', label: 'Public number', render: () => <CustomerContactSettings /> },
-          { id: 'qr', label: 'QR code', render: () => <CustomerQrCode /> },
+          // Named "Counter" and "Trade" rather than both being "QR code":
+          // they point at the same line and differ only in the message they
+          // prefill, and that difference decides which price list a customer
+          // is quoted for good. A tab strip reading "QR code" twice is
+          // exactly how the wrong one ends up on a flyer.
+          { id: 'qr', label: 'Counter QR', render: () => <CustomerQrCode /> },
+          { id: 'trade-qr', label: 'Trade QR', render: () => <TradeQrCode /> },
         ],
       },
     ],
