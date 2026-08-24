@@ -190,34 +190,19 @@ export default function Customers({ onOpenConversation, onNavigate, initialQuery
           find out. Renders nothing at all when no condition has patients. */}
       <ChronicRegister onOpen={setSelectedId} />
 
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3 text-sm text-slate-600">
-            <span className="font-medium text-slate-800">{data.counts.total} customers</span>
-            {data.counts.opted_out > 0 && <span>{data.counts.opted_out} opted out</span>}
-            {data.counts.blocked > 0 && <span>{data.counts.blocked} blocked</span>}
-          </div>
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search name or phone…"
-            className="w-56 rounded border border-slate-300 px-3 py-1.5 text-sm"
-          />
-        </div>
-
-        {/* Condition stats card */}
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-          <div className="flex items-baseline justify-between">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-blue-600">Diabetic Patients</p>
-              <p className="text-3xl font-bold text-blue-900">{data.counts.diabetic_patients ?? 0}</p>
-              <p className="text-xs text-blue-700 mt-1">Confirmed by purchase history</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
+      {/* The standalone "Diabetic Patients" card that used to sit here is
+          gone — ChronicRegister above already shows a Diabetes card (and
+          every other tracked condition) drawn from the real condition
+          engine, clickable through to the patient list. This one was a
+          second, cruder count of the same thing from a separate query
+          (server/routes/customers.js), with no way to act on it — a
+          duplicate, not a different fact. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3 text-sm text-slate-600">
+          <span className="font-medium text-slate-800">{data.counts.total} customers</span>
+          {data.counts.opted_out > 0 && <span>{data.counts.opted_out} opted out</span>}
+          {data.counts.blocked > 0 && <span>{data.counts.blocked} blocked</span>}
+        </div>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
