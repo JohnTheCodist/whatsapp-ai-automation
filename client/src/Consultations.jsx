@@ -26,6 +26,7 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
+import Loading from './Loading.jsx';
 
 /* ---- small building blocks ------------------------------------------- */
 
@@ -338,7 +339,7 @@ export default function Consultations({ onOpenConversation }) {
   if (error && !data) {
     return <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>;
   }
-  if (!data) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (!data) return <p className="text-sm text-slate-500"><Loading /></p>;
 
   const { counts, waiting } = data;
 

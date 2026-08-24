@@ -379,6 +379,28 @@ input:focus, select:focus, textarea:focus {
 .ui-btn-dark:hover { background: oklch(19% 0.014 168); }
 .ui-btn-dark:active { transform: translateY(1px); }
 
+/* ── the loading dots ── see Loading.jsx
+   A WhatsApp typing indicator's rhythm rather than a generic spinner —
+   currentColor so it reads as whatever muted tone each of the ~14 call
+   sites already set on its own wrapper, not a fixed colour dropped in on
+   top of fourteen different backgrounds. Animates opacity and transform
+   only, per this file's motion stance. */
+.ui-loading-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.3;
+  animation: ui-loading-bounce 1.2s ease-in-out infinite;
+}
+@keyframes ui-loading-bounce {
+  0%, 80%, 100% { opacity: 0.3; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-3px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   tbody tr, .ui-btn-dark, input, select, textarea { transition: none; }
+  /* Frozen at a visible opacity, not removed — the dots are the loading
+     state's only content here, not decoration sitting on top of it. */
+  .ui-loading-dot { animation: none; opacity: 0.6; }
 }

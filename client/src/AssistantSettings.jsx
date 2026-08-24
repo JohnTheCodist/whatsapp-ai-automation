@@ -12,6 +12,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import FieldHint from './FieldHint.jsx';
+import Loading from './Loading.jsx';
 
 const MAX_BOT_NAME = 40;
 const MAX_WELCOME_NOTE = 300;
@@ -140,7 +141,7 @@ export default function AssistantSettings() {
   }
 
   if (loading) {
-    return <section className="rounded-lg border border-slate-200 p-5 text-sm text-slate-500">Loading…</section>;
+    return <section className="rounded-lg border border-slate-200 p-5 text-sm text-slate-500"><Loading /></section>;
   }
 
   return (

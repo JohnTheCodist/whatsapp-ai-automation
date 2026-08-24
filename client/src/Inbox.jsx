@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ConversationState from './ConversationState.jsx';
+import Loading from './Loading.jsx';
 
 // 5s was chosen without thinking and helped exhaust the database pooler.
 // The list refreshes on every action anyway, so this only covers messages
@@ -220,7 +221,7 @@ export default function Inbox({ openConversationId = null }) {
       <div className="grid md:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         {/* ---- list ---- */}
         <ul className="max-h-[32rem] overflow-y-auto border-b border-slate-200 md:border-b-0 md:border-r">
-          {list === null && <li className="px-5 py-4 text-sm text-slate-500">Loading…</li>}
+          {list === null && <li className="px-5 py-4 text-sm text-slate-500"><Loading /></li>}
           {list?.length === 0 && (
             <li className="px-5 py-4 text-sm text-slate-500">{stateFilter === 'all' ? 'No conversations yet.' : 'Nothing in this view.'}</li>
           )}

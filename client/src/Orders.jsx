@@ -13,6 +13,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import Loading from './Loading.jsx';
 
 // Orders arrive minutes apart, not seconds. Polling faster than that
 // spends database connections to display nothing new.
@@ -175,7 +176,7 @@ export default function Orders() {
           banner above is the honest state — leaving "Loading…" underneath it
           would have the screen claim it is still working on something it has
           already given up on. */}
-      {orders === null && !error && <p className="px-5 py-6 text-sm text-slate-500">Loading…</p>}
+      {orders === null && !error && <p className="px-5 py-6 text-sm text-slate-500"><Loading /></p>}
       {orders === null && error && (
         <div className="px-5 py-6">
           <button

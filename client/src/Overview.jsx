@@ -43,6 +43,7 @@
 import { useEffect, useState } from 'react';
 import { IconCustomers, IconHeart, IconTrendUp } from './Icons.jsx';
 import { naira, Bar, Panel, PanelHead } from './DashboardKit.jsx';
+import Loading from './Loading.jsx';
 
 /**
  * The chronic register, per condition.
@@ -122,7 +123,7 @@ function Chronic({ conditions }) {
  */
 function Approval({ approval }) {
   if (!approval) {
-    return <Panel className="p-4 text-sm text-[var(--ui-ink-soft)]">Loading…</Panel>;
+    return <Panel className="p-4 text-sm text-[var(--ui-ink-soft)]"><Loading /></Panel>;
   }
 
   // No order has ever been acted on. "0 minutes" would read as instant.
@@ -177,7 +178,7 @@ function Approval({ approval }) {
  */
 function Growth({ trend, days }) {
   if (!trend?.length) {
-    return <Panel className="p-4 text-sm text-[var(--ui-ink-soft)]">Loading…</Panel>;
+    return <Panel className="p-4 text-sm text-[var(--ui-ink-soft)]"><Loading /></Panel>;
   }
 
   const w = 320;
@@ -238,7 +239,7 @@ function Key({ className = '', style, label, value }) {
 /** What actually earned the money, beside the line that shows it going up. */
 function TopProducts({ products, days }) {
   if (!products) {
-    return <Panel className="p-4 text-sm text-[var(--ui-ink-soft)]">Loading…</Panel>;
+    return <Panel className="p-4 text-sm text-[var(--ui-ink-soft)]"><Loading /></Panel>;
   }
   const max = Math.max(1, ...products.map((p) => p.revenue));
 
@@ -320,7 +321,7 @@ export default function Overview() {
     return <p className="rounded-[10px] border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>;
   }
   if (!data) {
-    return <p className="text-sm text-[var(--ui-ink-soft)]">Loading…</p>;
+    return <p className="text-sm text-[var(--ui-ink-soft)]"><Loading /></p>;
   }
 
   // today / sales / catalogue / daily are deliberately NOT read here any more

@@ -60,6 +60,7 @@ import {
 import {
   naira, pct, Spark, Trend, Headline, Bar, Panel, PanelHead,
 } from './DashboardKit.jsx';
+import Loading from './Loading.jsx';
 
 /**
  * The three questions this screen answers, as a tab strip.
@@ -150,7 +151,7 @@ export default function AiPerformance({ onNavigate }) {
       <p className="rounded-[10px] border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
     );
   }
-  if (!ov) return <p className="text-sm text-[var(--ui-ink-soft)]">Loading…</p>;
+  if (!ov) return <p className="text-sm text-[var(--ui-ink-soft)]"><Loading /></p>;
 
   const { catalogue, limits, daily } = ov;
   const wk = ins?.week;

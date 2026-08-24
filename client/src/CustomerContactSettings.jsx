@@ -15,6 +15,7 @@
 
 import { useEffect, useState } from 'react';
 import FieldHint from './FieldHint.jsx';
+import Loading from './Loading.jsx';
 
 /**
  * Stored canonical digits (234801...) -> "+234 801 234 5678".
@@ -81,7 +82,7 @@ export default function CustomerContactSettings() {
   }
 
   if (loading) {
-    return <section className="rounded-lg border border-slate-200 p-5 text-sm text-slate-500">Loading…</section>;
+    return <section className="rounded-lg border border-slate-200 p-5 text-sm text-slate-500"><Loading /></section>;
   }
 
   return (

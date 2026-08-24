@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { IconInbox, IconOrders, IconPerson, IconBellOff, IconStar, IconReply } from './Icons.jsx';
+import Loading from './Loading.jsx';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -236,7 +237,7 @@ export default function CustomerTimeline({ customerId, onOpenConversation }) {
       {error && <p className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       {loading ? (
-        <p className="mt-4 text-sm text-slate-400">Loading…</p>
+        <p className="mt-4 text-sm text-slate-400"><Loading /></p>
       ) : groups.length === 0 ? (
         <p className="mt-4 border-t border-slate-100 pt-3 text-sm text-slate-400">Nothing here yet.</p>
       ) : (
@@ -257,7 +258,7 @@ export default function CustomerTimeline({ customerId, onOpenConversation }) {
               disabled={loadingMore}
               className="w-full rounded border border-slate-200 py-2 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
             >
-              {loadingMore ? 'Loading…' : 'Load older activity'}
+              {loadingMore ? <Loading /> : 'Load older activity'}
             </button>
           )}
         </div>

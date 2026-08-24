@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import Loading from './Loading.jsx';
 
 export default function Requests({ onCount }) {
   const [requests, setRequests] = useState([]);
@@ -45,7 +46,7 @@ export default function Requests({ onCount }) {
     return () => clearInterval(t);
   }, [load]);
 
-  if (loading) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (loading) return <p className="text-sm text-slate-500"><Loading /></p>;
 
   return (
     <div className="space-y-6">

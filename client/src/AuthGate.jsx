@@ -22,6 +22,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import App from './App.jsx';
+import Loading from './Loading.jsx';
 import SignIn from './SignIn.jsx';
 import Onboarding from './Onboarding.jsx';
 import { supabase, authConfigured, signOut, setActivePharmacyId } from './auth.js';
@@ -114,7 +115,7 @@ export default function AuthGate() {
   if (checking) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--ui-paper)]">
-        <p className="text-sm text-slate-500">Loading…</p>
+        <p className="text-sm text-slate-500"><Loading /></p>
       </div>
     );
   }
@@ -138,7 +139,7 @@ export default function AuthGate() {
   if (pharmacy === null) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--ui-paper)]">
-        <p className="text-sm text-slate-500">Loading your pharmacy…</p>
+        <p className="text-sm text-slate-500"><Loading label="Loading your pharmacy" /></p>
       </div>
     );
   }

@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import CustomerProfile from './CustomerProfile.jsx';
+import Loading from './Loading.jsx';
 
 const TIER_LABEL = { active: 'Active', quiet: 'Quiet', dormant: 'Dormant', unknown: '—' };
 const TIER_TONE = {
@@ -181,7 +182,7 @@ export default function Customers({ onOpenConversation, onNavigate, initialQuery
   if (error) {
     return <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>;
   }
-  if (!data) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (!data) return <p className="text-sm text-slate-500"><Loading /></p>;
 
   return (
     <div className="space-y-4">

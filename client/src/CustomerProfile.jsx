@@ -19,6 +19,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import Loading from './Loading.jsx';
 import CustomerTimeline from './CustomerTimeline.jsx';
 import CustomerCrm from './CustomerCrm.jsx';
 import ConversationState from './ConversationState.jsx';
@@ -79,7 +80,7 @@ export default function CustomerProfile({ customerId, onBack, onOpenConversation
       </div>
     );
   }
-  if (!data) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (!data) return <p className="text-sm text-slate-500"><Loading /></p>;
 
   const {
     customer, orders, medicationJourneys, conversations, communication, activeConversation,
