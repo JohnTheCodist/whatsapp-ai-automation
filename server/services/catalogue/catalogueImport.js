@@ -22,6 +22,8 @@ const xlsx = require('xlsx');
 const { getSql, assertPharmacyId } = require('../db');
 const { analyseCatalogue } = require('./catalogueMapping');
 const { buildProduct } = require('./productBuilder');
+// One-way: syncDevices depends only on the database, so this cannot cycle.
+const { saveMapping } = require('../sync/syncDevices');
 
 const MAX_ISSUES_STORED = 500;
 
@@ -60,7 +62,9 @@ const PRICE_TIERS = new Set(['retail', 'wholesale']);
  * the pipeline itself would mean two code paths that must stay in step
  * forever, to serve one difference that lives entirely in the last statement.
  */
-async function stageUpload(pharmacyId, { filename, buffer, uploadedBy = null, priceTier = 'retail' }) {
+async function stageUpload(pharmacyId, {
+  filename, buffer, uploadedBy = null, priceTier = 'retail', syncDeviceId = null,
+}) {
   assertPharmacyId(pharmacyId);
   if (!PRICE_TIERS.has(priceTier)) {
     throw new Error(`Unknown price tier "${priceTier}".`);
@@ -74,14 +78,15 @@ async function stageUpload(pharmacyId, { filename, buffer, uploadedBy = null, pr
   const [upload] = await db`
     insert into catalogue_uploads
       (pharmacy_id, uploaded_by, filename, content_hash, sheet_name,
-       status, detected_mapping, analysis, staged_rows, rows_total, price_tier)
+       status, detected_mapping, analysis, staged_rows, rows_total, price_tier,
+       sync_device_id)
     values
       (${pharmacyId}, ${uploadedBy}, ${filename}, ${contentHash}, ${sheetName},
        ${analysis.ok ? 'awaiting_confirmation' : 'mapping'},
        ${db.json(mappingSummary(analysis))},
        ${db.json(publicAnalysis(analysis, sheetNames))},
        ${db.json(analysis.records || [])},
-       ${analysis.rowsOut || 0}, ${priceTier})
+       ${analysis.rowsOut || 0}, ${priceTier}, ${syncDeviceId})
     returning id, status, created_at
   `;
 
@@ -123,7 +128,7 @@ function publicAnalysis(analysis, sheetNames = []) {
  * @param {object} [overrides] field -> rawHeader, or field -> null to drop a
  *   proposal the owner rejected. Their choice always wins over detection.
  */
-async function confirmAndImport(pharmacyId, uploadId, overrides = {}) {
+async function confirmAndImport(pharmacyId, uploadId, overrides = {}, { unattended = false } = {}) {
   assertPharmacyId(pharmacyId);
   const db = getSql();
 
@@ -310,6 +315,7 @@ async function confirmAndImport(pharmacyId, uploadId, overrides = {}) {
             rows_rejected = ${rejected},
             issues = ${tx.json(issues)},
             overrides = ${tx.json(overrides || {})},
+            imported_unattended = ${Boolean(unattended)},
             -- Staged rows are released here. Keeping them would turn this
             -- table into a copy of every file ever uploaded.
             staged_rows = null,
@@ -317,6 +323,28 @@ async function confirmAndImport(pharmacyId, uploadId, overrides = {}) {
         where id = ${uploadId}
       `;
     });
+
+    // A HUMAN just agreed what these columns mean. Remember it, so tonight's
+    // sync of the same file shape does not ask them again.
+    //
+    // Only when attended: an unattended import already ran against this saved
+    // mapping, and re-saving from it would let the stored shape drift a column
+    // at a time with nobody ever having confirmed the drift.
+    if (!unattended) {
+      try {
+        const columns = [
+          ...new Set([
+            ...(upload.analysis?.proposals || []).map((p) => p.rawHeader),
+            ...(upload.analysis?.unmapped || []),
+            ...(upload.analysis?.detectedButUnused || []).map((d) => d.rawHeader),
+          ].filter(Boolean)),
+        ];
+        await saveMapping(pharmacyId, { mapping: fields, columns });
+      } catch {
+        // Never fail a successful import over remembering it. The products are
+        // in; the worst case is that the next sync asks for confirmation again.
+      }
+    }
   } else {
     await db`
       update catalogue_uploads

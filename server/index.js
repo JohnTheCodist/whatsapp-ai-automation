@@ -166,6 +166,7 @@ app.use('/api/insights', require('./routes/insights'));      // owner metrics + 
 app.use('/api/pharmacies', require('./routes/pharmacies'));  // Phase 1
 app.use('/api/whatsapp', require('./routes/whatsapp'));      // Phase 2
 app.use('/api/catalogue', require('./routes/catalogue'));    // Phase 3
+app.use('/api/sync', require('./routes/sync'));              // catalogue sync agent
 app.use('/api/conversations', require('./routes/conversations')); // Phase 4 — staff inbox
 app.use('/api/requests', require('./routes/requests'));      // pharmacist alternatives
 app.use('/api/customers', require('./routes/customers'));    // patient identity list
