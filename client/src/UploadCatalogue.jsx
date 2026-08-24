@@ -546,7 +546,13 @@ function TierSwitch({ tier, pending, onRequest, onCancel, onConfirm }) {
   );
 }
 
-function ProductRow({ product, naira }) {
+// `wholesale` defaults to false rather than being required: this row is
+// rendered from two places and a missing prop should degrade to the retail
+// view, not throw. Leaving it out of the signature entirely is what shipped a
+// ReferenceError — the identifier resolved to nothing at all rather than to
+// undefined, so the whole dashboard failed to mount the moment a product
+// existed to render.
+function ProductRow({ product, naira, wholesale = false }) {
   const [description, setDescription] = useState(product.description || '');
   const [featured, setFeatured] = useState(Boolean(product.is_featured));
   const [editing, setEditing] = useState(false);
