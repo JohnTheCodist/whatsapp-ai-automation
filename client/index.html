@@ -11,18 +11,23 @@
       home.html into a different typeface reads as landing on someone else's
       product mid-signup.
 
-      preconnect first: the font is on the critical path for the FIRST screen
-      an unauthenticated visitor sees, and without it the browser only starts
+      Inter is the dashboard's own body face (design.md), loaded in the same
+      request rather than a second round trip: both are on the critical path
+      for SOME first screen (Manrope for sign-in, Inter for everything past
+      it), and a visitor only ever needs one of the two on first paint.
+
+      preconnect first: on the critical path for the very first screen an
+      unauthenticated visitor sees, and without it the browser only starts
       the TLS handshake once it has parsed the stylesheet link.
 
-      The dashboard itself stays on the system stack (see design.md) — this
-      is loaded for the auth surface, and 500/800 are the only weights those
-      screens actually use.
+      This supersedes the system-stack decision design.md used to make for
+      the dashboard — see that file's Typography section for the tradeoff
+      being accepted (a webfont on the paint path) and why.
     -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;800&display=swap"
       rel="stylesheet"
     />
   </head>

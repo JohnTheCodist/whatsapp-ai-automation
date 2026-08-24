@@ -397,8 +397,11 @@ export default function App({ onSignOut, pharmacy = null, email = '' }) {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search patients by name or phone…"
-                className="w-full rounded-[9px] border border-[var(--ui-line)] bg-[var(--ui-sunk)] py-1.5 pl-9 pr-3 text-sm
-                           placeholder:text-[var(--ui-ink-faint)] focus:border-[var(--ui-accent)] focus:bg-[var(--ui-surface)]"
+                // Background and focus state come from the global input rule
+                // in index.css now (white, ringed on focus) — restating them
+                // here would only be dead weight sitting on top of it.
+                className="w-full rounded-[9px] border border-[var(--ui-line)] py-1.5 pl-9 pr-3 text-sm
+                           placeholder:text-[var(--ui-ink-faint)]"
               />
             </label>
           </form>

@@ -29,7 +29,17 @@ Warm neutrals carrying a trace of the accent's hue, so the greys read as
 chosen rather than as a default install. Emerald is the brand; it is used for
 *identity and health*, never for "this is a button".
 
-- `--ui-paper`       oklch(98.4% 0.003 106)
+`--ui-paper` used to sit a shade off `--ui-surface`, and `.ui-canvas` painted
+a dotted radial-gradient texture over it — the idea being a canvas you
+arrange things on should look like one. In practice the texture competed
+with whatever sat on top of it rather than receding behind it, and reported
+as distracting. Both are gone: `--ui-paper` is now flat white, same as
+`--ui-surface`, and the dot pattern is deleted rather than tuned quieter.
+Cards still separate from the page on border + shadow alone (`.ui-card`) —
+that mechanism never depended on the page having its own tone, so removing
+one changes nothing about how the other reads.
+
+- `--ui-paper`       oklch(100% 0 0)
 - `--ui-surface`     oklch(100% 0 0)
 - `--ui-sunk`        oklch(96.6% 0.004 106)
 - `--ui-ink`         oklch(24% 0.014 165)
@@ -52,16 +62,31 @@ Accent coverage stays under ~5% of any viewport.
 
 ## Typography
 
-System stack, deliberately. A dashboard opened fifty times a day must paint
+**Inter**, superseding the system-stack decision this section used to make.
+The original reasoning — a dashboard opened fifty times a day must paint
 instantly, and a webfont on the critical path costs more than a distinctive
-face is worth here. The marketing site carries the personality; this carries
-the work.
+face is worth — is still true as a tradeoff, just no longer the one this
+product is making: the plain system face read as generic and undifferentiated
+against how considered the rest of the surface is, closely enough to
+"unfinished" that it undercut everything else here. Loaded with `font-display:
+swap` and a `ui-sans-serif, system-ui` fallback in the token itself, so a
+slow or blocked font request costs a moment of the second-choice face, never
+an unreadable screen.
 
-- Body / UI: `ui-sans-serif, system-ui`
+- Body / UI: `'Inter', ui-sans-serif, system-ui, sans-serif` (`--font-sans`)
 - Numerals: **always** `tabular-nums` wherever figures stack or update in
   place — counts that shift width as they change read as flicker.
 - Section label: 10–11px, `uppercase`, `0.12em` tracking, `--ui-ink-faint`
 - Screen title: 15px/600 · Card figure: 24–30px/600
+
+## Controls
+
+Inputs are white — the same white as the page and the card holding them —
+bordered in `--ui-line`, ringed in `--ui-accent-wash` on focus. They used to
+sink into a slightly darker fill to read as "a field, not a button"; once the
+page itself stopped carrying its own tone (see Theme), a plain border already
+does that job, and the sunk fill was just a second white competing with the
+first one on a screen meant to read as one surface.
 
 ## Spacing
 
@@ -136,9 +161,10 @@ existing `onNavigate('orders')` deep-link keeps working.
 ### tokens.css
 ```css
 :root {
-  --ui-paper:       oklch(98.4% 0.003 106);
+  --ui-paper:       oklch(100% 0 0);
   --ui-surface:     oklch(100% 0 0);
   --ui-sunk:        oklch(96.6% 0.004 106);
+  --font-sans:      'Inter', ui-sans-serif, system-ui, sans-serif;
   --ui-ink:         oklch(24% 0.014 165);
   --ui-ink-soft:    oklch(47% 0.014 165);
   --ui-ink-faint:   oklch(62% 0.012 165);

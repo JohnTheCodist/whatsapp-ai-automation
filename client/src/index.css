@@ -52,6 +52,14 @@
   --radius-lg: 12px;
   --radius-xl: 16px;
   --radius-2xl: 20px;
+
+  /* Dashboard body face — see design.md's Typography section. Tailwind v4's
+     preflight sets `html`'s font-family from this token, so redefining it
+     here retypes every screen the same way the palette above recolours
+     them: without touching a className. Falls back to the system stack so a
+     slow or blocked font request never leaves the dashboard unreadable,
+     only momentarily on its second-choice face. */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -67,7 +75,14 @@
    the page a pharmacy signs up from do not look like two companies.
    ───────────────────────────────────────────────────────────────────────── */
 :root {
-  --ui-paper:      oklch(98.4% 0.003 106);
+  /* Flat white, same as --ui-surface. The warm off-white paper tone this
+     used to carry, plus the dotted texture .ui-canvas painted over it (below),
+     read as a busy background competing with the content sitting on it —
+     the thing to remove, not tune. Cards still separate from the page on
+     border + shadow alone (.ui-card), which is the same mechanism a
+     paper-toned canvas relied on, just without a background of its own to
+     lean on. */
+  --ui-paper:      oklch(100% 0 0);
   --ui-surface:    oklch(100% 0 0);
   --ui-sunk:       oklch(96.6% 0.004 106);
 
@@ -86,17 +101,18 @@
 body {
   background: var(--ui-paper);
   color: var(--ui-ink);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
-/* The work surface. A flat panel reads as a form; the dotted field reads as
-   a canvas you are arranging things on, which is what the inbox and the
-   order queue actually are. */
+/* The work surface. Used to carry a dotted radial-gradient texture on the
+   theory that a canvas you arrange things on should look like one — in
+   practice it competed with whatever sat on top of it instead of receding
+   behind it, which is the opposite of what a background is for. Flat white
+   now: cards read as panels through their own border and shadow, not
+   through contrast with a textured floor. */
 .ui-canvas {
   background-color: var(--ui-paper);
-  background-image: radial-gradient(var(--ui-line) 1px, transparent 1px);
-  background-size: 22px 22px;
-  background-position: -1px -1px;
 }
 
 /* One ring everywhere, never animated — a focus ring that fades in is a
@@ -225,16 +241,24 @@ tbody tr { transition: background-color 130ms ease; }
 tbody tr:hover { background: var(--ui-sunk); }
 
 /* ── controls ──
-   Inputs sink slightly into the surface instead of floating on it, which is
-   what makes a search field read as a field rather than a button. */
+   White, not sunk into the surface — a field is now the same white as the
+   page and the card it sits in, and reads as a field purely by its border,
+   the way the reference's inputs do. A sunk grey fill was doing the job a
+   plain border already does once the surface around it stopped competing
+   for attention, and kept two different whites in view at once on a screen
+   that is meant to read as one. */
 input[type="text"], input[type="search"], input:not([type]), select, textarea {
-  background: var(--ui-sunk);
+  background: var(--ui-surface);
   border-color: var(--ui-line) !important;
-  transition: border-color 140ms ease, background-color 140ms ease;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 input:focus, select:focus, textarea:focus {
   background: var(--ui-surface);
   border-color: var(--ui-accent) !important;
+  /* A soft ring rather than a heavier border on focus — the border itself
+     staying the same weight is what keeps focus from making the field jump
+     size against its neighbours. */
+  box-shadow: 0 0 0 3px var(--ui-accent-wash);
 }
 
 /* ── ready-made pieces ──
