@@ -47,15 +47,19 @@
  * All figures are last-7-days-vs-previous-7 from /api/insights' `week` key,
  * except catalogue health and the reply-cap strip, which are point-in-time
  * facts from /api/overview and have no "this week" to compare against.
+ *
+ * Panel, PanelHead, Bar, Trend, Headline and Spark now live in
+ * DashboardKit.jsx, shared with Overview — the same card voice built here
+ * first, pulled out once a second screen needed it rather than copied.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import {
   IconAi, IconAlertTriangle, IconCheckCircle, IconInventory, IconRequests,
 } from './Icons.jsx';
-
-const naira = (n) => `₦${Number(n || 0).toLocaleString('en-NG')}`;
-const pct = (n) => `${Number(n || 0).toLocaleString('en-NG', { maximumFractionDigits: 1 })}%`;
+import {
+  naira, pct, Spark, Trend, Headline, Bar, Panel, PanelHead,
+} from './DashboardKit.jsx';
 
 /**
  * The three questions this screen answers, as a tab strip.
@@ -69,104 +73,6 @@ const VIEWS = [
   { id: 'opportunity', label: 'Opportunity' },
   { id: 'operations', label: 'Operations' },
 ];
-
-function Spark({ points, className = '' }) {
-  if (!points?.length) return null;
-  const max = Math.max(1, ...points);
-  const w = 100;
-  const h = 28;
-  const step = w / Math.max(1, points.length - 1);
-  const d = points
-    .map((p, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(1)},${(h - (p / max) * h).toFixed(1)}`)
-    .join(' ');
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className={`h-8 w-full ${className}`}>
-      <path d={`${d} L${w},${h} L0,${h} Z`} fill="currentColor" opacity="0.10" />
-      <path d={d} fill="none" stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-    </svg>
-  );
-}
-
-/**
- * A week-over-week change, or nothing.
- *
- * null (previous period was zero, or nothing happened in either) renders no
- * arrow at all rather than a manufactured "0%" or an "∞%" — see insights.js's
- * pctChange for why those two cases cannot mean anything to a reader.
- *
- * `invert`: for a metric where LESS is the good direction — interventions,
- * rejections — colour and arrow must not agree with each other the way they
- * do for revenue. The arrow always faces the real direction the number
- * moved (↓ for a real decrease, never flipped to ↑ to match the colour);
- * only which colour counts as "good" changes.
- */
-function Trend({ value, invert = false }) {
-  if (value === null || value === undefined) return null;
-  const up = value > 0;
-  const flat = value === 0;
-  const good = invert ? !up : up;
-  return (
-    <span
-      className={`inline-flex items-center gap-1 text-xs font-medium tabular-nums
-        ${flat ? 'text-[var(--ui-ink-faint)]' : good ? 'text-teal-700' : 'text-red-600'}`}
-    >
-      {!flat && (up ? '↑' : '↓')}{pct(Math.abs(value))}
-    </span>
-  );
-}
-
-/**
- * One figure in the performance headline.
- *
- * `lead` sizes the primary figure above the two beside it. All three were
- * the same size, which flattened the very hierarchy the section exists to
- * establish — money first, then the counts that explain it.
- */
-function Headline({ value, label, trend, lead = false }) {
-  return (
-    <div className="min-w-0 px-0 sm:px-5 sm:first:pl-0 sm:last:pr-0">
-      <p
-        className={`font-semibold tabular-nums tracking-tight text-[var(--ui-ink)]
-          ${lead ? 'text-[1.75rem] sm:text-[2.125rem]' : 'text-2xl'}`}
-        style={{ overflowWrap: 'anywhere' }}
-      >
-        {value}
-      </p>
-      <p className="mt-1 text-xs text-[var(--ui-ink-soft)]">{label}</p>
-      <div className="mt-1.5 h-4">
-        {trend === null || trend === undefined
-          ? <span className="text-xs text-[var(--ui-ink-faint)]">—</span>
-          : <Trend value={trend} />}
-      </div>
-    </div>
-  );
-}
-
-/**
- * A horizontal measure. Ink, near-square, on a faint track.
- *
- * One component for both the funnel and the loss breakdown — they were two
- * near-identical implementations differing only in the colour each had
- * picked for itself, which is how two bars in one screen end up looking
- * like they came from two different products.
- */
-function Bar({ value, max, height = 'h-2.5' }) {
-  return (
-    <div
-      className={`${height} min-w-0 flex-1 overflow-hidden`}
-      style={{ background: 'var(--ui-bar-track)', borderRadius: 'var(--ui-radius-bar)' }}
-    >
-      <div
-        className="h-full"
-        style={{
-          width: `${Math.max(1.5, (value / max) * 100)}%`,
-          background: 'var(--ui-bar)',
-          borderRadius: 'var(--ui-radius-bar)',
-        }}
-      />
-    </div>
-  );
-}
 
 /**
  * The customer journey, as a track that narrows rather than four equal
@@ -210,28 +116,6 @@ function OpportunityRow({ label, count, value, max }) {
       <Bar value={count} max={max} height="h-2" />
       <span className="w-8 shrink-0 text-right text-xs font-semibold tabular-nums text-[var(--ui-ink)]">{count}</span>
       <span className="w-24 shrink-0 text-right text-xs tabular-nums text-[var(--ui-ink-faint)]">{value ?? ''}</span>
-    </div>
-  );
-}
-
-/** Shared section shell — one card voice, per design.md. */
-function Panel({ children, className = '' }) {
-  return (
-    <section className={`rounded-[12px] border border-[var(--ui-line)] bg-[var(--ui-surface)] ${className}`}>
-      {children}
-    </section>
-  );
-}
-
-/** Section heading with the system's icon chip. */
-function PanelHead({ Icon, children, aside }) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <h3 className="flex items-center gap-2.5 text-sm font-medium text-[var(--ui-ink)]">
-        {Icon && <span className="ui-icon-chip"><Icon width={13} height={13} /></span>}
-        {children}
-      </h3>
-      {aside}
     </div>
   );
 }

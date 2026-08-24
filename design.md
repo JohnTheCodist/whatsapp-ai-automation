@@ -238,6 +238,23 @@ existing `onNavigate('orders')` deep-link keeps working.
 - Section labels in the 10–11px uppercase style.
 - Semantic colour meanings above.
 - `tabular-nums` on every figure.
+- Any "ranked narrative" screen (a story told in a few large sections rather
+  than a grid of same-size KPI cards — Overview, AI Performance) builds from
+  `client/src/DashboardKit.jsx`: `Panel`, `PanelHead`, `Bar`, `Trend`,
+  `Headline`, `Spark`, `naira`, `pct`. Built once for AI Performance, pulled
+  out once Overview needed the identical voice rather than a second,
+  hand-copied one. A third such screen extends this file; it does not start
+  its own.
+- A length-encoded bar (a ranking, a funnel, a loss breakdown — one number
+  per row, where the bar's WIDTH is the only thing carrying meaning) is
+  always `DashboardKit`'s `Bar`: ink (`--ui-bar`) on a faint track
+  (`--ui-bar-track`), never the brand colour or a semantic one. Colouring a
+  length-encoded bar borrows a meaning (health, queued work) the bar does
+  not have, which is how a reader ends up mis-reading a ranking as a status
+  signal. A genuine multi-series chart (Overview's revenue/new/returning
+  line chart) is a different kind of visual and keeps real colour, because
+  each series needs to stay visually distinct — the rule is about ONE
+  number per bar, not about colour in general.
 
 ## What screens MAY differ on
 
