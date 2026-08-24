@@ -122,6 +122,27 @@ const PARENT_OF = Object.fromEntries(
 );
 
 /**
+ * Every id `tab` state is allowed to hold — derived from SECTIONS/SETUP
+ * rather than hand-listed, so it can never drift out of sync with the rail
+ * as sections are added or renamed.
+ *
+ * Used to validate whatever comes back out of the URL on load: a query
+ * string is user-editable and outlives a code change, so a stale or
+ * hand-typed `?tab=` must fall back to Overview rather than rendering a
+ * blank canvas with no matching branch below.
+ */
+const VALID_TABS = new Set([
+  ...SECTIONS.flatMap((s) => [s.id, ...(s.children || []).map((c) => c.id)]),
+  SETUP.id,
+]);
+
+/** Read the tab to open on load from the URL, or null if there isn't one. */
+function readTabFromUrl() {
+  const t = new URLSearchParams(window.location.search).get('tab');
+  return t && VALID_TABS.has(t) ? t : null;
+}
+
+/**
  * The rail item that should look active for a given tab — itself, or its
  * parent. SETUP is checked explicitly because it deliberately lives outside
  * SECTIONS now (see its own note); without this, opening Setup would fall
@@ -133,7 +154,7 @@ function sectionFor(tab) {
 }
 
 export default function App({ onSignOut, pharmacy = null, email = '' }) {
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab] = useState(() => readTabFromUrl() || 'overview');
   const [health, setHealth] = useState(null);
   // The name shown in the account chip. Handed down by AuthGate when there is
   // a session; fetched here only for the DEV_AUTH_BYPASS path, which renders
@@ -169,6 +190,21 @@ export default function App({ onSignOut, pharmacy = null, email = '' }) {
   useEffect(() => {
     localStorage.setItem('staffNotificationSound', String(soundOn));
   }, [soundOn]);
+
+  // Keeps the URL in step with the open tab, so a refresh — or a bookmark, or
+  // sending a colleague a link — lands back on the same screen instead of
+  // always Overview. replaceState, not pushState: every click swapping the
+  // active section is a substitution of "where I am", not a new page to
+  // visit, and pushing one history entry per tab click would make the
+  // browser's back button cycle through the dashboard's own navigation
+  // instead of leaving it — the read on load (readTabFromUrl, in useState's
+  // initialiser above) is what makes a refresh land here at all.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('tab') === tab) return;
+    url.searchParams.set('tab', tab);
+    window.history.replaceState(null, '', url);
+  }, [tab]);
 
   useEffect(() => {
     fetch('/api/health').then((r) => r.json()).then(setHealth).catch(() => setHealth({ status: 'unreachable' }));
