@@ -33,6 +33,7 @@ import Customers from './Customers.jsx';
 import Settings from './Settings.jsx';
 import AccountMenu from './AccountMenu.jsx';
 import NotificationBell from './NotificationBell.jsx';
+import Favicon from './Favicon.jsx';
 import { playOrderChime, playConsultationAlarm, unlockChime, isUnlocked } from './orderChime.js';
 import {
   IconOverview, IconConsultations, IconInbox, IconOrders, IconRequests,
@@ -293,18 +294,21 @@ export default function App({ onSignOut, pharmacy = null, email = '' }) {
         aria-label="Sections"
         className="sticky top-0 flex h-screen w-[214px] shrink-0 flex-col gap-1 border-r border-[var(--ui-line)] bg-[var(--ui-surface)] px-3 py-4"
       >
-        <div className="mb-5 flex items-center gap-2.5 px-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-[var(--ui-accent)] text-white">
-            {/* The product mark: a cross in a speech bubble — pharmacy, over chat. */}
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4z"
-                stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"
-              />
-              <path d="M12 7.5v6M9 10.5h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-            </svg>
+        <div className="mb-5 flex items-center px-2">
+          {/* The mark alone. The "RxNaija" wordmark that sat beside it was the
+              product's name written twice on a rail that already belongs to
+              it — and the same R the sign-in screen and the tab icon use, so
+              the three places a person meets this brand now agree.
+
+              role + aria-label carry the name that the visible text used to:
+              a lone letter is a picture to a screen reader, not a word. */}
+          <span
+            role="img"
+            aria-label="RxNaija"
+            className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-[var(--ui-accent)] text-[17px] font-semibold leading-none text-white"
+          >
+            R
           </span>
-          <span className="text-[15px] font-semibold tracking-tight text-[var(--ui-ink)]">RxNaija</span>
         </div>
 
         <span className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ui-ink-faint)]">
@@ -487,6 +491,11 @@ export default function App({ onSignOut, pharmacy = null, email = '' }) {
               connected={connected}
               onNavigate={setTab}
             />
+
+            {/* The same arithmetic the bell does internally, so the tab icon
+                and the badge can never disagree about whether anything is
+                waiting. Renders nothing — it only paints the favicon. */}
+            <Favicon count={(connected ? 0 : 1) + badges.consultations + badges.orders} />
 
             {/* The "All systems go" pill stood here. It read the same
                 `connected` flag the rail's Connection panel already shows —

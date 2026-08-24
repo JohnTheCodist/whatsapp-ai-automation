@@ -6,6 +6,22 @@
     <title>RxNaija</title>
 
     <!--
+      The resting tab icon, inline so it costs no request and is painted
+      before any JavaScript runs. Favicon.jsx replaces this link's href once
+      the app mounts, and repaints it as a pulsing alert whenever something
+      needs a person — see that file for why an animated GIF or SVG could not
+      have done the job.
+
+      This static one still has to be right on its own: it is what a visitor
+      sees on the sign-in screen, on a slow connection, and if the bundle
+      fails outright.
+    -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2310b981'/%3E%3Ctext x='16' y='17' fill='white' font-family='system-ui,sans-serif' font-size='21' font-weight='600' text-anchor='middle' dominant-baseline='central'%3ER%3C/text%3E%3C/svg%3E"
+    />
+
+    <!--
       Manrope carries the marketing site's display voice, and the sign-in
       screen is the seam between that site and the dashboard — arriving from
       home.html into a different typeface reads as landing on someone else's
