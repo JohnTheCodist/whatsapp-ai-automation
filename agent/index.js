@@ -283,8 +283,64 @@ async function cmdStatus() {
 
 // ------------------------------------------------------------------- main --
 
+/**
+ * What happens when somebody double-clicks the .exe.
+ *
+ * A console program launched from Explorer gets no arguments and closes the
+ * instant it returns — so printing usage and exiting shows a black window that
+ * flashes and vanishes, which reads as "the program is broken". The person
+ * doing this is a pharmacist who was told to run it, not someone who is going
+ * to open a command prompt.
+ *
+ * So: no arguments, a real console, nothing paired yet -> just ask for the
+ * code, which is the only thing they were given.
+ */
+async function firstRun() {
+  log('');
+  log('  RxNaija Sync');
+  log('  ------------');
+  log('');
+  log('  This connects this computer to your pharmacy on RxNaija,');
+  log('  so your stock list updates by itself.');
+  log('');
+  log('  Get your code from the RxNaija dashboard:');
+  log('     Settings > Stock sync > Connect a computer');
+  log('');
+
+  const io = prompter();
+  const code = await io.ask('  Pairing code (looks like SY-4K7P): ');
+  io.close();
+
+  if (!code) {
+    log('\n  No code entered. Run this again when you have one.');
+    return;
+  }
+  await cmdPair([code.toUpperCase()]);
+}
+
+/** Keep the window open, or everything above is unreadable. */
+async function pauseIfLaunchedFromExplorer() {
+  if (!process.stdin.isTTY) return;
+  const io = prompter();
+  await io.ask('\n  Press Enter to close this window. ');
+  io.close();
+}
+
 async function main() {
   const [cmd, ...args] = process.argv.slice(2);
+
+  if (!cmd && process.stdin.isTTY) {
+    if (config.isPaired()) {
+      // Already set up — the useful thing to show is whether it is working,
+      // not a list of commands they will not type.
+      await cmdStatus();
+      await runOnce();
+    } else {
+      await firstRun();
+    }
+    return pauseIfLaunchedFromExplorer();
+  }
+
   switch (cmd) {
     case 'pair':   return cmdPair(args);
     case 'sync':   return void (await runOnce());
@@ -301,8 +357,9 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error(`Something went wrong: ${e.message}`);
+main().catch(async (e) => {
+  console.error(`\n  Something went wrong: ${e.message}`);
+  await pauseIfLaunchedFromExplorer();
   process.exit(1);
 });
 

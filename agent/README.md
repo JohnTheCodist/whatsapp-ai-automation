@@ -33,20 +33,42 @@ Undisclosed, software that inventories a business's server and reports home is
 malware regardless of intent. The disclosure is the difference, so it happens
 before anything is sent, in plain words, on screen.
 
-## Install (development)
+## Installing it on a pharmacy's computer
 
-Needs Node 22.12+. No dependencies — nothing to `npm install`.
+Send them **`rxnaija-sync.exe`**. One file. Nothing else needs installing — not
+Node, not this folder. They double-click it and it asks for the pairing code.
+
+Get that code from the dashboard: **Settings → Stock sync → Connect a
+computer**. Single use, expires in 30 minutes. Read it out over the phone if
+you like — it is four characters and deliberately has no 0/O or 1/I in it.
+
+Double-clicking it later, once paired, shows the status and runs a sync,
+rather than a list of commands nobody is going to type.
+
+## Building that .exe
+
+```
+npm install      # esbuild + postject, build tools only
+npm run build    # -> dist/rxnaija-sync.exe  (~80 MB)
+```
+
+80 MB because a Node runtime is inside it. That is the trade: one download,
+nothing to install.
+
+**It is unsigned.** Windows shows a SmartScreen warning, and coaching a
+pharmacist to click past security warnings is a habit worth more to an
+attacker than anything in this program. A code-signing certificate is the
+real fix.
+
+**Test any build on a machine that has never had Node installed.** A build
+host always has one, so a missing-runtime bug cannot show up there.
+
+## Running it from source (development)
+
+Needs Node 22.12+. No runtime dependencies.
 
 ```
 node index.js pair SY-XXXX
-```
-
-Get the code from the dashboard: **Settings → Stock sync → Connect a
-computer**. Codes are single-use and expire in 30 minutes.
-
-Then point the pharmacy's POS at the folder it reports, and:
-
-```
 node index.js sync     # send once, now
 node index.js watch    # keep running, check every few hours
 node index.js status   # what it thinks is going on
@@ -105,10 +127,14 @@ Not a nightly cron: a pharmacy PC is often switched off at closing, and a 2am
 schedule on a machine that is off at 2am never runs at all. Something that
 fires a few times during opening hours survives how shops actually behave.
 
-## Packaging
+## Still to do
 
-Still open. The logic works as a plain Node program first, deliberately —
-packaging is a wrapper around behaviour that has to be right either way, and
-letting the installer question block the logic would have been the wrong
-order. Zero dependencies is what keeps a single-executable build simple when
-that decision is made.
+- **Signing.** See above. This is the one that blocks handing the file to a
+  pharmacy you are not standing next to.
+- **Run it as a Windows service**, so it starts with the computer instead of
+  needing someone to launch it. Today `watch` runs while the window is open.
+- **Read the POS database directly**, for whichever software turns out to be
+  common. Folder-watching needs a person to click Export; a daily habit
+  decays by about week three. Worth building only once real pharmacies have
+  shown you which two or three packages matter — the fingerprints they send
+  at pairing are what answers that.

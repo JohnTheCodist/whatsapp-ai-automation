@@ -3,7 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "description": "Sends a pharmacy's stock export to RxNaija on a schedule. Runs on the computer that holds their POS data.",
-  "//dependencies": "DELIBERATELY NONE. fetch, FormData and Blob are built into Node 18+, so uploading needs no library. A pharmacy PC must never have to run npm install, and a dependency-free program is what makes packaging this into one .exe straightforward later.",
+  "//dependencies": "DELIBERATELY NONE AT RUNTIME. fetch, FormData and Blob are built into Node 18+, so uploading needs no library. A pharmacy PC must never have to run npm install — and having no dependency tree is exactly what makes the single-executable build one bundle step. esbuild and postject below are BUILD tools; they ship in nothing.",
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "postject": "^1.0.0-alpha.6"
+  },
   "//engines": "Same 22.12 floor as the server, for one less version to reason about across the two.",
   "engines": {
     "node": ">=22.12.0"
@@ -16,6 +20,7 @@
     "sync": "node index.js sync",
     "watch": "node index.js watch",
     "status": "node index.js status",
+    "build": "node scripts/build.js",
     "test": "node --test tests/*.test.js"
   }
 }
