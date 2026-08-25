@@ -23,7 +23,7 @@ const { getSql, assertPharmacyId } = require('../db');
 const { analyseCatalogue } = require('./catalogueMapping');
 const { buildProduct } = require('./productBuilder');
 // One-way: syncDevices depends only on the database, so this cannot cycle.
-const { saveMapping } = require('../sync/syncDevices');
+const { saveMapping, recordSyncResult } = require('../sync/syncDevices');
 
 const MAX_ISSUES_STORED = 500;
 
@@ -133,7 +133,7 @@ async function confirmAndImport(pharmacyId, uploadId, overrides = {}, { unattend
   const db = getSql();
 
   const [upload] = await db`
-    select id, filename, status, analysis, staged_rows, price_tier
+    select id, filename, status, analysis, staged_rows, price_tier, sync_device_id
     from catalogue_uploads
     where id = ${uploadId} and pharmacy_id = ${pharmacyId}
   `;
@@ -354,6 +354,27 @@ async function confirmAndImport(pharmacyId, uploadId, overrides = {}, { unattend
       } catch {
         // Never fail a successful import over remembering it. The products are
         // in; the worst case is that the next sync asks for confirmation again.
+      }
+    }
+
+    // If this file came from a connected computer, that computer has now
+    // succeeded — tell it so.
+    //
+    // Only the sync route used to record a result, so a file that arrived
+    // automatically and was then confirmed BY HAND left the device stuck on
+    // "waiting for someone to check the columns" and "has never sent a
+    // catalogue yet" — forever, and with a stale-catalogue warning attached,
+    // about a catalogue that had just been imported. Every part of that
+    // sentence was false, which is worse than saying nothing.
+    if (upload.sync_device_id) {
+      try {
+        await recordSyncResult(upload.sync_device_id, {
+          status: 'imported',
+          detail: `${imported} products (columns confirmed by hand)`,
+          succeeded: true,
+        });
+      } catch {
+        // Bookkeeping about the device must not fail an import that worked.
       }
     }
   } else {

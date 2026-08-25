@@ -27,6 +27,9 @@ const { newestExport, looksSettled, hashFile, upload, heartbeat } = require('./s
 const log = (...a) => console.log(...a);
 const stamp = () => new Date().toLocaleString();
 
+/** The Scheduled Task's name. Stable, so install is idempotent and uninstall can find it. */
+const TASK_NAME = 'RxNaija Sync';
+
 /**
  * One readline interface for a whole conversation, not one per question.
  *
@@ -185,8 +188,16 @@ async function cmdPair(args) {
   log(`  This computer is now linked to your pharmacy.`);
   log(`  Watching: ${watchPath}`);
   log('');
-  log('  Next: export your product list from your stock software into that');
-  log('  folder, then run:  rxnaija-sync sync');
+  log('  Next: export your product list into that folder, then run:');
+  log('');
+  log('     rxnaija-sync sync        send it once, now');
+  log('     rxnaija-sync install     send it automatically from then on');
+  log('');
+  // Said at pairing, not left to be discovered. Without the schedule this
+  // sends only when somebody opens it, and "connected" reads as "it is
+  // handling itself" — which is how a catalogue quietly stops being current
+  // while the dashboard says a computer is connected.
+  log('  Until you run install, this only sends when you open it.');
   log('');
 }
 
@@ -279,6 +290,96 @@ async function cmdWatch() {
   setInterval(() => { runOnce().catch(() => {}); }, everyMs);
 }
 
+// ---------------------------------------------------------------- install --
+
+/**
+ * Register a Windows Scheduled Task so this runs without anyone opening it.
+ *
+ * WHY THIS HAD TO EXIST
+ * `watch` only runs while its window is open, which makes "keep the catalogue
+ * current automatically" depend on a pharmacist remembering to leave a black
+ * console window open on the shop computer forever. Nobody does that, and the
+ * first thing anyone does with an unexplained console window is close it. The
+ * catalogue then silently stops updating, which is the exact failure the whole
+ * Stock sync panel was built to shout about.
+ *
+ * Task Scheduler rather than a Windows Service: a service needs an installer
+ * running as administrator, and this needs neither. A per-user task can be
+ * created without elevation and still survives reboots.
+ */
+async function cmdInstall() {
+  if (process.platform !== 'win32') {
+    log('Scheduled installation is Windows-only. On another system, run "watch" from your own scheduler.');
+    process.exitCode = 1;
+    return;
+  }
+  if (!config.isPaired()) {
+    log('Pair this computer first, then run install.');
+    process.exitCode = 1;
+    return;
+  }
+
+  const exe = process.execPath;
+  if (/\bnode\.exe$/i.test(exe)) {
+    // Running from source: the task would point at node.exe and lose the
+    // script argument, producing a scheduled task that silently does nothing.
+    log('Run this from the built rxnaija-sync.exe, not from source — the task needs a single');
+    log('executable to point at.');
+    process.exitCode = 1;
+    return;
+  }
+
+  const hours = Math.max(1, Math.round((Number(config.read().intervalMinutes) || 360) / 60));
+  const { execFile } = require('node:child_process');
+  const { promisify } = require('node:util');
+  const run = promisify(execFile);
+
+  try {
+    await run('schtasks', [
+      '/Create', '/TN', TASK_NAME,
+      '/TR', `"${exe}" sync`,
+      '/SC', 'HOURLY', '/MO', String(hours),
+      '/F',
+    ], { windowsHide: true });
+  } catch (e) {
+    log(`\nCould not create the scheduled task: ${e.message.split('\n')[0]}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  log('');
+  log(`  Scheduled. This will now check for a new export every ${hours} hours,`);
+  log('  on its own, whether or not anyone is signed in to this computer.');
+  log('');
+  log('  Nothing else to leave open. To stop it:  rxnaija-sync uninstall');
+  log('');
+}
+
+async function cmdUninstall() {
+  if (process.platform !== 'win32') return;
+  const { execFile } = require('node:child_process');
+  const { promisify } = require('node:util');
+  try {
+    await promisify(execFile)('schtasks', ['/Delete', '/TN', TASK_NAME, '/F'], { windowsHide: true });
+    log('\n  Stopped. This computer will no longer send your stock file on a schedule.\n');
+  } catch {
+    log('\n  There was no scheduled task to remove.\n');
+  }
+}
+
+/** Whether the schedule is currently registered. */
+async function scheduleInstalled() {
+  if (process.platform !== 'win32') return false;
+  const { execFile } = require('node:child_process');
+  const { promisify } = require('node:util');
+  try {
+    await promisify(execFile)('schtasks', ['/Query', '/TN', TASK_NAME], { windowsHide: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ----------------------------------------------------------------- status --
 
 async function cmdStatus() {
@@ -314,7 +415,13 @@ async function cmdStatus() {
     log('               depending on how this program was started. Pair again and');
     log('               give the full folder, e.g. C:\\RxNaija\\export');
   }
-  log(`  Every:     ${c.intervalMinutes} minutes`);
+  // The question this screen exists to answer. Without it, "Every: 360
+  // minutes" reads as a promise that something is happening on a schedule,
+  // when nothing may be running at all.
+  const scheduled = await scheduleInstalled();
+  log(`  Schedule:  ${scheduled
+    ? `running by itself, every ${Math.max(1, Math.round((Number(c.intervalMinutes) || 360) / 60))} hours`
+    : 'NOT set up — this only sends when you open it. Run: rxnaija-sync install'}`);
 
   if (c.watchPath) {
     try {
@@ -394,16 +501,20 @@ async function main() {
   }
 
   switch (cmd) {
-    case 'pair':   return cmdPair(args);
-    case 'sync':   return void (await runOnce());
-    case 'watch':  return cmdWatch();
-    case 'status': return cmdStatus();
+    case 'pair':      return cmdPair(args);
+    case 'sync':      return void (await runOnce());
+    case 'watch':     return cmdWatch();
+    case 'status':    return cmdStatus();
+    case 'install':   return cmdInstall();
+    case 'uninstall': return cmdUninstall();
     default:
       log('RxNaija Sync\n');
       log('  rxnaija-sync pair SY-XXXX   connect this computer to your pharmacy');
+      log('  rxnaija-sync install        run on a schedule, without leaving anything open');
       log('  rxnaija-sync sync           send the latest export now');
-      log('  rxnaija-sync watch          keep running and send on a schedule');
+      log('  rxnaija-sync watch          keep running in this window and send periodically');
       log('  rxnaija-sync status         show what it is doing');
+      log('  rxnaija-sync uninstall      stop the schedule');
       log('');
       if (!config.isPaired()) log('This computer is not paired yet.\n');
   }
