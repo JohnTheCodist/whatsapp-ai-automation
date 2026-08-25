@@ -110,13 +110,60 @@ function selectTenant(memberships, requestedId) {
   return { ok: true, membership: match };
 }
 
+/**
+ * How long to wait for Supabase to confirm a token before giving up.
+ *
+ * This is a network call to a third party, and it sits in front of EVERY
+ * authenticated request. Unbounded, a slow Supabase does not degrade the
+ * dashboard — it hangs it completely, with no error anywhere: the browser
+ * eventually reports ERR_TIMED_OUT on every /api call at once, which reads as
+ * "the server is down" while /api/health answers in a second, because health
+ * carries no token and never reaches this line.
+ *
+ * Eight seconds is far longer than the call takes when anything is working,
+ * and short enough that a failure is reported rather than sat through.
+ */
+const AUTH_VERIFY_TIMEOUT_MS = 8000;
+
 async function verifyUser(req, res) {
   const token = extractToken(req);
   if (!token) {
     res.status(401).json({ error: 'Missing Authorization header', code: 'NO_TOKEN' });
     return null;
   }
-  const { data, error } = await getSupabase().auth.getUser(token);
+
+  let data;
+  let error;
+  // Cleared in `finally`, not unref'd. unref stops the timer holding the event
+  // loop open, which is right for a long-lived server and wrong everywhere
+  // else: in a script whose only pending work IS this call, the process simply
+  // exits before the timeout can fire, and the request neither succeeds nor
+  // fails. Clearing it is correct in both cases and leaks nothing either way.
+  let timer;
+  try {
+    ({ data, error } = await Promise.race([
+      getSupabase().auth.getUser(token),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('auth_verify_timeout')), AUTH_VERIFY_TIMEOUT_MS);
+      }),
+    ]));
+  } catch (err) {
+    if (err.message === 'auth_verify_timeout') {
+      // 503, NOT 401. "Your session is invalid" would be a lie that makes
+      // people sign in again — and signing in goes through the same service
+      // that has just stopped answering, so it cannot work and they learn
+      // nothing from trying.
+      res.status(503).json({
+        error: 'Could not confirm your sign-in — the authentication service is not responding. Nothing was changed. Try again shortly.',
+        code: 'AUTH_UNAVAILABLE',
+      });
+      return null;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+
   if (error || !data?.user) {
     res.status(401).json({ error: 'Invalid or expired session', code: 'BAD_TOKEN' });
     return null;
