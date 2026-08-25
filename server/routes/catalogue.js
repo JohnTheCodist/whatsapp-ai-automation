@@ -115,7 +115,12 @@ router.get('/uploads', requireAuth, async (req, res, next) => {
     assertPharmacyId(req.pharmacyId);
     const db = getSql();
     const rows = await db`
-      select id, filename, sheet_name, status, rows_total, rows_imported, rows_rejected,
+      -- price_tier and sync_device_id: which price list a file writes to, and
+      -- whether a person chose it or an agent sent it. Both are things the
+      -- reviewer has to know before confirming a mapping — importing a trade
+      -- list into retail prices is not a mistake anyone can see afterwards.
+      select id, filename, sheet_name, status, price_tier, sync_device_id,
+             rows_total, rows_imported, rows_rejected,
              created_at, completed_at,
              jsonb_array_length(coalesce(issues, '[]'::jsonb)) as issue_count
       from catalogue_uploads
@@ -136,7 +141,8 @@ router.get('/uploads/:id', requireAuth, async (req, res, next) => {
     // staged_rows is deliberately not selected — it is the file's contents,
     // and this endpoint is about the mapping.
     const [row] = await db`
-      select id, filename, sheet_name, status, analysis, detected_mapping, overrides,
+      select id, filename, sheet_name, status, price_tier, sync_device_id,
+             analysis, detected_mapping, overrides,
              rows_total, rows_imported, rows_rejected, issues, created_at, completed_at
       from catalogue_uploads
       where id = ${req.params.id} and pharmacy_id = ${req.pharmacyId}

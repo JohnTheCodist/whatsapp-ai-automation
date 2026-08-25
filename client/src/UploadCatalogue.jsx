@@ -51,6 +51,13 @@ export default function UploadCatalogue({ view = 'all' }) {
   const [error, setError] = useState(null);
   // A staged upload waiting on a human — normally one the sync agent sent.
   const [pending, setPending] = useState(null);
+  // Which price list the upload being reviewed writes to. Read from the upload
+  // itself rather than from the tier switch: the server imports against the
+  // tier recorded when the file was staged, and those two can disagree.
+  const [reviewTier, setReviewTier] = useState(null);
+  // The catalogue list below could not be refreshed, so what is on screen may
+  // be older than what is actually stored.
+  const [listStale, setListStale] = useState(false);
   // Which price list is being viewed and uploaded to. 'retail' | 'wholesale'.
   //
   // A VIEW, not a mode the pharmacy is left "in". Customers are always priced
@@ -65,8 +72,30 @@ export default function UploadCatalogue({ view = 'all' }) {
   const fileRef = useRef(null);
   const wholesale = tier === 'wholesale';
 
+  /**
+   * Refresh the catalogue list.
+   *
+   * A FAILURE HERE USED TO BE INVISIBLE, and that produced the worst possible
+   * reading of a successful import: 300 products written on the server, this
+   * refresh times out, the screen shows the old catalogue, and nothing
+   * anywhere says why. The import looks like it silently did nothing — so the
+   * obvious next move is to import again, which is the one thing that cannot
+   * help.
+   *
+   * The list itself is still optional — the previous rows stay on screen
+   * rather than being blanked — but the fact that they are STALE is not
+   * optional, because it is the difference between "that did not work" and
+   * "that worked and this list is behind".
+   */
   const loadProducts = useCallback(async () => {
-    try { setProducts(await api(`/products?limit=25&tier=${tier}`)); } catch { /* counts panel is optional */ }
+    try {
+      setProducts(await api(`/products?limit=25&tier=${tier}`));
+      setListStale(false);
+      return true;
+    } catch {
+      setListStale(true);
+      return false;
+    }
   }, [tier]);
 
   const loadDuplicates = useCallback(async () => {
@@ -101,6 +130,13 @@ export default function UploadCatalogue({ view = 'all' }) {
       setOverrides({});
       setReport(null);
       setPending(null);
+      // Show the price list this file actually writes to, not whichever one
+      // the switch happened to be left on. The server imports against the
+      // tier recorded when the file was staged, so a screen saying "Wholesale"
+      // over a retail import would be describing something that is not
+      // happening — and the reviewer is the last person who can catch it.
+      setReviewTier(row.price_tier || 'retail');
+      setTier(row.price_tier || 'retail');
     } catch (e) {
       setError(e.message);
     } finally {
@@ -118,7 +154,10 @@ export default function UploadCatalogue({ view = 'all' }) {
   async function onFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setBusy('upload'); setError(null); setReport(null); setAnalysis(null); setOverrides({});
+    // reviewTier cleared: a file picked here is uploaded at whatever tier the
+    // switch is on, so the switch is the authority for this one.
+    setBusy('upload'); setError(null); setReport(null); setAnalysis(null);
+    setOverrides({}); setReviewTier(null);
     try {
       const form = new FormData();
       form.append('file', file);
@@ -147,6 +186,7 @@ export default function UploadCatalogue({ view = 'all' }) {
       });
       setReport(res);
       setAnalysis(null);
+      setReviewTier(null);
       loadProducts();
       loadDuplicates();
       // Re-checked rather than assumed cleared: the agent may have sent a
@@ -231,6 +271,14 @@ export default function UploadCatalogue({ view = 'all' }) {
             {new Date(pending.created_at).toLocaleString('en-GB', {
               day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
             })}
+            {/* Which prices this will change, and where it came from. Both
+                said before it is opened, because "300 rows arrived" is not
+                enough to decide whether to import it. */}
+            {' · '}
+            <span className="font-medium">
+              {pending.price_tier === 'wholesale' ? 'wholesale prices' : 'retail prices'}
+            </span>
+            {pending.sync_device_id && ' · sent by a connected computer'}
           </p>
           <p className="mt-2 text-xs text-amber-800">
             Nothing has been changed yet. Confirm which column is which once, and
@@ -301,7 +349,23 @@ export default function UploadCatalogue({ view = 'all' }) {
             </div>
           )}
 
-          <p className="text-sm text-slate-600">
+          {/* Which prices are about to change, stated on the screen where the
+              decision is made. Importing a trade list into retail prices is
+              not a mistake anybody notices afterwards — the numbers all look
+              like prices, and the only symptom is margin quietly disappearing. */}
+          <p className={`rounded border px-3 py-2 text-sm ${
+            (reviewTier || tier) === 'wholesale'
+              ? 'border-amber-300 bg-amber-50 text-amber-900'
+              : 'border-slate-200 bg-slate-50 text-slate-700'}`}
+          >
+            This will set your{' '}
+            <strong>{(reviewTier || tier) === 'wholesale' ? 'wholesale prices' : 'retail prices'}</strong>.
+            {(reviewTier || tier) === 'wholesale'
+              ? ' Retail prices and stock are not touched.'
+              : ' Wholesale prices are not touched.'}
+          </p>
+
+          <p className="mt-3 text-sm text-slate-600">
             Read {analysis.rowsOut} rows from <span className="font-medium">{analysis.sheetNames?.[0]}</span>
             {analysis.rowsIn !== analysis.rowsOut && ` (${analysis.rowsIn - analysis.rowsOut} blank rows skipped)`}.
             Check each column, then import.
@@ -396,6 +460,25 @@ export default function UploadCatalogue({ view = 'all' }) {
               Imported {report.imported} products
               {report.rejected > 0 && `, skipped ${report.rejected}`}
             </p>
+            {/* The import SUCCEEDED — this is only about the list below being
+                behind. Said here, next to the success, because the alternative
+                is someone reading an unchanged catalogue as a failed import
+                and running it again. */}
+            {listStale && (
+              <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-2.5 py-2 text-sm text-amber-900">
+                <strong>Saved.</strong> The list below could not be refreshed just now, so it
+                may still show the old catalogue — that is this page being behind, not the
+                import failing.{' '}
+                <button
+                  type="button"
+                  onClick={() => loadProducts()}
+                  className="font-medium underline underline-offset-2"
+                >
+                  Try again
+                </button>
+                , or reload the page.
+              </p>
+            )}
             <ul className="mt-2 space-y-0.5 text-sm text-emerald-800">
               {report.flagged.noPrice > 0 && (
                 <li>{report.flagged.noPrice} have no price — the assistant will not quote them.</li>
