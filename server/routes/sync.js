@@ -92,7 +92,15 @@ async function requireDevice(req, res, next) {
 
 router.get('/devices', requireAuth, async (req, res, next) => {
   try {
-    res.json({ devices: await listDevices(req.pharmacyId) });
+    res.json({
+      devices: await listDevices(req.pharmacyId),
+      // Sent so the dashboard can show an inbox's full address on its own row
+      // rather than only at the moment it was issued. The domain depends on
+      // which inbound-parse provider is in front of this server, so the
+      // browser must not assemble it from a guess — an address that is subtly
+      // wrong gets pasted into a POS and silently delivers nowhere.
+      emailDomain: process.env.EMAIL_INBOUND_DOMAIN || null,
+    });
   } catch (err) {
     next(err);
   }

@@ -49,6 +49,12 @@ export default function CatalogueSync() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [confirmRevoke, setConfirmRevoke] = useState(null);
+  // A freshly issued email address, highlighted until the page is reloaded.
+  // The pharmacist has to carry this to another system, and it should not look
+  // like just another row the moment it appears.
+  const [newAddress, setNewAddress] = useState(null);
+  const [copied, setCopied] = useState(null);
+  const [emailDomain, setEmailDomain] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -56,6 +62,9 @@ export default function CatalogueSync() {
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || 'Could not load connected computers.');
       setDevices(j.devices || []);
+      // Null when the server has no inbound-email provider configured — the
+      // address is then hidden rather than shown with a guessed domain.
+      setEmailDomain(j.emailDomain || null);
       setError(null);
       return j.devices || [];
     } catch (e) {
@@ -95,6 +104,40 @@ export default function CatalogueSync() {
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || 'Could not start pairing.');
       setPairing({ deviceId: j.deviceId, code: j.code, expiresAt: j.expiresAt });
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Issue this pharmacy an address their cloud POS can mail its report to.
+   *
+   * Not a "pairing" and deliberately not presented as one: there is nothing to
+   * install, nothing to type back, and no code that expires. The address is
+   * live the moment it exists, so the only thing the pharmacist has to do is
+   * copy it into their POS — which is why the copy button is the primary
+   * action on the row rather than an afterthought.
+   */
+  async function createEmailInbox() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch('/api/sync/email-inbox', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+        signal: AbortSignal.timeout(20000),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        throw new Error(j.code === 'EMAIL_NOT_CONFIGURED'
+          ? 'Emailed stock reports are not switched on for this server yet. Ask RxNaija support to enable it.'
+          : (j.error || 'Could not create an email address.'));
+      }
+      setNewAddress(j.address);
       load();
     } catch (e) {
       setError(e.message);
@@ -199,21 +242,87 @@ export default function CatalogueSync() {
         </div>
       )}
 
-      {/* ---- nothing connected yet ---- */}
-      {active.length === 0 && !pairing && (
-        <div className="mt-4">
-          <p className="text-sm text-slate-600">
-            No computer is connected, so your catalogue only changes when someone
-            uploads a file by hand.
+      {/* ---- a freshly issued email address ----
+          Shown once, prominently, because it has to be carried to another
+          system. Everything else on this screen can be found again by
+          scrolling; this is the one thing somebody is mid-task with. */}
+      {newAddress && (
+        <div className="mt-4 rounded-lg border border-teal-300 bg-teal-50 p-4">
+          <p className="text-xs font-medium text-teal-900">
+            In your stock software, set its scheduled stock report to be emailed to:
+          </p>
+          <p className="mt-2 break-all font-mono text-base font-semibold text-teal-950">
+            {newAddress}
           </p>
           <button
             type="button"
-            onClick={startPairing}
-            disabled={busy}
-            className="mt-3 rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-40"
+            onClick={() => {
+              navigator.clipboard?.writeText(newAddress).catch(() => {});
+              setCopied(newAddress);
+              setTimeout(() => setCopied(null), 4000);
+            }}
+            className="mt-3 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
           >
-            {busy ? 'Starting…' : 'Connect a computer'}
+            {copied === newAddress ? 'Copied' : 'Copy address'}
           </button>
+          {/* The failure that would otherwise be discovered a week later, when
+              a catalogue that never updated is finally noticed. Said before
+              they walk away to configure it, not after. */}
+          <p className="mt-3 border-t border-teal-200 pt-2.5 text-xs text-teal-900">
+            <strong>Send it as Excel or CSV, not PDF.</strong> Many systems email reports as
+            a PDF by default — that is a picture of a table, and prices cannot be read from
+            it. If yours only sends PDF, tell us and we will find another way.
+          </p>
+        </div>
+      )}
+
+      {/* ---- nothing connected yet ---- */}
+      {active.length === 0 && !pairing && !newAddress && (
+        <div className="mt-4">
+          <p className="text-sm text-slate-600">
+            Nothing is connected, so your catalogue only changes when someone uploads
+            a file by hand.
+          </p>
+          {/* Two routes, because the right one depends on something the
+              pharmacy knows and this screen cannot: where their stock data
+              actually lives. Asking that question directly is clearer than
+              offering one option and hiding the other behind it. */}
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border border-slate-200 p-3">
+              <p className="text-sm font-medium text-slate-800">
+                My stock software runs on a computer here
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                A small program on that computer sends your product list automatically.
+              </p>
+              <button
+                type="button"
+                onClick={startPairing}
+                disabled={busy}
+                className="mt-3 rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-40"
+              >
+                {busy ? 'Starting…' : 'Connect a computer'}
+              </button>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 p-3">
+              <p className="text-sm font-medium text-slate-800">
+                My stock software is online
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                We give you an email address. Point your system&apos;s scheduled report at
+                it — nothing to install.
+              </p>
+              <button
+                type="button"
+                onClick={createEmailInbox}
+                disabled={busy}
+                className="mt-3 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-40"
+              >
+                {busy ? 'Creating…' : 'Get an email address'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -227,7 +336,7 @@ export default function CatalogueSync() {
             >
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <p className="min-w-0 font-medium text-slate-900">
-                  {d.label || 'Unnamed computer'}
+                  {d.label || (d.kind === 'email' ? 'Emailed stock report' : 'Unnamed computer')}
                   {d.pos_confirmed && (
                     <span className="ml-2 text-xs font-normal text-slate-500">{d.pos_confirmed}</span>
                   )}
@@ -252,19 +361,67 @@ export default function CatalogueSync() {
                     as such: an agent that is running but finding no export is
                     a folder problem, and one that has not been seen at all is
                     a switched-off computer. Collapsing them would send the
-                    pharmacist looking in the wrong place. */}
-                {d.last_seen_at ? `Program last checked in ${relTime(d.last_seen_at)}` : 'Never checked in'}
+                    pharmacist looking in the wrong place.
+
+                    For an inbox there is no program to check in, so the same
+                    timestamp means "mail last arrived" — a different sentence
+                    for a different fact. */}
+                {d.kind === 'email'
+                  ? (d.last_seen_at ? `Email last arrived ${relTime(d.last_seen_at)}` : 'No email received yet')
+                  : (d.last_seen_at ? `Program last checked in ${relTime(d.last_seen_at)}` : 'Never checked in')}
                 {d.last_sync_status === 'needs_review' && ' · waiting for someone to check the columns'}
                 {d.last_sync_status === 'failed' && d.last_sync_detail && ` · last attempt failed: ${d.last_sync_detail}`}
               </p>
 
+              {/* The address, on the row that uses it. A pharmacist coming back
+                  a week later to re-enter it in their POS should not have to
+                  issue a second one to find out what the first was. */}
+              {d.kind === 'email' && d.email_token && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
+                  <span className="min-w-0 break-all font-mono text-[11px] text-slate-700">
+                    stock-{d.email_token}@{emailDomain || '…'}
+                  </span>
+                  {emailDomain && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const addr = `stock-${d.email_token}@${emailDomain}`;
+                        navigator.clipboard?.writeText(addr).catch(() => {});
+                        setCopied(addr);
+                        setTimeout(() => setCopied(null), 4000);
+                      }}
+                      className="ml-auto shrink-0 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] hover:bg-slate-50"
+                    >
+                      {copied === `stock-${d.email_token}@${emailDomain}` ? 'Copied' : 'Copy'}
+                    </button>
+                  )}
+                </div>
+              )}
+              {d.kind === 'email' && !d.allowed_sender && d.last_seen_at && (
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Waiting for the first report. The address it arrives from is remembered,
+                  and anything sent from elsewhere is ignored after that.
+                </p>
+              )}
+
               {confirmRevoke === d.id ? (
                 <div className="mt-2 rounded border border-red-300 bg-white p-2.5">
                   <p className="text-xs text-red-800">
-                    <strong>Disconnect this computer?</strong> It stops sending your
-                    catalogue immediately, and your prices and stock stay frozen at
-                    whatever was last sent until someone uploads a file by hand.
-                    Reconnecting means installing and pairing it again.
+                    {d.kind === 'email' ? (
+                      <>
+                        <strong>Stop using this email address?</strong> Any report sent to
+                        it after this is ignored, and your prices and stock stay frozen at
+                        whatever was last received until someone uploads a file by hand.
+                        A new address would have to be entered in your stock software again.
+                      </>
+                    ) : (
+                      <>
+                        <strong>Disconnect this computer?</strong> It stops sending your
+                        catalogue immediately, and your prices and stock stay frozen at
+                        whatever was last sent until someone uploads a file by hand.
+                        Reconnecting means installing and pairing it again.
+                      </>
+                    )}
                   </p>
                   <div className="mt-2 flex gap-2">
                     <button
@@ -306,19 +463,42 @@ export default function CatalogueSync() {
               >
                 Connect another computer
               </button>
+              <button
+                type="button"
+                onClick={createEmailInbox}
+                disabled={busy}
+                className="ml-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Add an email address
+              </button>
             </li>
           )}
         </ul>
       )}
 
-      {/* Stated plainly, before anyone installs anything. See this file's header. */}
-      <p className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
-        <strong className="text-slate-700">What the program can see.</strong> To work out
-        which stock software you use, it reads the <em>names</em> of the programs installed
-        on that computer and shows you the list before sending anything. It never reads your
-        files, your patient records, or anything inside your stock database — only the product
-        list you export. You can disconnect it here at any time, without touching that computer.
-      </p>
+      {/* Stated plainly, before anyone installs anything. See this file's header.
+          Scoped to the installed program on purpose: an email inbox reads
+          nothing on anybody's computer, and a disclosure that described
+          capabilities a source does not have would be its own kind of untrue. */}
+      {active.some((d) => d.kind !== 'email') || active.length === 0 ? (
+        <p className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
+          <strong className="text-slate-700">What the installed program can see.</strong> To
+          work out which stock software you use, it reads the <em>names</em> of the programs
+          installed on that computer and shows you the list before sending anything. It never
+          reads your files, your patient records, or anything inside your stock database —
+          only the product list you export. You can disconnect it here at any time, without
+          touching that computer.
+        </p>
+      ) : null}
+
+      {active.some((d) => d.kind === 'email') && (
+        <p className="mt-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
+          <strong className="text-slate-700">About the email address.</strong> It only
+          accepts reports from the address your stock software first sent from — anything
+          else is ignored. Nothing is installed anywhere, and we never ask for your stock
+          software&apos;s password. Stop it here at any time.
+        </p>
+      )}
     </section>
   );
 }
