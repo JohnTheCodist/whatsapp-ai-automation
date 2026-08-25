@@ -80,8 +80,19 @@ function hashFile(filePath) {
  * and "uploaded, but someone has to check the columns" are both successes for
  * the agent and completely different facts for the pharmacy.
  */
-async function upload({ apiUrl, token, filePath, fileName }) {
-  const buf = fs.readFileSync(filePath);
+/**
+ * Send a catalogue.
+ *
+ * Takes EITHER a path on disk or bytes already in memory. The database reader
+ * produces a CSV that has never been a file and should not become one: writing
+ * a pharmacy's entire product list to a temporary file, on a shared shop
+ * computer, purely to satisfy a function signature would leave their stock and
+ * pricing sitting in %TEMP% for anyone who looks. Same upload either way, so
+ * the server cannot tell — and should not care — which door the rows came in
+ * through.
+ */
+async function upload({ apiUrl, token, filePath, fileName, buffer }) {
+  const buf = buffer ?? fs.readFileSync(filePath);
   if (buf.length > MAX_BYTES) {
     const e = new Error(`${fileName} is ${(buf.length / 1048576).toFixed(1)}MB — larger than the 10MB limit.`);
     e.code = 'TOO_BIG';

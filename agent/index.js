@@ -18,9 +18,11 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const readline = require('node:readline/promises');
 
 const config = require('./src/config');
+const database = require('./src/database');
 const { detect } = require('./src/detect');
 const { newestExport, looksSettled, hashFile, upload, heartbeat } = require('./src/sync');
 
@@ -218,6 +220,56 @@ async function runOnce({ quiet = false } = {}) {
       log('  Run it again to pair with a new code.');
     }
     return { ok: false, reason: 'unpaired' };
+  }
+
+  // ---- reading straight from the POS database -------------------------
+  //
+  // The whole point of this path is that nobody has to export anything, so it
+  // runs before the folder is even looked at. Same upload, same pipeline, same
+  // saved mapping — the rows just came from a table instead of a spreadsheet.
+  if (c.source === 'database' && c.db?.table) {
+    let csv;
+    let rowCount;
+    try {
+      ({ csv, rowCount } = await database.exportToCsv(c.db));
+    } catch (e) {
+      // A pharmacy's POS goes down, gets moved, has its password changed. That
+      // is an ordinary Tuesday, not a crash — and it must not stop the agent
+      // running, or one bad night ends the sync permanently.
+      if (!quiet) log(`[${stamp()}] Could not read ${c.db.database}.${c.db.table}: ${e.code || e.message}`);
+      return { ok: false, reason: 'db_unreadable' };
+    }
+
+    if (!rowCount) {
+      if (!quiet) log(`[${stamp()}] ${c.db.table} has no rows — nothing to send.`);
+      return { ok: false, reason: 'db_empty' };
+    }
+
+    const buffer = Buffer.from(csv, 'utf8');
+    const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+    if (hash === c.lastHash) {
+      if (!quiet) log(`[${stamp()}] Stock is unchanged since the last check. Nothing to do.`);
+      return { ok: true, reason: 'unchanged' };
+    }
+
+    const fileName = `${c.db.table}.csv`;
+    try {
+      const result = await upload({ apiUrl: c.apiUrl, token: c.token, buffer, fileName });
+      config.write({ lastHash: hash });
+      if (result.status === 'needs_review') {
+        log(`[${stamp()}] Sent ${rowCount} rows from ${c.db.table}. Someone needs to check the columns in the dashboard before it can be imported (${result.reason}).`);
+        return { ok: true, reason: 'needs_review' };
+      }
+      log(`[${stamp()}] Read ${rowCount} rows from ${c.db.table} — ${result.imported} products updated.`);
+      return { ok: true, reason: 'imported', result };
+    } catch (e) {
+      if (e.code === 'UNPAIRED') {
+        log(`[${stamp()}] This computer has been disconnected in the dashboard. Pair it again to resume.`);
+        return { ok: false, reason: 'unpaired' };
+      }
+      log(`[${stamp()}] Could not send the stock list: ${e.message}`);
+      return { ok: false, reason: 'failed' };
+    }
   }
 
   let file;
@@ -464,6 +516,27 @@ async function assess() {
     };
   }
 
+  // Reading a database: the folder checks below do not apply at all, and
+  // telling somebody their export folder is empty when nothing exports to a
+  // folder any more would send them looking for a problem that is not there.
+  if (c.source === 'database' && c.db?.table) {
+    const scheduledDb = await scheduleInstalled();
+    if (!scheduledDb) {
+      return {
+        ok: false,
+        headline: 'Automatic sending is not set up',
+        detail: `Your stock is read from ${c.db.table}, but only when somebody opens this program.`,
+        steps: ['Choose "Set up automatic sending" below'],
+        c, hours, scheduled: false, fromDb: true,
+      };
+    }
+    return {
+      ok: true,
+      headline: 'Everything is working',
+      c, hours, scheduled: true, fromDb: true,
+    };
+  }
+
   let newest = null;
   let folderMissing = false;
   if (c.watchPath) {
@@ -529,7 +602,11 @@ function printStatus(s) {
     log(`  ${s.detail}`);
   }
 
-  if (s.newest) {
+  if (s.fromDb) {
+    log('');
+    log(`  Reading from      ${s.c.db.table} in ${s.c.db.database}`);
+    log('  Exporting         not needed — read directly from your stock software');
+  } else if (s.newest) {
     log('');
     log(`  Your stock file   ${s.newest.name}`);
     log(`  Last changed      ${ago(s.newest.stat.mtime)}`);
@@ -639,6 +716,121 @@ async function pauseIfLaunchedFromExplorer() {
 }
 
 /**
+ * Point the agent at the POS database instead of a folder.
+ *
+ * WHY THIS IS WORTH A GUIDED FLOW RATHER THAN A CONFIG FILE
+ * This is the step that removes the last human action from the whole system —
+ * after it, nobody exports anything, ever. That makes it worth a few questions
+ * asked well, on the one occasion it happens.
+ *
+ * The pharmacist is not asked to know their schema. They are shown the tables
+ * that look like a product list, best first, with a few real rows from the one
+ * they pick so they can see for themselves whether it is right. "Does this
+ * look like your products?" is a question anyone can answer; "which table is
+ * your product master?" is not.
+ */
+async function setupDatabase() {
+  const c = config.read();
+  const io = prompter();
+
+  log('');
+  log('  Read your stock software\'s database');
+  log('  -----------------------------------');
+  log('');
+  log('  This lets RxNaija read your product list directly, so nobody has to');
+  log('  export anything. It only ever READS — it never changes, adds or');
+  log('  deletes anything in your stock software.');
+  log('');
+  log('  You will need the database login your stock software uses. If you do');
+  log('  not know it, whoever installed the software will.');
+  log('');
+
+  const host = (await io.ask('  Server [127.0.0.1]: ')).trim() || '127.0.0.1';
+  const port = (await io.ask('  Port [3306]: ')).trim() || '3306';
+  const user = (await io.ask('  Username [root]: ')).trim() || 'root';
+  const password = await io.ask('  Password (leave blank if none): ');
+
+  log('\n  Connecting...');
+  let conn;
+  try {
+    conn = await database.connect({ host, port, user, password });
+  } catch (e) {
+    io.close();
+    log('');
+    log(`  Could not connect: ${e.code === 'ER_ACCESS_DENIED_ERROR' ? 'that username or password was refused' : (e.code || e.message)}`);
+    log('');
+    log('  What to do');
+    log('    - Check the username and password with whoever installed your stock software');
+    log('    - Make sure the stock software is running on this computer');
+    log('');
+    return;
+  }
+
+  try {
+    const dbs = await database.listDatabases(conn);
+    if (!dbs.length) {
+      log('\n  That login worked, but it cannot see any databases.\n');
+      return;
+    }
+
+    log('\n  Which database belongs to your stock software?\n');
+    dbs.forEach((d, i) => log(`    ${i + 1}. ${d}`));
+    const dbPick = Number((await io.ask('\n  Number: ')).trim());
+    const chosenDb = dbs[dbPick - 1];
+    if (!chosenDb) { log('\n  Nothing chosen.\n'); return; }
+
+    log('\n  Looking at the tables...');
+    const tables = await database.listTables(conn, chosenDb);
+    const likely = tables.slice(0, 8);
+
+    log('\n  Which table holds your products? (most likely first)\n');
+    likely.forEach((t, i) => {
+      log(`    ${i + 1}. ${t.table}  —  ${t.rows} rows${t.hasName && t.hasPrice ? '  (has a name and a price column)' : ''}`);
+    });
+    const tPick = Number((await io.ask('\n  Number: ')).trim());
+    const chosen = likely[tPick - 1];
+    if (!chosen) { log('\n  Nothing chosen.\n'); return; }
+
+    // Shown BEFORE anything is saved. A pharmacist cannot verify a table name,
+    // but they can absolutely recognise their own products.
+    const rows = await database.sample(conn, chosenDb, chosen.table, 3);
+    log(`\n  The first few rows of ${chosen.table}:\n`);
+    for (const r of rows) {
+      const preview = Object.entries(r).slice(0, 4)
+        .map(([k, v]) => `${k}=${v === null ? '(empty)' : String(v).slice(0, 30)}`)
+        .join('  ');
+      log(`    ${preview}`);
+    }
+
+    const yes = (await io.ask('\n  Are these your products? [y/N] ')).trim().toLowerCase();
+    io.close();
+    if (yes !== 'y' && yes !== 'yes') {
+      log('\n  Left as it was. Run this again to try a different table.\n');
+      return;
+    }
+
+    config.write({
+      source: 'database',
+      db: { host, port: Number(port), user, password, database: chosenDb, table: chosen.table },
+    });
+
+    log('');
+    log(`  Set. RxNaija will now read ${chosen.table} directly — no exporting.`);
+    log('');
+    // Said plainly rather than buried: this is somebody's database password
+    // sitting on a shop computer, and they are entitled to know where.
+    log(`  Your database password is stored on this computer only, in`);
+    log(`  ${config.CONFIG_PATH()}, readable only by administrators.`);
+    log('  It is never sent to RxNaija.');
+    log('');
+
+    await runOnce();
+  } finally {
+    await conn.end().catch(() => {});
+  }
+}
+
+/**
  * What a double-click actually gets you.
  *
  * WHY A MENU AND NOT A LIST OF COMMANDS
@@ -668,14 +860,21 @@ async function menu() {
 
   const scheduled = s.scheduled ?? await scheduleInstalled();
 
+  const fromDb = s.c.source === 'database';
+
   log('  What would you like to do?');
   log('');
-  log('    1   Send my stock file now');
-  log('    2   Change the folder it looks in');
+  log('    1   Send my stock list now');
+  log(fromDb
+    ? '    2   Change which database table to read'
+    : '    2   Change the folder it looks in');
   log(scheduled
     ? '    3   Stop sending automatically'
     : '    3   Set up automatic sending  (recommended)');
-  log('    4   Disconnect this computer from RxNaija');
+  log(fromDb
+    ? '    4   Go back to reading a folder instead'
+    : '    4   Read my stock software\'s database instead  (no exporting)');
+  log('    5   Disconnect this computer from RxNaija');
   log('');
 
   const io = prompter();
@@ -720,6 +919,21 @@ async function menu() {
   }
 
   if (choice === '4') {
+    io.close();
+    if (fromDb) {
+      // Back to a folder. The saved credentials go with it — keeping somebody's
+      // database password on disk for a connection nothing uses any more is
+      // not something to do quietly.
+      config.write({ source: 'folder', db: null });
+      log('\n  Now reading a folder again, and the saved database login has been removed.\n');
+      await runOnce();
+    } else {
+      await setupDatabase();
+    }
+    return;
+  }
+
+  if (choice === '5') {
     const confirm = prompter();
     const yes = (await confirm.ask('\n  Disconnect this computer? Your prices will stop updating until you connect it again. [y/N] ')).trim().toLowerCase();
     confirm.close();

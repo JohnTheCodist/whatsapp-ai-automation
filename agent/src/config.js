@@ -35,8 +35,18 @@ const DEFAULTS = {
   apiUrl: 'https://app.rxnaija.com',
   token: null,
   deviceId: null,
-  // Where the pharmacy's POS drops its export.
+  // Where the rows come from: 'folder' (somebody exports a spreadsheet) or
+  // 'database' (read straight out of the POS, nobody exports anything).
+  // Defaults to folder because it works against every POS on earth, including
+  // the ones that are a paper book and a copy of Excel.
+  source: 'folder',
+  // Where the pharmacy's POS drops its export, when source is 'folder'.
   watchPath: null,
+  // Connection to the POS database, when source is 'database'. Holds their
+  // database password: this file is written 0600 and lives in ProgramData,
+  // and the password is never sent to RxNaija — see setupDatabase(), which
+  // says so on screen before saving it.
+  db: null,
   pos: null,
   // Hash of the last file successfully sent, so an unchanged export is not
   // re-uploaded every few hours. The server dedupes too (content_hash), but
