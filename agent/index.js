@@ -16,6 +16,22 @@
  * person has to fix it.
  */
 
+// Node prints a four-line internal notice the first time a single-executable
+// build calls require(), explaining that only built-in modules are supported
+// and linking a GitHub discussion about virtual file systems. It is addressed
+// to whoever built this, it is correct — every module required at runtime here
+// IS a built-in — and there is nothing a pharmacist can do about it. Printing
+// it above "RxNaija Sync" undoes the whole point of the screen underneath.
+//
+// Filtered rather than blanket-silenced: anything else Node wants to say still
+// gets through. removeAllListeners first because adding a listener does not
+// replace Node's default printer, it just runs alongside it.
+process.removeAllListeners('warning');
+process.on('warning', (w) => {
+  if (/single-executable|only supports loading built-in modules/i.test(w.message)) return;
+  console.warn(w.message);
+});
+
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
