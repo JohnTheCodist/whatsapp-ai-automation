@@ -170,7 +170,8 @@ async function listDevices(pharmacyId) {
   assertPharmacyId(pharmacyId);
   const db = getSql();
   const rows = await db`
-    select id, label, status, pos_confirmed, watch_path, paired_at,
+    select id, label, status, kind, email_token, allowed_sender,
+           pos_confirmed, watch_path, paired_at,
            last_seen_at, last_sync_at, last_sync_status, last_sync_detail,
            pairing_code,
            case when pairing_expires_at > now() then pairing_expires_at else null end as pairing_expires_at,
@@ -255,10 +256,95 @@ async function saveMapping(pharmacyId, { mapping, columns }) {
   `;
 }
 
+/**
+ * The unguessable half of an inbox address.
+ *
+ * 16 characters from a 32-letter alphabet is about 80 bits — not a password
+ * anybody types from memory, and not one anybody guesses either. It is typed
+ * into a POS settings screen once and never read again, so length costs
+ * nothing here, while a guessable address (a pharmacy's name, a counter) would
+ * let a stranger mail a price list into a live catalogue.
+ *
+ * Same ambiguity-free alphabet as the pairing codes, because this does get
+ * read down a phone line to whoever configures the POS.
+ */
+function generateEmailToken() {
+  const alphabet = '234679abcdefghjkmnpqrtuvwxyz';
+  const bytes = crypto.randomBytes(16);
+  let out = '';
+  for (let i = 0; i < 16; i += 1) out += alphabet[bytes[i] % alphabet.length];
+  return out;
+}
+
+/**
+ * Give this pharmacy an address its cloud POS can mail its stock report to.
+ *
+ * Created 'active' rather than 'pending': there is nothing to pair. The
+ * address exists the moment it is issued, and the first message that arrives
+ * teaches it which sender to trust from then on.
+ */
+async function createEmailInbox(pharmacyId, { label = null } = {}) {
+  assertPharmacyId(pharmacyId);
+  const db = getSql();
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const token = generateEmailToken();
+    try {
+      const [row] = await db`
+        insert into sync_devices (pharmacy_id, kind, label, email_token, status, paired_at)
+        values (${pharmacyId}, 'email', ${label || 'Emailed stock report'}, ${token}, 'active', now())
+        returning id, label, email_token, status, created_at
+      `;
+      return row;
+    } catch (err) {
+      // Unique violation on a 80-bit token means the RNG repeated itself,
+      // which is worth retrying and not worth reporting.
+      if (err.code !== '23505') throw err;
+    }
+  }
+  throw new Error('Could not allocate an email address for this pharmacy.');
+}
+
+/**
+ * Find the inbox an address belongs to.
+ *
+ * Looked up by the token alone, never by the whole address: the domain is
+ * configuration and may differ between the provider's routing and what a
+ * pharmacist typed, and a mismatch there should not silently reject a real
+ * pharmacy's stock report.
+ */
+async function findEmailInbox(token) {
+  if (!token) return null;
+  const db = getSql();
+  const [row] = await db`
+    update sync_devices
+       set last_seen_at = now()
+     where email_token = ${String(token).toLowerCase()}
+       and kind = 'email'
+       and status = 'active'
+    returning id, pharmacy_id, label, allowed_sender
+  `;
+  return row || null;
+}
+
+/** Remember which address this inbox accepts, learned from its first message. */
+async function learnSender(deviceId, sender) {
+  const db = getSql();
+  await db`
+    update sync_devices
+       set allowed_sender = ${String(sender).toLowerCase()}, updated_at = now()
+     where id = ${deviceId} and allowed_sender is null
+  `;
+}
+
 module.exports = {
   createPairing,
   redeemPairing,
   authenticateDevice,
+  createEmailInbox,
+  findEmailInbox,
+  learnSender,
+  generateEmailToken,
   revokeDevice,
   listDevices,
   recordSyncResult,

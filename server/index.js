@@ -167,6 +167,9 @@ app.use('/api/pharmacies', require('./routes/pharmacies'));  // Phase 1
 app.use('/api/whatsapp', require('./routes/whatsapp'));      // Phase 2
 app.use('/api/catalogue', require('./routes/catalogue'));    // Phase 3
 app.use('/api/sync', require('./routes/sync'));              // catalogue sync agent
+// Inbound mail from a cloud POS, posted here by an inbound-parse provider.
+// Authenticated by a shared secret rather than a session — see the route.
+app.use('/api/email', require('./routes/emailInbound'));
 app.use('/api/conversations', require('./routes/conversations')); // Phase 4 — staff inbox
 app.use('/api/requests', require('./routes/requests'));      // pharmacist alternatives
 app.use('/api/customers', require('./routes/customers'));    // patient identity list

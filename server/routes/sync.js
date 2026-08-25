@@ -25,10 +25,10 @@ const multer = require('multer');
 const path = require('node:path');
 
 const { requireAuth } = require('../middleware/auth');
-const { stageUpload, confirmAndImport } = require('../services/catalogue/catalogueImport');
+const { ingestCatalogue, recordIngestFailure } = require('../services/sync/ingestCatalogue');
 const {
   createPairing, redeemPairing, authenticateDevice, revokeDevice,
-  listDevices, recordSyncResult, getSavedMapping, mappingMatches,
+  listDevices, createEmailInbox,
 } = require('../services/sync/syncDevices');
 
 const router = express.Router();
@@ -93,6 +93,31 @@ async function requireDevice(req, res, next) {
 router.get('/devices', requireAuth, async (req, res, next) => {
   try {
     res.json({ devices: await listDevices(req.pharmacyId) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Give this pharmacy an address its cloud POS can mail its stock report to.
+ *
+ * The domain comes from configuration rather than being built in the browser:
+ * it depends on which inbound-parse provider is in front of this and what MX
+ * records point where, and a dashboard that guessed would hand a pharmacist an
+ * address to paste into their POS that quietly goes nowhere.
+ */
+router.post('/email-inbox', requireAuth, async (req, res, next) => {
+  try {
+    const domain = process.env.EMAIL_INBOUND_DOMAIN;
+    if (!domain) {
+      return res.status(503).json({
+        error: 'Email delivery is not configured on this server yet.',
+        code: 'EMAIL_NOT_CONFIGURED',
+      });
+    }
+    const label = typeof req.body?.label === 'string' ? req.body.label.slice(0, 80) : null;
+    const row = await createEmailInbox(req.pharmacyId, { label });
+    res.json({ ...row, address: `stock-${row.email_token}@${domain}` });
   } catch (err) {
     next(err);
   }
@@ -179,89 +204,27 @@ router.post('/catalogue', requireDevice, handleUpload, async (req, res, next) =>
       return res.status(400).json({ error: 'No file was sent.', code: 'NO_FILE' });
     }
 
-    const staged = await stageUpload(req.pharmacyId, {
-      filename: req.file.originalname,
+    // The decision about what happens to these rows lives in one place, shared
+    // with email ingestion — see ingestCatalogue.js. Two copies of the
+    // unattended-import rule would agree today and diverge on the first fix
+    // applied to one of them, and the symptom would be a pharmacy's prices
+    // going quietly wrong on a schedule.
+    const result = await ingestCatalogue({
+      pharmacyId: req.pharmacyId,
+      deviceId: device.id,
       buffer: req.file.buffer,
-      // A synced file is a retail catalogue. Trade prices are a deliberate,
-      // separate act by the owner — an unattended nightly job must not be able
-      // to rewrite a pharmacy's wholesale list.
-      priceTier: 'retail',
-      syncDeviceId: device.id,
-      uploadedBy: null,
+      filename: req.file.originalname,
     });
 
-    const incomingColumns = [
-      ...(staged.proposals || []).map((p) => p.rawHeader),
-      ...(staged.unmapped || []),
-      ...(staged.detectedButUnused || []).map((d) => d.rawHeader),
-    ].filter(Boolean);
-
-    const saved = await getSavedMapping(req.pharmacyId);
-    const matches = staged.ok && mappingMatches(saved.columns, incomingColumns);
-
-    if (!matches) {
-      const reason = !staged.ok
-        ? (staged.reason || 'the file could not be read as a catalogue')
-        : (saved.columns ? 'the columns in this export have changed' : 'this pharmacy has not confirmed a mapping yet');
-
-      await recordSyncResult(device.id, {
-        status: 'needs_review',
-        detail: reason,
-        succeeded: false,
-      });
-
-      // 200, not an error. The agent did its job correctly; a human simply has
-      // to look. Returning 4xx here would make a normal, expected state
-      // indistinguishable from a broken install in the agent's own logs.
-      return res.json({
-        status: 'needs_review',
-        uploadId: staged.uploadId,
-        reason,
-        message: 'Uploaded. Someone needs to check the columns in the dashboard before this can be imported.',
-      });
-    }
-
-    const report = await confirmAndImport(req.pharmacyId, staged.uploadId, saved.mapping, {
-      unattended: true,
-    });
-
-    // An unattended import that rejected more rows than it kept is not a
-    // success, whatever the columns matched.
-    //
-    // The mapping can still be right in shape and wrong in practice — a POS
-    // that starts writing prices as "N1,200" or dates in a new format leaves
-    // the headers untouched and every row unusable. Reported as "imported"
-    // that is a catalogue quietly going half-stale on a schedule with nobody
-    // watching, which is precisely the failure this whole feature is supposed
-    // to prevent rather than automate.
-    const mostlyRejected = report.rejected > report.imported;
-
-    await recordSyncResult(device.id, {
-      status: mostlyRejected ? 'needs_review' : 'imported',
-      detail: mostlyRejected
-        ? `${report.rejected} of ${report.rejected + report.imported} rows could not be read — check the file`
-        : `${report.imported} products`,
-      // Not counted as a successful sync, so the dashboard's staleness clock
-      // keeps running and the pharmacy is told rather than reassured.
-      succeeded: !mostlyRejected,
-    });
-
-    res.json({
-      status: mostlyRejected ? 'needs_review' : 'imported',
-      uploadId: staged.uploadId,
-      ...report,
-    });
+    // 200 even when a human has to look: the agent did its job correctly, and
+    // returning 4xx would make a normal, expected state indistinguishable from
+    // a broken install in the agent's own logs.
+    return res.json(result.status === 'needs_review'
+      ? { ...result, message: 'Uploaded. Someone needs to check the columns in the dashboard before this can be imported.' }
+      : result);
   } catch (err) {
-    // Recorded before rethrowing, so a failing sync is visible in the
-    // dashboard rather than only in the server log.
-    try {
-      await recordSyncResult(device.id, {
-        status: 'failed',
-        detail: err.message?.slice(0, 300) || 'unknown error',
-        succeeded: false,
-      });
-    } catch { /* the original error matters more than this bookkeeping */ }
-    next(err);
+    await recordIngestFailure(device.id, err);
+    return next(err);
   }
 });
 
