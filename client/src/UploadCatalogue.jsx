@@ -49,6 +49,8 @@ export default function UploadCatalogue({ view = 'all' }) {
   const [duplicates, setDuplicates] = useState(null);
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
+  // A staged upload waiting on a human — normally one the sync agent sent.
+  const [pending, setPending] = useState(null);
   // Which price list is being viewed and uploaded to. 'retail' | 'wholesale'.
   //
   // A VIEW, not a mode the pharmacy is left "in". Customers are always priced
@@ -71,11 +73,47 @@ export default function UploadCatalogue({ view = 'all' }) {
     try { setDuplicates(await api('/duplicates')); } catch { /* advisory only */ }
   }, []);
 
+  /**
+   * A file that arrived on its own and is waiting for a person.
+   *
+   * The sync agent stages an upload and stops when it cannot match the columns
+   * to a confirmed mapping. Until this existed there was nowhere to go and
+   * finish that: the Stock sync panel said "waiting for someone to check the
+   * columns", the dashboard offered no way to check them, and the only screen
+   * that can review a mapping only ever knew about files chosen in this
+   * browser seconds earlier. The catalogue would simply never update, with
+   * every part of the system correctly reporting that it was waiting.
+   */
+  const loadPending = useCallback(async () => {
+    try {
+      const j = await api('/uploads');
+      setPending((j.uploads || []).find((u) => u.status === 'awaiting_confirmation') || null);
+    } catch { /* the rest of the screen still works */ }
+  }, []);
+
+  /** Open a staged upload in the same review UI a fresh one uses. */
+  async function reviewPending(id) {
+    setBusy('pending'); setError(null);
+    try {
+      const row = await api(`/uploads/${id}`);
+      setUploadId(row.id);
+      setAnalysis(row.analysis);      // stored publicAnalysis — same shape as an upload response
+      setOverrides({});
+      setReport(null);
+      setPending(null);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   useEffect(() => {
     api('/fields').then(setMeta).catch(() => {});
     loadProducts();
     loadDuplicates();
-  }, [loadProducts, loadDuplicates]);
+    loadPending();
+  }, [loadProducts, loadDuplicates, loadPending]);
 
   async function onFile(e) {
     const file = e.target.files?.[0];
@@ -111,6 +149,10 @@ export default function UploadCatalogue({ view = 'all' }) {
       setAnalysis(null);
       loadProducts();
       loadDuplicates();
+      // Re-checked rather than assumed cleared: the agent may have sent a
+      // second file while this one was being reviewed, and the person who just
+      // finished one review is exactly who should be told there is another.
+      loadPending();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -172,6 +214,38 @@ export default function UploadCatalogue({ view = 'all' }) {
           setError(null);
         }}
       />
+
+      {/* ---- a file that arrived on its own ----
+          Shown on BOTH the catalogue and upload views, because whoever opens
+          the dashboard next is the person who needs to see it, and which of
+          the two tabs they happened to click is not a reason to hide it. */}
+      {pending && !analysis && (
+        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
+          <p className="text-sm font-medium text-amber-900">
+            A stock file arrived and needs your check before it can be imported
+          </p>
+          <p className="mt-1 text-sm text-amber-800">
+            <span className="font-medium">{pending.filename}</span>
+            {pending.rows_total > 0 && ` · ${pending.rows_total} rows`}
+            {' · '}
+            {new Date(pending.created_at).toLocaleString('en-GB', {
+              day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+            })}
+          </p>
+          <p className="mt-2 text-xs text-amber-800">
+            Nothing has been changed yet. Confirm which column is which once, and
+            files with the same columns will import by themselves from then on.
+          </p>
+          <button
+            type="button"
+            onClick={() => reviewPending(pending.id)}
+            disabled={busy === 'pending'}
+            className="mt-3 rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-40"
+          >
+            {busy === 'pending' ? 'Opening…' : 'Check the columns'}
+          </button>
+        </div>
+      )}
 
       {/* ---- pick a file ---- */}
       {showUpload && !analysis && !report && (
