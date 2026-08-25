@@ -113,16 +113,30 @@ async function upload({ apiUrl, token, filePath, fileName }) {
   return body;
 }
 
+/**
+ * Tell the server we are alive, and find out whether it still knows us.
+ *
+ * Returns a verdict rather than nothing. "Am I paired?" is a question only the
+ * server can answer — a local config file records what was true when it was
+ * written, and the moment someone disconnects the device in the dashboard, it
+ * is a file confidently describing a relationship that has ended.
+ *
+ * A network failure is NOT unpaired. Those are opposite problems: one needs
+ * the wifi looked at, the other needs re-pairing, and telling a pharmacist to
+ * re-pair because their internet dropped is how a working install gets taken
+ * apart.
+ */
 async function heartbeat({ apiUrl, token }) {
   try {
-    await fetch(`${apiUrl.replace(/\/$/, '')}/api/sync/heartbeat`, {
+    const res = await fetch(`${apiUrl.replace(/\/$/, '')}/api/sync/heartbeat`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(30000),
     });
+    if (res.status === 401) return { ok: false, unpaired: true };
+    return { ok: res.ok, unpaired: false };
   } catch {
-    // Best effort. A missed heartbeat shows in the dashboard as a quiet agent,
-    // which is exactly what it is.
+    return { ok: false, unpaired: false, unreachable: true };
   }
 }
 

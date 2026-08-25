@@ -76,4 +76,22 @@ function isPaired() {
   return Boolean(c.token && c.deviceId);
 }
 
-module.exports = { read, write, isPaired, home, CONFIG_PATH, DEFAULTS };
+/**
+ * Forget the pairing, keeping everything else.
+ *
+ * Called when the SERVER says this device is no longer paired — someone
+ * disconnected it in the dashboard. Until this existed, revoking a device left
+ * the agent still holding a dead token and still reporting "Paired: yes",
+ * because being paired was decided by reading a local file rather than by
+ * asking. The pharmacist saw a program insisting it was connected to something
+ * they had just disconnected it from.
+ *
+ * watchPath and pos survive on purpose: they are still true about this
+ * computer, and re-pairing should not make someone find their export folder
+ * again.
+ */
+function clearPairing() {
+  return write({ token: null, deviceId: null, lastHash: null });
+}
+
+module.exports = { read, write, isPaired, clearPairing, home, CONFIG_PATH, DEFAULTS };

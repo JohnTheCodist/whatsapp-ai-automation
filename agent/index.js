@@ -199,7 +199,19 @@ async function runOnce({ quiet = false } = {}) {
     return { ok: false, reason: 'not_paired' };
   }
 
-  await heartbeat(c);
+  const beat = await heartbeat(c);
+  if (beat.unpaired) {
+    // The server has revoked this device. Forget the dead token rather than
+    // keep presenting it — otherwise every later run reports "Paired: yes"
+    // about a pairing that no longer exists, and the double-click flow never
+    // offers to pair again because it believes it already is.
+    config.clearPairing();
+    if (!quiet) {
+      log(`[${stamp()}] This computer has been disconnected in the dashboard.`);
+      log('  Run it again to pair with a new code.');
+    }
+    return { ok: false, reason: 'unpaired' };
+  }
 
   let file;
   try {
@@ -271,12 +283,37 @@ async function cmdWatch() {
 
 async function cmdStatus() {
   const c = config.read();
+
+  // ASK the server rather than reading the file back. "Paired" is a fact about
+  // a relationship the other side can end at any moment, and a local file only
+  // records what was true when it was written.
+  let paired = c.token ? 'checking…' : 'no';
+  if (c.token) {
+    const beat = await heartbeat(c);
+    if (beat.unpaired) {
+      config.clearPairing();
+      paired = 'NO — this computer was disconnected in the dashboard';
+    } else if (beat.unreachable) {
+      paired = `cannot reach ${c.apiUrl} — check this computer's internet`;
+    } else {
+      paired = `yes (device ${c.deviceId})`;
+    }
+  }
+
   log('');
   log(`  Config:    ${config.CONFIG_PATH()}`);
   log(`  Server:    ${c.apiUrl}`);
-  log(`  Paired:    ${c.token ? `yes (device ${c.deviceId})` : 'no'}`);
+  log(`  Paired:    ${paired}`);
   log(`  Software:  ${c.pos || '(not recorded)'}`);
   log(`  Watching:  ${c.watchPath || '(not set)'}`);
+  // A config written by a version that accepted relative paths. Saying so
+  // beats letting them read "THE FOLDER IS MISSING — RxNaija" and go looking
+  // for a folder that is sitting there exactly where they made it.
+  if (c.watchPath && !path.isAbsolute(c.watchPath)) {
+    log('             ^ this is not a full path, so it points somewhere different');
+    log('               depending on how this program was started. Pair again and');
+    log('               give the full folder, e.g. C:\\RxNaija\\export');
+  }
   log(`  Every:     ${c.intervalMinutes} minutes`);
 
   if (c.watchPath) {
@@ -344,7 +381,12 @@ async function main() {
       // Already set up — the useful thing to show is whether it is working,
       // not a list of commands they will not type.
       await cmdStatus();
-      await runOnce();
+      // cmdStatus asks the server, and may have just discovered this device
+      // was disconnected and cleared the dead token. Offer to pair again
+      // rather than dead-ending on a program that has just said it is not
+      // connected and then done nothing about it.
+      if (config.isPaired()) await runOnce();
+      else await firstRun();
     } else {
       await firstRun();
     }
