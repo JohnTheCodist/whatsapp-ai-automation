@@ -130,6 +130,16 @@ async function cmdPair(args) {
     }
   }
   io.close();
+
+  // ABSOLUTE, always. Someone typing "RxNaija" at the folder prompt means a
+  // folder they can point at, but a relative path resolves against whatever
+  // directory this process happened to start in — Explorer's, a shortcut's
+  // working directory, or C:\Windows\system32 once this runs as a service.
+  // The agent would then watch a different folder depending on how it was
+  // launched, find nothing, and report "no spreadsheet in RxNaija" about a
+  // folder the pharmacist is looking straight at.
+  watchPath = path.resolve(watchPath);
+
   try {
     fs.mkdirSync(watchPath, { recursive: true });
   } catch (e) {

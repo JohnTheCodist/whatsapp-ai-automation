@@ -25,6 +25,49 @@ cd "$APP_DIR"
 # mismatch two lines apart.
 GIT="sudo -u $APP_USER git"
 
+# Run a command as the app user WITHOUT dragging root's environment in.
+#
+# --preserve-env used to be here and is why the build silently did nothing:
+# it keeps root's HOME=/root, so npm — running as rxnaija — tried to use
+# /root/.npm as its cache, which that user cannot write. Nothing about that
+# reads as "the build did not run"; the deploy just moved on.
+#
+# It was never needed either. Every block below sources .env.production itself
+# on the next line, which is where the build's environment is supposed to come
+# from. HOME is set explicitly so npm's cache lands somewhere the app user owns.
+as_app() {
+  sudo -u "$APP_USER" \
+    env -i PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+           HOME="$APP_DIR" \
+    bash -c "$1"
+}
+
+DIST_INDEX="$APP_DIR/client/dist/index.html"
+
+# When did the RUNNING service actually start?
+service_started_at() {
+  local ts
+  ts="$(systemctl show -p ActiveEnterTimestamp --value rxnaija 2>/dev/null)"
+  [ -n "$ts" ] && date -d "$ts" +%s 2>/dev/null || echo 0
+}
+
+restart_and_verify() {
+  say "Restarting"
+  sudo systemctl restart rxnaija
+
+  # Confirm it actually came back rather than assuming. A deploy that reports
+  # success while the service is crash-looping is worse than one that fails
+  # loudly — the WhatsApp socket is down either way, but only one tells you.
+  sleep 6
+  if curl -fsS -m 10 http://localhost:4000/api/health >/dev/null; then
+    say "Healthy at ${AFTER}"
+  else
+    printf '\n\033[1;31m==> Service did not come back healthy. Recent logs:\033[0m\n'
+    sudo journalctl -u rxnaija -n 40 --no-pager
+    exit 1
+  fi
+}
+
 say "Fetching main"
 $GIT fetch --quiet origin main
 BEFORE="$($GIT rev-parse --short HEAD)"
@@ -32,6 +75,18 @@ $GIT reset --hard --quiet origin/main
 AFTER="$($GIT rev-parse --short HEAD)"
 
 if [ "$BEFORE" = "$AFTER" ]; then
+  # "Nothing to deploy" is about the CODE. It is not the same claim as "the
+  # running service is on that code", and treating them as one is a trap this
+  # script walked somebody into: the build failed, they fixed it by hand, and
+  # every re-run then said "nothing to deploy" and refused to restart onto the
+  # bundle they had just built. Half an hour of a correct deploy looking like
+  # a broken one.
+  DIST_MTIME="$( [ -f "$DIST_INDEX" ] && stat -c %Y "$DIST_INDEX" || echo 0 )"
+  if [ "$DIST_MTIME" -gt "$(service_started_at)" ]; then
+    say "Already at ${AFTER}, but the running service is older than the built dashboard"
+    restart_and_verify
+    exit 0
+  fi
   say "Already at ${AFTER} — nothing to deploy"
   exit 0
 fi
@@ -55,7 +110,7 @@ say "Installing and building"
 # reported success. The explicit `cd` is the same defence: this used to rely on
 # sudo happening to preserve the outer cd, which is a configuration detail of
 # the box rather than something this script states.
-sudo -u "$APP_USER" --preserve-env bash -c '
+as_app '
   set -eo pipefail
   cd '"$APP_DIR"'
   set -a; . ./.env.production; set +a
@@ -63,7 +118,7 @@ sudo -u "$APP_USER" --preserve-env bash -c '
   # --include=dev is REQUIRED here even though this is production.
   # Sourcing .env.production above sets NODE_ENV=production, which makes npm
   # skip devDependencies — and Vite is one. Without this the build dies with
-  # 'vite: not found', which reads as a missing binary rather than as npm
+  # '"'"'vite: not found'"'"', which reads as a missing binary rather than as npm
   # quietly obeying an env var set three lines earlier.
   #
   # The tooling is only needed DURING the build; nothing it installs ends up
@@ -81,7 +136,6 @@ sudo -u "$APP_USER" --preserve-env bash -c '
 #
 # vite rewrites dist/index.html on every successful build, so an mtime older
 # than this run means it did not run, whatever the exit codes said.
-DIST_INDEX="$APP_DIR/client/dist/index.html"
 if [ ! -f "$DIST_INDEX" ]; then
   printf '\n\033[1;31m==> client/dist/index.html is missing — the build did not produce a dashboard.\033[0m\n'
   exit 1
@@ -100,24 +154,11 @@ fi
 # is what makes this order safe: the running old version tolerates the new
 # columns for the few seconds before it is replaced.
 say "Migrating"
-sudo -u "$APP_USER" --preserve-env bash -c '
+as_app '
   set -eo pipefail
   cd '"$APP_DIR"'
   set -a; . ./.env.production; set +a
   npm run migrate
 '
 
-say "Restarting"
-sudo systemctl restart rxnaija
-
-# Confirm it actually came back rather than assuming. A deploy that reports
-# success while the service is crash-looping is worse than one that fails
-# loudly — the WhatsApp socket is down either way, but only one tells you.
-sleep 6
-if curl -fsS -m 10 http://localhost:4000/api/health >/dev/null; then
-  say "Healthy at ${AFTER}"
-else
-  printf '\n\033[1;31m==> Service did not come back healthy. Recent logs:\033[0m\n'
-  sudo journalctl -u rxnaija -n 40 --no-pager
-  exit 1
-fi
+restart_and_verify
