@@ -188,16 +188,12 @@ async function cmdPair(args) {
   log(`  This computer is now linked to your pharmacy.`);
   log(`  Watching: ${watchPath}`);
   log('');
-  log('  Next: export your product list into that folder, then run:');
-  log('');
-  log('     rxnaija-sync sync        send it once, now');
-  log('     rxnaija-sync install     send it automatically from then on');
-  log('');
-  // Said at pairing, not left to be discovered. Without the schedule this
-  // sends only when somebody opens it, and "connected" reads as "it is
-  // handling itself" — which is how a catalogue quietly stops being current
-  // while the dashboard says a computer is connected.
-  log('  Until you run install, this only sends when you open it.');
+  // No commands named here. Whoever is standing at a pharmacy computer has no
+  // command prompt open and no reason to learn one — the next step is offered
+  // as a question a moment later instead. Naming commands to that person is
+  // how "connected" turns into "nothing ever synced".
+  log('  Next: put your product list in that folder — a spreadsheet exported');
+  log('  from your stock software, or one you keep by hand. Either works.');
   log('');
 }
 
@@ -472,6 +468,44 @@ async function firstRun() {
   await cmdPair([code.toUpperCase()]);
 }
 
+/**
+ * Offer to set up the schedule, in the flow, rather than naming a command.
+ *
+ * WHY THIS IS A QUESTION AND NOT A LINE OF DOCUMENTATION
+ * The whole reason this ships as one double-clickable file is that a pharmacy
+ * computer has nobody who opens a command prompt. Telling that person to "run
+ * rxnaija-sync install" is telling them to do the one thing this program was
+ * built to avoid — and until they do it, nothing sends on a schedule, so the
+ * catalogue silently stops being current while the dashboard shows a computer
+ * connected.
+ *
+ * Defaults to yes because it is what almost everyone wants, and because the
+ * cost of it being wrong is one scheduled task nobody notices, against a
+ * catalogue that never updates.
+ */
+async function offerSchedule() {
+  if (process.platform !== 'win32') return;
+  if (!config.isPaired()) return;
+  if (await scheduleInstalled()) return;
+
+  log('');
+  log('  One more thing.');
+  log('');
+  log('  Right now this only sends your stock file when you open it. It can do');
+  log('  that by itself every few hours instead, with nothing left open.');
+  log('');
+
+  const io = prompter();
+  const answer = (await io.ask('  Set that up now? [Y/n] ')).trim().toLowerCase();
+  io.close();
+
+  if (answer === '' || answer === 'y' || answer === 'yes') {
+    await cmdInstall();
+  } else {
+    log('\n  Left off. Open this again any time to set it up.\n');
+  }
+}
+
 /** Keep the window open, or everything above is unreadable. */
 async function pauseIfLaunchedFromExplorer() {
   if (!process.stdin.isTTY) return;
@@ -492,10 +526,16 @@ async function main() {
       // was disconnected and cleared the dead token. Offer to pair again
       // rather than dead-ending on a program that has just said it is not
       // connected and then done nothing about it.
-      if (config.isPaired()) await runOnce();
-      else await firstRun();
+      if (config.isPaired()) {
+        await runOnce();
+        await offerSchedule();
+      } else {
+        await firstRun();
+        await offerSchedule();
+      }
     } else {
       await firstRun();
+      await offerSchedule();
     }
     return pauseIfLaunchedFromExplorer();
   }
