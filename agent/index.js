@@ -378,57 +378,181 @@ async function scheduleInstalled() {
 
 // ----------------------------------------------------------------- status --
 
-async function cmdStatus() {
+/** How long ago, in words a person uses. */
+function ago(date) {
+  if (!date) return null;
+  const mins = Math.floor((Date.now() - new Date(date).getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hour${hrs === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+/**
+ * Work out what is actually true, separately from printing it.
+ *
+ * WHY THIS IS NOT JUST A PRINTOUT OF THE CONFIG
+ * The previous version listed the config file path, the server URL and a
+ * device UUID. None of those are things a pharmacist can act on, and putting
+ * them at the top buries the one line that matters — whether their prices are
+ * reaching customers. Worse, a screen full of technical detail teaches people
+ * that this program is not for them, so when it does need attention they
+ * assume it needs a developer.
+ *
+ * Returns a verdict plus, when something is wrong, the steps to fix it. The
+ * fix is part of the diagnosis: a problem stated without a remedy just makes
+ * someone feel stuck.
+ */
+async function assess() {
   const c = config.read();
+  const hours = Math.max(1, Math.round((Number(c.intervalMinutes) || 360) / 60));
 
-  // ASK the server rather than reading the file back. "Paired" is a fact about
-  // a relationship the other side can end at any moment, and a local file only
-  // records what was true when it was written.
-  let paired = c.token ? 'checking…' : 'no';
-  if (c.token) {
-    const beat = await heartbeat(c);
-    if (beat.unpaired) {
-      config.clearPairing();
-      paired = 'NO — this computer was disconnected in the dashboard';
-    } else if (beat.unreachable) {
-      paired = `cannot reach ${c.apiUrl} — check this computer's internet`;
-    } else {
-      paired = `yes (device ${c.deviceId})`;
-    }
+  if (!c.token) {
+    return {
+      ok: false,
+      headline: 'Not connected to a pharmacy yet',
+      detail: 'This computer has not been linked to RxNaija.',
+      steps: [
+        'Open RxNaija and go to Settings > Stock sync',
+        'Click "Connect a computer" and note the code',
+        'Run this program again and type that code',
+      ],
+      c, hours,
+    };
   }
 
-  log('');
-  log(`  Config:    ${config.CONFIG_PATH()}`);
-  log(`  Server:    ${c.apiUrl}`);
-  log(`  Paired:    ${paired}`);
-  log(`  Software:  ${c.pos || '(not recorded)'}`);
-  log(`  Watching:  ${c.watchPath || '(not set)'}`);
-  // A config written by a version that accepted relative paths. Saying so
-  // beats letting them read "THE FOLDER IS MISSING — RxNaija" and go looking
-  // for a folder that is sitting there exactly where they made it.
+  const beat = await heartbeat(c);
+  if (beat.unpaired) {
+    config.clearPairing();
+    return {
+      ok: false,
+      headline: 'This computer was disconnected',
+      detail: 'Somebody removed it in the RxNaija dashboard, so nothing is being sent.',
+      steps: [
+        'Open RxNaija and go to Settings > Stock sync',
+        'Click "Connect a computer"',
+        'Run this program again and type the new code',
+      ],
+      c, hours,
+    };
+  }
+  if (beat.unreachable) {
+    return {
+      ok: false,
+      headline: 'Cannot reach RxNaija',
+      detail: 'This computer is not able to get online, or the internet is down.',
+      steps: [
+        'Check this computer is connected to the internet',
+        'Try opening rxnaija.com in a web browser on this computer',
+      ],
+      c, hours,
+    };
+  }
+
+  // Relative watch path, left by an older version. Saying so plainly beats
+  // letting somebody read "the folder is missing" and go hunting for a folder
+  // that is sitting exactly where they made it.
   if (c.watchPath && !path.isAbsolute(c.watchPath)) {
-    log('             ^ this is not a full path, so it points somewhere different');
-    log('               depending on how this program was started. Pair again and');
-    log('               give the full folder, e.g. C:\\RxNaija\\export');
+    return {
+      ok: false,
+      headline: 'The folder setting needs fixing',
+      detail: `"${c.watchPath}" is not a full folder path, so this program looks in a different place depending on how it was started.`,
+      steps: ['Choose "Change the folder" below and give the full path, e.g. C:\\RxNaija\\export'],
+      c, hours,
+    };
   }
-  // The question this screen exists to answer. Without it, "Every: 360
-  // minutes" reads as a promise that something is happening on a schedule,
-  // when nothing may be running at all.
-  const scheduled = await scheduleInstalled();
-  log(`  Schedule:  ${scheduled
-    ? `running by itself, every ${Math.max(1, Math.round((Number(c.intervalMinutes) || 360) / 60))} hours`
-    : 'NOT set up — this only sends when you open it. Run: rxnaija-sync install'}`);
 
+  let newest = null;
+  let folderMissing = false;
   if (c.watchPath) {
-    try {
-      const f = newestExport(c.watchPath);
-      log(`  Newest:    ${f ? `${f.name} (${f.stat.mtime.toLocaleString()})` : '(no spreadsheet in that folder)'}`);
-      if (f) log(`  Sent:      ${hashFile(f.path) === c.lastHash ? 'yes, already sent' : 'no, would send on next check'}`);
-    } catch {
-      log(`  Newest:    THE FOLDER IS MISSING — ${c.watchPath}`);
+    try { newest = newestExport(c.watchPath); } catch { folderMissing = true; }
+  }
+
+  if (folderMissing) {
+    return {
+      ok: false,
+      headline: 'The folder is missing',
+      detail: `This program is watching ${c.watchPath}, but that folder does not exist.`,
+      steps: [
+        `Create the folder ${c.watchPath}, or`,
+        'Choose "Change the folder" below to point somewhere else',
+      ],
+      c, hours,
+    };
+  }
+
+  if (!newest) {
+    return {
+      ok: false,
+      headline: 'No stock file found',
+      detail: `There is no spreadsheet in ${c.watchPath}.`,
+      steps: [
+        `Save your product list into ${c.watchPath}`,
+        'It can be an Excel file (.xlsx or .xls) or a .csv',
+        'It needs a column for the product name and one for the price',
+      ],
+      c, hours, newest,
+    };
+  }
+
+  const scheduled = await scheduleInstalled();
+  const alreadySent = hashFile(newest.path) === c.lastHash;
+
+  if (!scheduled) {
+    return {
+      ok: false,
+      headline: 'Automatic sending is not set up',
+      detail: 'Your stock file is only sent when somebody opens this program.',
+      steps: ['Choose "Set up automatic sending" below — it takes a second and then runs on its own'],
+      c, hours, newest, scheduled, alreadySent,
+    };
+  }
+
+  return {
+    ok: true,
+    headline: 'Everything is working',
+    c, hours, newest, scheduled, alreadySent,
+  };
+}
+
+/** Print the verdict. Facts a pharmacist can act on; nothing else. */
+function printStatus(s) {
+  log('');
+  log('  RxNaija Sync');
+  log('  ============');
+  log('');
+  log(`  ${s.ok ? '' : '! '}${s.headline}`);
+  if (s.detail) {
+    log('');
+    log(`  ${s.detail}`);
+  }
+
+  if (s.newest) {
+    log('');
+    log(`  Your stock file   ${s.newest.name}`);
+    log(`  Last changed      ${ago(s.newest.stat.mtime)}`);
+    if (s.alreadySent !== undefined) {
+      log(`  Sent to RxNaija   ${s.alreadySent ? 'yes' : 'not yet — will send on the next check'}`);
     }
   }
+  if (s.ok) {
+    log(`  Checks for changes  every ${s.hours} hours, on its own`);
+    log('');
+    log('  Nothing for you to do. You can close this window.');
+  }
+
+  if (s.steps?.length) {
+    log('');
+    log('  What to do');
+    s.steps.forEach((step, i) => log(`    ${s.steps.length > 1 ? `${i + 1}. ` : ''}${step}`));
+  }
   log('');
+}
+
+async function cmdStatus() {
+  printStatus(await assess());
 }
 
 // ------------------------------------------------------------------- main --
@@ -514,25 +638,111 @@ async function pauseIfLaunchedFromExplorer() {
   io.close();
 }
 
+/**
+ * What a double-click actually gets you.
+ *
+ * WHY A MENU AND NOT A LIST OF COMMANDS
+ * Everything this program can do was previously reachable only by typing
+ * `rxnaija-sync install` at a command prompt. Pharmacists do not have a
+ * command prompt open, were never going to open one, and the program was
+ * printing instructions written for whoever built it. A numbered list needs
+ * no prior knowledge and no typing beyond one digit.
+ *
+ * The status is shown FIRST, every time, because the question someone opens
+ * this program to answer is almost always "is it still working?" — and if the
+ * answer is yes, they should be able to close the window without reading
+ * anything else.
+ */
+async function menu() {
+  const s = await assess();
+  printStatus(s);
+
+  // A device disconnected in the dashboard has just had its token cleared by
+  // assess(). Offer to reconnect rather than showing a menu whose every entry
+  // depends on a pairing that no longer exists.
+  if (!config.isPaired()) {
+    await firstRun();
+    await offerSchedule();
+    return;
+  }
+
+  const scheduled = s.scheduled ?? await scheduleInstalled();
+
+  log('  What would you like to do?');
+  log('');
+  log('    1   Send my stock file now');
+  log('    2   Change the folder it looks in');
+  log(scheduled
+    ? '    3   Stop sending automatically'
+    : '    3   Set up automatic sending  (recommended)');
+  log('    4   Disconnect this computer from RxNaija');
+  log('');
+
+  const io = prompter();
+  const choice = (await io.ask('  Type a number and press Enter, or just press Enter to close: ')).trim();
+
+  if (choice === '1') {
+    io.close();
+    log('');
+    await runOnce();
+    return;
+  }
+
+  if (choice === '2') {
+    const entered = (await io.ask(`\n  Full path to the folder (now: ${s.c.watchPath}): `)).trim();
+    io.close();
+    if (!entered) { log('\n  Nothing changed.\n'); return; }
+    const resolved = path.resolve(entered);
+    try {
+      fs.mkdirSync(resolved, { recursive: true });
+    } catch (e) {
+      log(`\n  Could not use that folder: ${e.message}\n`);
+      return;
+    }
+    config.write({ watchPath: resolved });
+    log(`\n  Now looking in ${resolved}\n`);
+    await runOnce();
+    return;
+  }
+
+  if (choice === '3') {
+    io.close();
+    if (scheduled) {
+      const confirm = prompter();
+      const yes = (await confirm.ask('\n  Stop sending automatically? Your prices will stop updating. [y/N] ')).trim().toLowerCase();
+      confirm.close();
+      if (yes === 'y' || yes === 'yes') await cmdUninstall();
+      else log('\n  Left as it was.\n');
+    } else {
+      await cmdInstall();
+    }
+    return;
+  }
+
+  if (choice === '4') {
+    const confirm = prompter();
+    const yes = (await confirm.ask('\n  Disconnect this computer? Your prices will stop updating until you connect it again. [y/N] ')).trim().toLowerCase();
+    confirm.close();
+    io.close();
+    if (yes === 'y' || yes === 'yes') {
+      await cmdUninstall();
+      config.clearPairing();
+      log('\n  Disconnected. Run this program again to connect it back.\n');
+    } else {
+      log('\n  Left connected.\n');
+    }
+    return;
+  }
+
+  io.close();
+}
+
 async function main() {
   const [cmd, ...args] = process.argv.slice(2);
 
   if (!cmd && process.stdin.isTTY) {
     if (config.isPaired()) {
-      // Already set up — the useful thing to show is whether it is working,
-      // not a list of commands they will not type.
-      await cmdStatus();
-      // cmdStatus asks the server, and may have just discovered this device
-      // was disconnected and cleared the dead token. Offer to pair again
-      // rather than dead-ending on a program that has just said it is not
-      // connected and then done nothing about it.
-      if (config.isPaired()) {
-        await runOnce();
-        await offerSchedule();
-      } else {
-        await firstRun();
-        await offerSchedule();
-      }
+      await menu();
     } else {
       await firstRun();
       await offerSchedule();

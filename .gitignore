@@ -24,3 +24,10 @@ logs/
 # copy left behind after a deploy cannot be committed by a later .
 env.production*
 *.env.production
+
+# Clinical reference PDFs kept locally for writing the protocols.
+# They are cited in evidence_references by name (a "locator" string) and are
+# never opened as files at runtime, so the server does not need them — and at
+# ~32MB they do not belong in git. A stray `git add -A server/` swept them in
+# once; this stops the next one.
+server/*.pdf
