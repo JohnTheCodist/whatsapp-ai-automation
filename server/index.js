@@ -201,6 +201,13 @@ app.use('/api/orders', require('./routes/orders'));               // Phase 5 —
     // build no longer has.
     app.use(express.static(dist, {
       index: false,
+      // So /company serves company.html rather than falling through to the SPA
+      // fallback below and returning the dashboard shell. Without this, every
+      // extensionless path that happens to match a real page — /company,
+      // /about, /home — quietly serves the React app instead, which for a page
+      // whose entire purpose is to be read by an outside verifier is the worst
+      // possible failure: a 200, and the wrong document.
+      extensions: ['html'],
       setHeaders: (res, filePath) => {
         res.setHeader(
           'Cache-Control',
