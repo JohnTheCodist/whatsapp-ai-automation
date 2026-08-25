@@ -55,6 +55,10 @@ export default function CatalogueSync() {
   const [newAddress, setNewAddress] = useState(null);
   const [copied, setCopied] = useState(null);
   const [emailDomain, setEmailDomain] = useState(null);
+  // Absolute, not the bare "/download/..." path. This string is copied and
+  // sent to another machine — a relative link pasted into WhatsApp is not a
+  // link at all, and origin is exactly what makes it work over there.
+  const downloadUrl = `${window.location.origin}/download/rxnaija-sync.exe`;
 
   const load = useCallback(async () => {
     try {
@@ -227,6 +231,49 @@ export default function CatalogueSync() {
           <p className="mt-2 font-mono text-3xl font-semibold tracking-[0.2em] text-teal-950">
             {pairing.code}
           </p>
+
+          {/* The download, on the screen that just told them to install it.
+              Two ways to reach it on purpose: the button is for whoever is
+              sitting at the POS computer right now, and the copyable link is
+              for the far more common case where they are NOT — the dashboard
+              is open on a phone or an office laptop, and the address has to
+              travel to the back office by WhatsApp. A download button alone
+              silently assumes the wrong machine. */}
+          <div className="mt-3 rounded border border-teal-200 bg-white p-2.5">
+            <p className="text-xs font-medium text-teal-900">Don&apos;t have the program yet?</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <a
+                href="/download/rxnaija-sync.exe"
+                className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+              >
+                Download for Windows
+              </a>
+              <span className="text-[11px] text-slate-500">or send this link to that computer:</span>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
+              <span className="min-w-0 break-all font-mono text-[11px] text-slate-700">
+                {downloadUrl}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(downloadUrl).catch(() => {});
+                  setCopied(downloadUrl);
+                  setTimeout(() => setCopied(null), 4000);
+                }}
+                className="ml-auto shrink-0 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] hover:bg-slate-50"
+              >
+                {copied === downloadUrl ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+            {/* Told before they meet it, not after. An unexpected security
+                warning from software a pharmacy has just been handed is where
+                trust dies; an expected one is a formality. */}
+            <p className="mt-2 text-[11px] text-slate-500">
+              Windows will say <em>&quot;Windows protected your PC&quot;</em> because this program
+              is new. Click <strong>More info</strong>, then <strong>Run anyway</strong>.
+            </p>
+          </div>
           <p className="mt-2 text-xs text-teal-800">
             Valid for {minsUntil(pairing.expiresAt)} more minutes, and can only be used once.
             This page will update by itself once that computer connects.

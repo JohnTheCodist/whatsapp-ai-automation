@@ -192,6 +192,64 @@ app.use('/api/orders', require('./routes/orders'));               // Phase 5 —
 // Skipped entirely when the build is absent — a developer running the API
 // alongside Vite has no client/dist, and silently serving a stale one would
 // be worse than not serving it.
+// ---- the connector download ------------------------------------------------
+//
+// PUBLIC ON PURPOSE, and this is the whole design constraint.
+//
+// The person who needs this file is standing at the computer that runs the
+// pharmacy's POS. That machine is not signed into RxNaija and never will be —
+// it is a till in a back office, not somebody's laptop. A download behind
+// requireAuth would be unreachable at exactly the place it is needed, and the
+// workaround (download it elsewhere, carry it over on a USB stick) is worse
+// for everyone including security.
+//
+// There is nothing secret in the binary regardless: it holds no credentials
+// and is useless until somebody pairs it with a code from the dashboard.
+//
+// Registered BEFORE the static/SPA block below, because that block's fallback
+// answers every unmatched GET with index.html — a missing exe would otherwise
+// download the dashboard's HTML renamed to .exe, which is the kind of failure
+// somebody debugs for an hour.
+{
+  const path = require('node:path');
+  const fs = require('node:fs');
+
+  // Outside client/dist deliberately: this is an 80MB build artifact, not part
+  // of the dashboard bundle, and it must survive `git reset --hard` on deploy.
+  // Untracked files are left alone by reset, so uploading it once keeps it
+  // across every future deploy.
+  const dir = process.env.DOWNLOAD_DIR || path.join(__dirname, '..', 'downloads');
+  const FILES = new Set(['rxnaija-sync.exe']);
+
+  app.get('/download/:file', (req, res) => {
+    // Allowlist, not path sanitising. The set of files this route may serve is
+    // known and tiny, so there is no reason to accept an arbitrary name and
+    // then try to prove it cannot escape the directory.
+    if (!FILES.has(req.params.file)) {
+      return res.status(404).type('text/plain').send('Not found.');
+    }
+    const file = path.join(dir, req.params.file);
+    if (!fs.existsSync(file)) {
+      // Said plainly rather than 404ing into the SPA. If this fires, the exe
+      // was never uploaded to the box — an operator error with a specific fix,
+      // and one worth stating instead of leaving as a broken link.
+      return res.status(503).type('text/plain').send(
+        'The RxNaija Sync program has not been uploaded to this server yet.\n'
+        + 'Please contact RxNaija support.\n'
+      );
+    }
+    // attachment, so a browser saves it rather than trying to display 80MB of
+    // binary. The name is fixed so a re-download overwrites rather than
+    // accumulating rxnaija-sync (3).exe.
+    res.setHeader('Content-Disposition', `attachment; filename="${req.params.file}"`);
+    // No long cache: this file is replaced in place when the agent is rebuilt,
+    // and a pharmacy holding a cached old copy is a support call nobody can
+    // see the cause of.
+    res.setHeader('Cache-Control', 'no-cache');
+    return res.sendFile(file);
+  });
+}
+
 {
   const path = require('node:path');
   const fs = require('node:fs');
