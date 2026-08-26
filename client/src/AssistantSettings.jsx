@@ -24,6 +24,9 @@ export default function AssistantSettings() {
   const [welcomeNote, setWelcomeNote] = useState('');
   const [menuEnabled, setMenuEnabled] = useState(true);
   const [notifyPhone, setNotifyPhone] = useState('');
+  // Who the assistant may answer. Loaded so the screen can show the truth
+  // rather than assume it — this being unshown is what hid a mute assistant.
+  const [replyMode, setReplyMode] = useState('all');
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -46,6 +49,7 @@ export default function AssistantSettings() {
         setWelcomeNote(j.pharmacy.welcome_note || '');
         setMenuEnabled(j.pharmacy.menu_enabled !== false);
         setNotifyPhone(j.pharmacy.notify_phone || '');
+        setReplyMode(j.pharmacy.reply_mode || 'all');
       } catch (e) {
         setError(e.message);
       } finally {
@@ -78,7 +82,7 @@ export default function AssistantSettings() {
         fetch('/api/pharmacies/me/assistant', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ botName, welcomeNote, menuEnabled, notifyPhone }),
+          body: JSON.stringify({ botName, welcomeNote, menuEnabled, notifyPhone, replyMode }),
         })
       );
 
@@ -223,6 +227,67 @@ export default function AssistantSettings() {
             <input type="checkbox" checked={menuEnabled} onChange={(e) => setMenuEnabled(e.target.checked)} />
             <span className="text-sm text-slate-700">Show the menu of options after greeting</span>
           </label>
+
+          {/* ---- who the assistant is allowed to answer ----
+              The single most consequential setting on this screen, and until
+              now it existed only as a database column. A pharmacy whose
+              assistant was answering nobody had no way to see that: the
+              dashboard said Connected, the self-test passed, health was green,
+              and the only evidence was a log line reachable over SSH.
+
+              Radio buttons rather than a checkbox because there are three
+              states and one of them ("only these numbers") is a real, useful
+              mode rather than a halfway position. A checkbox would force it to
+              be either hidden or renamed into something dishonest. */}
+          <fieldset className="rounded-lg border border-slate-200 p-3">
+            <legend className="px-1 text-sm font-medium text-slate-800">Who the assistant answers</legend>
+
+            {replyMode !== 'all' && (
+              // Stated where the setting is, not in a toast that scrolls away.
+              // Somebody opening this screen to find out why nothing is being
+              // answered should be told in the first sentence they read.
+              <p className="mb-2 rounded border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
+                {replyMode === 'off'
+                  ? 'Your assistant is switched off. Customers who message you get no reply at all.'
+                  : 'Your assistant only answers numbers on your test list. Ordinary customers who message you get no reply.'}
+              </p>
+            )}
+
+            <div className="space-y-2">
+              {[
+                {
+                  value: 'all',
+                  label: 'Answer everyone',
+                  hint: 'Normal running. Anyone who messages your WhatsApp gets help.',
+                },
+                {
+                  value: 'allowlist',
+                  label: 'Only answer my test numbers',
+                  hint: 'For trying things out before going live. Everyone else is ignored, silently.',
+                },
+                {
+                  value: 'off',
+                  label: 'Off — do not answer anyone',
+                  hint: 'Messages still arrive and are saved. Nobody gets an automatic reply.',
+                },
+              ].map((opt) => (
+                <label key={opt.value} className="flex cursor-pointer items-start gap-2">
+                  <input
+                    type="radio"
+                    name="replyMode"
+                    value={opt.value}
+                    checked={replyMode === opt.value}
+                    onChange={(e) => setReplyMode(e.target.value)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="block text-sm text-slate-800">{opt.label}</span>
+                    <span className="block text-xs text-slate-500">{opt.hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
 
           {/* Deliberately boxed and labelled against the customer QR panel.
               These two numbers do opposite jobs and both mix-ups fail

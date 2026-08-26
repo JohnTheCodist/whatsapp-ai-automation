@@ -189,9 +189,26 @@ async function createPharmacy(userId, { name }) {
     const slug = attempt === 0 ? base : `${base}-${slugSuffix()}`;
     try {
       return await db.begin(async (tx) => {
+        // reply_mode SET EXPLICITLY, not left to the column default.
+        //
+        // The default is 'allowlist' (migration 0003), which with an empty
+        // allowlist means the assistant answers NOBODY. A pharmacy signing up
+        // is asking for an assistant that talks to their customers, so being
+        // born mute is the opposite of what they requested — and it is
+        // invisible: the dashboard says Connected, the self-test passes,
+        // /api/health is green, and the only evidence is a "reply suppressed
+        // — allowlist_empty" line in a log reachable over SSH.
+        //
+        // That cost a live pharmacy most of a day. The default column value is
+        // deliberately left alone, because 'allowlist' is the right thing for a
+        // row created by a migration or a script, where nobody has asked for
+        // anything. It is wrong for a person who just signed up, and THIS is
+        // the place that knows the difference.
+        //
+        // Changeable afterwards in Settings → Assistant.
         const [pharmacy] = await tx`
-          insert into pharmacies (name, slug, status)
-          values (${checked.value}, ${slug}, 'onboarding')
+          insert into pharmacies (name, slug, status, reply_mode)
+          values (${checked.value}, ${slug}, 'onboarding', 'all')
           returning id, name, slug, status, created_at
         `;
         await tx`
@@ -226,6 +243,10 @@ async function getPharmacy(pharmacyId) {
   const [row] = await db`
     select id, name, slug, status, bot_name, welcome_note, menu_enabled,
            notify_phone, notify_on_new_order, public_whatsapp_number, wholesale_code,
+           -- The UI cannot show a setting it is never sent. Its absence here is
+           -- why "the assistant is answering nobody" was invisible in a
+           -- dashboard that otherwise reported itself healthy.
+           reply_mode,
            reservation_hold_minutes, created_at, updated_at
     from pharmacies where id = ${pharmacyId}
   `;
@@ -310,9 +331,30 @@ async function updateAssistantSettings(pharmacyId, fields = {}) {
     ? normalisePublicNumber(fields.publicWhatsappNumber)
     : undefined;
 
+  // Who the assistant is allowed to answer.
+  //
+  // Until now this existed only as a column — settable by a migration or a
+  // hand-written UPDATE, and by nothing a pharmacy could reach. A pharmacy
+  // whose assistant was answering nobody had no way to see that, let alone
+  // change it, and the state is invisible everywhere else: Connected in the
+  // dashboard, self-test passing, health green.
+  //
+  // Validated against the same three values the column's CHECK allows, so a
+  // typo is a 400 here rather than a constraint violation surfacing as a 500.
+  const REPLY_MODES = new Set(['off', 'allowlist', 'all']);
+  let replyMode;
+  if ('replyMode' in fields) {
+    replyMode = String(fields.replyMode);
+    if (!REPLY_MODES.has(replyMode)) {
+      const err = new Error(`Unknown reply mode "${replyMode}".`);
+      err.status = 400; err.code = 'INVALID_REPLY_MODE';
+      throw err;
+    }
+  }
+
   const current = await db`
     select bot_name, assistant_tone, welcome_note, menu_enabled, notify_phone, notify_lid, notify_on_new_order,
-           public_whatsapp_number
+           public_whatsapp_number, reply_mode
     from pharmacies where id = ${pharmacyId}
   `;
   if (!current.length) return null;
@@ -334,10 +376,12 @@ async function updateAssistantSettings(pharmacyId, fields = {}) {
       notify_lid = ${notifyPhoneChanged ? null : current[0].notify_lid},
       notify_on_new_order = ${'notifyOnNewOrder' in fields ? Boolean(fields.notifyOnNewOrder) : current[0].notify_on_new_order},
       public_whatsapp_number = ${publicWhatsappNumber !== undefined ? publicWhatsappNumber : current[0].public_whatsapp_number},
+      reply_mode = ${replyMode !== undefined ? replyMode : current[0].reply_mode},
       updated_at = now()
     where id = ${pharmacyId}
     returning id, name, bot_name, assistant_tone, welcome_note, menu_enabled,
-              notify_phone, notify_on_new_order, public_whatsapp_number, wholesale_code, updated_at
+              notify_phone, notify_on_new_order, public_whatsapp_number, wholesale_code,
+              reply_mode, updated_at
   `;
   return row;
 }
