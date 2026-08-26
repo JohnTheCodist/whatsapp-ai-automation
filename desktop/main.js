@@ -142,6 +142,23 @@ function createWindow() {
       // for remote code to reach, which is the strongest version of this.
       sandbox: true,
       spellcheck: true,
+      // Chromium throttles timers hard in a window that is not in front, which
+      // for an ordinary web page is a kindness — nobody is reading it.
+      //
+      // Here it works against the badge. The dashboard learns that something
+      // needs a pharmacist from a poll on a timer, and the one situation a
+      // taskbar badge exists for is the app sitting BEHIND something else.
+      // Throttled, the count only catches up once they look at the window,
+      // which is exactly when they no longer needed telling.
+      //
+      // Set on that reasoning, NOT because it fixed an observed bug: timer-
+      // driven title updates did not fire when the packaged app was driven
+      // from a script, and this did not change that. The most likely cause is
+      // the test harness — a window that is shown but never really composited
+      // or focused — rather than the product, since a dashboard whose timers
+      // never ran would be visibly frozen rather than subtly stale. Worth
+      // confirming by watching a real window before trusting either way.
+      backgroundThrottling: false,
     },
   });
 
