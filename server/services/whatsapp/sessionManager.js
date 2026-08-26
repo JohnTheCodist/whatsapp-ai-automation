@@ -921,6 +921,38 @@ class SessionManager extends EventEmitter {
       // can act on — see senderIdentity.js.
       const sender = resolveSender(msg.key, msg.pushName);
 
+      // WHAT THIS MESSAGE IS A REPLY TO, if anything.
+      //
+      // WhatsApp's own reply-to feature is the only way a staff member can
+      // point at one specific thing without typing a reference. An order
+      // alert can get away without it — "1 ABC-123" names an order — but a
+      // pharmacist answering a customer's question types free prose, and
+      // there is nothing in "yes but leave 2 hours between them" that says
+      // which of three waiting customers it is for. Quoting the alert says
+      // so exactly, and it is the gesture people already use.
+      //
+      // The id here is the id of the message being replied TO. Outbound rows
+      // already store provider_message_id, so this resolves to the exact
+      // alert — and through it, the exact handoff — with one lookup.
+      //
+      // contextInfo hangs off whichever message variant carries it, and the
+      // variant differs by type: plain text replies are extendedTextMessage,
+      // but a reply with a photo is imageMessage, and so on. Reading only the
+      // first would work in testing (where everything is typed) and quietly
+      // fail the first time somebody replies with a picture of a prescription.
+      const content = msg.message || {};
+      const contextInfo =
+        content.extendedTextMessage?.contextInfo ||
+        content.imageMessage?.contextInfo ||
+        content.videoMessage?.contextInfo ||
+        content.documentMessage?.contextInfo ||
+        content.audioMessage?.contextInfo ||
+        content.stickerMessage?.contextInfo ||
+        null;
+      // stanzaId is absent on an ordinary message, which is the common case —
+      // null means "not a reply", not "unknown".
+      const quotedMessageId = contextInfo?.stanzaId || null;
+
       this.emit('message', {
         accountId: session.accountId,
         pharmacyId: session.pharmacyId,
@@ -933,6 +965,9 @@ class SessionManager extends EventEmitter {
         lid: sender.lid,
         displayName: sender.displayName,
         text,
+        // null on an ordinary message. When set, it is the provider id of the
+        // message this one replies to — see the block above.
+        quotedMessageId,
         // Non-text messages still surface, with text:null, so the pipeline
         // can route them to a human rather than dropping them silently.
         hasMedia: Boolean(

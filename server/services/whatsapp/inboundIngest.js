@@ -322,6 +322,11 @@ function safePayload(raw, msg) {
     messageType: raw?.message ? Object.keys(raw.message)[0] : null,
     text: msg.text ?? null,
     hasMedia: Boolean(msg.hasMedia),
+    // Kept because it is the ONLY thing tying a free-text staff reply to the
+    // alert it answers. The raw Baileys object is trimmed here, so a field
+    // dropped at this line is gone for good — and this one cannot be
+    // recovered later from anything else in the row.
+    quotedMessageId: msg.quotedMessageId ?? null,
   };
 }
 
