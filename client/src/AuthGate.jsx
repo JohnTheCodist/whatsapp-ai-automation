@@ -24,12 +24,26 @@ import { useCallback, useEffect, useState } from 'react';
 import App from './App.jsx';
 import Loading from './Loading.jsx';
 import SignIn from './SignIn.jsx';
+import ResetPassword from './ResetPassword.jsx';
 import Onboarding from './Onboarding.jsx';
 import { supabase, authConfigured, signOut, setActivePharmacyId } from './auth.js';
 
 export default function AuthGate() {
   const [session, setSession] = useState(null);
   const [checking, setChecking] = useState(true);
+  // Arrived through a password reset link and has not chosen a new one yet.
+  // Outranks every other screen below — see the render order.
+  //
+  // Seeded SYNCHRONOUSLY from the URL rather than waiting for the
+  // PASSWORD_RECOVERY event. Both happen, but getSession() can resolve first,
+  // and then the dashboard renders for a moment before the event arrives and
+  // replaces it. A password screen that appears after a flash of somebody
+  // else's data looks like a glitch at the exact moment a person is being
+  // careful. Supabase puts `type=recovery` in the hash, so the answer is
+  // already on the page before React's first render.
+  const [recovering, setRecovering] = useState(
+    () => typeof window !== 'undefined' && /[#&]type=recovery\b/.test(window.location.hash)
+  );
   // null = not looked yet · false = signed in with no pharmacy · object = has one
   const [pharmacy, setPharmacy] = useState(null);
 
@@ -47,8 +61,21 @@ export default function AuthGate() {
 
     // Covers sign-in, sign-out, token refresh and a session restored in
     // another tab — all of which should move this screen without a reload.
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       if (cancelled) return;
+
+      // Following a reset link signs the person IN, which is why this needs
+      // catching before anything else: without it the app cannot tell a
+      // password recovery from an ordinary sign-in, and sends someone who
+      // clicked "forgot password" straight through to the dashboard — or, as
+      // reported, to onboarding — with their password still unchanged and
+      // nothing saying so.
+      if (event === 'PASSWORD_RECOVERY') {
+        setSession(s);
+        setRecovering(true);
+        return;
+      }
+
       setSession(s);
       // Supabase fires this on a plain token refresh too — notably every
       // time the tab regains focus, even though who is signed in has not
@@ -131,6 +158,27 @@ export default function AuthGate() {
         </div>
         <App />
       </>
+    );
+  }
+
+  // BEFORE the pharmacy lookup and everything after it. A recovery session is
+  // a real session, so every check below would happily let this person into
+  // the app — which is exactly the bug: they asked to change their password
+  // and were shown a dashboard instead, password unchanged.
+  if (recovering) {
+    return (
+      <ResetPassword
+        email={session?.user?.email || ''}
+        onDone={() => {
+          // The hash still says type=recovery, and it is what seeds the state
+          // above — leaving it would put a reloaded page straight back on this
+          // screen with a link that has already been spent.
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+          setRecovering(false);
+          setSession(null);
+          setPharmacy(null);
+        }}
+      />
     );
   }
 

@@ -258,7 +258,13 @@ function friendly(err) {
   return m || 'Something went wrong. Try again.';
 }
 
-function Shell({ children }) {
+/**
+ * Exported so ResetPassword renders in the same frame rather than a copy of
+ * it. Two hand-maintained versions of the sign-in card would drift the first
+ * time either is touched, and the reset screen is the one nobody sees often
+ * enough to notice it had.
+ */
+export function Shell({ children }) {
   return (
     <div className="auth">
       <span className="auth-bloom auth-bloom-a" aria-hidden="true" />
