@@ -22,6 +22,10 @@ const express = require('express');
 const { requireAuth } = require('../middleware/auth');
 const { getSql, assertPharmacyId } = require('../services/db');
 const { sessionManager } = require('../services/whatsapp/sessionManager');
+// The same normaliser the sender-identity path uses, so "08012345678" and
+// "2348012345678" are recognised as one number here too. Comparing raw input
+// would let the same phone be claimed twice just by typing it differently.
+const { normalizeMsisdn } = require('../services/whatsapp/senderIdentity');
 
 const router = express.Router();
 
@@ -133,6 +137,52 @@ router.post('/connect', requireAuth, async (req, res, next) => {
       });
     }
 
+    // ---- is this number already another pharmacy's? -----------------------
+    //
+    // CHECKED HERE, BEFORE ANYTHING IS DESTROYED. Everything below this point
+    // wipes credentials and auth keys to make a fresh pairing possible, so
+    // discovering the clash afterwards would mean the owner has already lost
+    // the session they had, in exchange for a pairing that cannot work.
+    //
+    // WHY THIS IS NOT LEFT TO THE UNIQUE INDEX
+    // display_phone_number has been unique since 0001, but it is only written
+    // AFTER pairing completes — WhatsApp tells us the number, we do not. So
+    // the constraint fires at the very end, as a 500 with a Postgres message,
+    // after the pharmacist has typed a code into their phone and believes they
+    // succeeded. The index is the backstop; this is the answer.
+    //
+    // This is the failure that took a live pharmacy silent: two pharmacies
+    // paired to one number, two sockets, WhatsApp knocking them off each other
+    // with connectionReplaced until the assistant stopped answering while
+    // every health check still read green.
+    const wanted = normalizeMsisdn(phoneNumber);
+    if (!wanted) {
+      return res.status(400).json({
+        error: `"${phoneNumber}" is not a phone number this can use. Give it in international format, e.g. 2348012345678.`,
+        code: 'BAD_PHONE',
+      });
+    }
+
+    const db = getSql();
+    const [taken] = await db`
+      select a.id, p.name as pharmacy_name
+      from whatsapp_accounts a
+      join pharmacies p on p.id = a.pharmacy_id
+      where a.display_phone_number = ${wanted}
+        and a.pharmacy_id <> ${req.pharmacyId}
+      limit 1
+    `;
+    if (taken) {
+      return res.status(409).json({
+        // Names the pharmacy holding it, because the owner is very often the
+        // same person and the answer is "oh, that's my old test one". Without
+        // the name this is a dead end they cannot act on.
+        error: `That number is already connected to ${taken.pharmacy_name}. A WhatsApp number can only be used by one pharmacy — disconnect it there first, or use a different number.`,
+        code: 'NUMBER_IN_USE',
+        pharmacyName: taken.pharmacy_name,
+      });
+    }
+
     const account = await getOrCreateAccount(req.pharmacyId);
 
     // A live socket already holding this session would fight the new one and
@@ -144,7 +194,6 @@ router.post('/connect', requireAuth, async (req, res, next) => {
     // Stale credentials from a previous pairing make requestPairingCode
     // reject with "already registered". Clearing is correct: the owner is
     // explicitly asking to pair this number again.
-    const db = getSql();
     await db`
       update whatsapp_accounts set creds_encrypted = null, updated_at = now()
       where id = ${account.id}
