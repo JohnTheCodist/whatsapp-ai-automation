@@ -111,6 +111,8 @@ export default function AuthGate() {
       // failed request, not an answer, and must not be read as one. Treating
       // it as one is what previously sent an already-onboarded owner back to
       // onboarding whenever this fetch merely failed once.
+      let unauthorizedEveryTime = true;
+
       for (let attempt = 0; attempt < 3 && !cancelled; attempt += 1) {
         try {
           const r = await fetch('/api/pharmacies/me', { signal: AbortSignal.timeout(20000) });
@@ -121,11 +123,36 @@ export default function AuthGate() {
             if (p?.id) { setActivePharmacyId(p.id); setPharmacy(p); return; }
           }
           if (r.status === 403 || r.status === 404) { setPharmacy(false); return; }
+          if (r.status !== 401) unauthorizedEveryTime = false;
         } catch {
-          // network error / timeout — fall through to retry below
+          // network error / timeout — fall through to retry below. NOT a 401,
+          // so it must not be mistaken for a dead session.
+          unauthorizedEveryTime = false;
         }
         if (attempt < 2) await new Promise((res) => setTimeout(res, 1000 * (attempt + 1)));
       }
+      if (cancelled) return;
+
+      // Three 401s in a row is not the token race this loop was built for.
+      //
+      // A single 401 genuinely can be a race — the token expired between
+      // being read and being used — which is why one is retried rather than
+      // acted on. But a session that is still rejected after three attempts
+      // and two waits is simply dead: expired past refresh, revoked, or
+      // invalidated by a password change.
+      //
+      // Falling through to the comment below left that person on the loading
+      // spinner permanently, with no sign-out button on screen because the
+      // app had not rendered yet. The only escape was clearing site data from
+      // developer tools, which is not an instruction anybody should need.
+      // Signing out costs a sign-in; the spinner cost the whole session.
+      if (unauthorizedEveryTime) {
+        await signOut();
+        setSession(null);
+        setPharmacy(null);
+        return;
+      }
+
       // Exhausted retries without a confirmed answer either way. Stay on the
       // loading screen rather than guessing — a stuck spinner is
       // recoverable, a wrong onboarding redirect looks like data loss.
