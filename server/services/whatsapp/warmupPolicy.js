@@ -12,6 +12,23 @@
  * It is a real constraint on real behaviour: the account genuinely sends
  * less at the start, the way a business that just set up WhatsApp would.
  *
+ * WHAT IT COUNTS, AND WHY THAT IS NOT "EVERY MESSAGE"
+ * `sentToday` must be BUSINESS-INITIATED sends — messages to people who did
+ * not message us first. It is not total outbound.
+ *
+ * The distinction is the whole point of the ramp. What gets a new number
+ * banned is unsolicited reach: contacting strangers who never asked. Replying
+ * to somebody who just messaged you is the safest traffic that exists and is
+ * what every real business does all day. Meta draws the same line — its own
+ * 250-customer limit counts business-initiated conversations and explicitly
+ * exempts replies.
+ *
+ * Counting everything looked reasonable and was not. A live pharmacy whose
+ * customers message it — which is the entire product — hit the day-one cap of
+ * 20 by lunchtime and the assistant went silent, having done nothing riskier
+ * than answer twenty people who each asked it a question. From outside it was
+ * indistinguishable from a crash.
+ *
  * WHAT THIS IS NOT
  * It does not fabricate anything. There is no fake typo injection, no
  * invented read-gap, no device fingerprint spoofing — those defeat a

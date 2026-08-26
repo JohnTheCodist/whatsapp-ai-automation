@@ -696,6 +696,35 @@ async function processInbound(db, job) {
         (select count(*)::int from messages
            where pharmacy_id = ${job.pharmacy_id} and direction = 'outbound'
              and created_at > now() - interval '24 hours') as replies_today,
+        -- OUTBOUND THAT NOBODY ASKED FOR, which is a different number and a
+        -- different risk from the one above.
+        --
+        -- The daily cap uses replies_today, and should: it is a volume
+        -- breaker asking "is this pharmacy sending an unreasonable amount of
+        -- anything". Warm-up is asking something narrower — "does this NEW
+        -- number look like it is cold-messaging strangers" — and answering it
+        -- with total outbound conflates the safest traffic there is with the
+        -- riskiest.
+        --
+        -- Replying to somebody who just messaged you is what every real
+        -- business does all day and is not what gets a number banned.
+        -- Messaging people who did not contact you is. Meta draws the same
+        -- line itself: its 250-customer limit counts business-initiated
+        -- conversations and explicitly does not count replies.
+        --
+        -- "Initiated" here means: no inbound message in this conversation in
+        -- the 24 hours before we sent. That is the same window the platform
+        -- uses, so the definition matches the thing being protected against.
+        (select count(*)::int from messages m
+           where m.pharmacy_id = ${job.pharmacy_id} and m.direction = 'outbound'
+             and m.created_at > now() - interval '24 hours'
+             and not exists (
+               select 1 from messages inb
+                where inb.conversation_id = m.conversation_id
+                  and inb.direction = 'inbound'
+                  and inb.created_at < m.created_at
+                  and inb.created_at > m.created_at - interval '24 hours'
+             )) as initiated_today,
         (select count(*)::int from messages
            where conversation_id = ${row.conversation_id} and direction = 'outbound'
              and created_at > now() - interval '1 hour') as replies_this_conversation_hour,
@@ -791,9 +820,17 @@ async function processInbound(db, job) {
     enabled: row.warmup_enabled,
     day1Limit: row.warmup_day1_limit,
     warmupDays: row.warmup_days,
-    // Reuses the count the conduct gate already fetched, rather than a
-    // second trailing-24h query per message.
-    sentToday: counts[0].replies_today,
+    // Business-INITIATED sends only, not every outbound message.
+    //
+    // This used to pass replies_today, so a pharmacy answering customers who
+    // had messaged it first burned its warm-up allowance on the one kind of
+    // traffic warm-up is not protecting against. On a live pharmacy that
+    // meant the assistant going silent mid-afternoon — indistinguishable
+    // from a crash — because it had helped 20 people who each asked it to.
+    //
+    // The ramp still does its real job: a new number cold-messaging strangers
+    // is exactly what it should slow down, and that count is unaffected.
+    sentToday: counts[0].initiated_today,
   });
 
   if (!warmup.send) {
