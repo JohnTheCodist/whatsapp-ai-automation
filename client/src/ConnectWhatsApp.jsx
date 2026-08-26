@@ -93,7 +93,40 @@ export default function ConnectWhatsApp() {
   // Live connection events. The server filters to this tenant's account, so
   // everything arriving here is ours.
   useEffect(() => {
-    const es = new EventSource('/api/whatsapp/events');
+    let es = null;
+    let cancelled = false;
+
+    // A ticket, because EventSource cannot send an Authorization header.
+    //
+    // window.fetch is patched to attach the session token (auth.js), and
+    // EventSource is not fetch — so this stream authenticated as nobody and
+    // was refused, every time, in every deploy. The visible symptom was
+    // "stream dropped — the browser will retry" sitting permanently on the
+    // pairing screen while the live log stayed empty.
+    //
+    // The ticket is fetched (so it IS authenticated), single-use, and expires
+    // in 30 seconds. It goes in the URL because that is the only channel
+    // EventSource offers; the session token deliberately does not, since URLs
+    // end up in access logs and browser history.
+    (async () => {
+      let url = '/api/whatsapp/events';
+      try {
+        const r = await fetch('/api/whatsapp/events/ticket', { method: 'POST' });
+        if (r.ok) {
+          const { ticket } = await r.json();
+          if (ticket) url += `?ticket=${encodeURIComponent(ticket)}`;
+        }
+      } catch {
+        // Fall through and open it anyway. Without a ticket the server
+        // refuses and the browser retries — the same place we were before,
+        // rather than a screen with no live log and no explanation.
+      }
+      if (cancelled) return;
+      es = new EventSource(url);
+      wire(es);
+    })();
+
+    function wire(es) {
 
     const on = (name, handler) => {
       es.addEventListener(name, (e) => {
@@ -114,9 +147,16 @@ export default function ConnectWhatsApp() {
     on('session-dead', (d) => { log('session-dead', `${d.status} — ${d.detail}`); refresh(); });
     on('message', (d) => { log('message', `inbound from ${d.from}`); loadInbox(); });
 
-    es.onerror = () => log('sse', 'stream dropped — the browser will retry');
+      es.onerror = () => log('sse', 'stream dropped — the browser will retry');
+    }
 
-    return () => es.close();
+    return () => {
+      cancelled = true;
+      // Guarded: the ticket fetch is async, so unmounting before it resolves
+      // leaves es null. Calling close() on that would throw inside a cleanup
+      // function, where React cannot recover from it.
+      if (es) es.close();
+    };
     // loadInbox belongs here: the 'message' handler above calls it, and an
     // effect that closes over a function it does not declare will keep
     // calling the FIRST version of it forever. Safe to add — log, refresh and

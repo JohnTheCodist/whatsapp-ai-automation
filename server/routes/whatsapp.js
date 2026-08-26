@@ -226,7 +226,78 @@ router.post('/connect', requireAuth, async (req, res, next) => {
  * reconnects on its own. A WebSocket here would be more moving parts for no
  * capability we need.
  */
-router.get('/events', requireAuth, async (req, res, next) => {
+/**
+ * Short-lived tickets for the event stream.
+ *
+ * WHY THIS EXISTS
+ * EventSource cannot send an Authorization header — there is no API for it.
+ * The dashboard authenticates by patching window.fetch, and EventSource is not
+ * fetch, so this route has been returning 401 to every browser that ever
+ * opened it. The pairing screen has always shown "stream dropped — the browser
+ * will retry", on the one screen somebody is watching while debugging.
+ *
+ * WHY NOT JUST PUT THE SESSION TOKEN IN THE QUERY STRING
+ * That is the usual workaround and it is a bad one: URLs are written to access
+ * logs, proxy logs and browser history, so it turns a long-lived credential
+ * into something recorded in half a dozen places. A ticket is single-use,
+ * expires in 30 seconds, and grants exactly one thing — a read-only stream of
+ * this tenant's connection events.
+ *
+ * In memory rather than a table: they live for seconds, one process serves
+ * them, and a restart invalidating them costs a reconnect the browser already
+ * knows how to do.
+ */
+const eventTickets = new Map(); // ticket -> { pharmacyId, expiresAt }
+const TICKET_TTL_MS = 30_000;
+
+function issueTicket(pharmacyId) {
+  // Swept on issue rather than on a timer, so an idle process holds nothing
+  // and there is no interval to leak.
+  const now = Date.now();
+  for (const [t, v] of eventTickets) if (v.expiresAt <= now) eventTickets.delete(t);
+
+  const ticket = require('node:crypto').randomBytes(32).toString('base64url');
+  eventTickets.set(ticket, { pharmacyId, expiresAt: now + TICKET_TTL_MS });
+  return ticket;
+}
+
+/** Single use: redeeming removes it, so a logged URL cannot be replayed. */
+function redeemTicket(ticket) {
+  const found = eventTickets.get(ticket);
+  if (!found) return null;
+  eventTickets.delete(ticket);
+  if (found.expiresAt <= Date.now()) return null;
+  return found.pharmacyId;
+}
+
+router.post('/events/ticket', requireAuth, (req, res) => {
+  res.json({ ticket: issueTicket(req.pharmacyId), expiresInSeconds: TICKET_TTL_MS / 1000 });
+});
+
+/**
+ * Authorization header if there is one, ticket otherwise.
+ *
+ * Delegates to the real requireAuth rather than reimplementing any of it, so
+ * this route cannot drift away from how every other route decides who is
+ * calling — which is exactly the kind of divergence that turns into a tenant
+ * leak. The ticket path exists only for EventSource, which cannot send a
+ * header at all.
+ */
+function authOrTicket(req, res, next) {
+  if (req.headers.authorization) return requireAuth(req, res, next);
+
+  const pharmacyId = redeemTicket(String(req.query.ticket || ''));
+  if (!pharmacyId) {
+    return res.status(401).json({
+      error: 'This event stream needs a ticket. Request one from /api/whatsapp/events/ticket.',
+      code: 'NO_TICKET',
+    });
+  }
+  req.pharmacyId = pharmacyId;
+  return next();
+}
+
+router.get('/events', authOrTicket, async (req, res, next) => {
   try {
     const account = await getOrCreateAccount(req.pharmacyId);
 
