@@ -37,9 +37,28 @@ async function getOrCreateAccount(pharmacyId) {
   `;
   if (existing) return existing;
 
+  // ON CONFLICT, not a bare insert.
+  //
+  // The select above is a read, and between it and this write another request
+  // can insert the same row. That is not theoretical: two dashboards open at
+  // once — the desktop app and a browser — both call /api/whatsapp/status on
+  // load, both found nothing here, and both inserted. The pharmacy ended up
+  // with two baileys accounts for one number, two sockets, and WhatsApp
+  // knocking them off each other with connectionReplaced until the assistant
+  // went silent while every health check still read green.
+  //
+  // DO UPDATE rather than DO NOTHING, because DO NOTHING returns no row on
+  // conflict — the loser of the race would get `undefined` and fail with a
+  // confusing error instead of simply receiving the row that won. Touching
+  // updated_at is a no-op write whose only job is to make RETURNING give it
+  // back.
+  //
+  // The unique index this relies on is migration 0046. Both halves matter:
+  // this handles the race gracefully, the index makes it impossible.
   const [created] = await db`
     insert into whatsapp_accounts (pharmacy_id, provider, status, status_detail)
     values (${pharmacyId}, 'baileys', 'pending', 'Not connected yet.')
+    on conflict (pharmacy_id, provider) do update set updated_at = now()
     returning *
   `;
   return created;
