@@ -35,3 +35,7 @@ server/*.pdf
 # Build artifact, uploaded to the server by hand — see server/index.js
 # download route. 80MB has no business in git history.
 /downloads/
+
+# Electron build output and the downloaded runtime.
+/desktop/node_modules/
+/desktop/dist/

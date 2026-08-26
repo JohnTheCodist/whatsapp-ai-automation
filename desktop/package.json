@@ -1,0 +1,38 @@
+{
+  "name": "rxnaija-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RxNaija for Windows — a desktop shell around the dashboard.",
+  "main": "main.js",
+  "//scripts": "start runs against production; start:local points at the Vite dev server so the shell can be worked on without deploying.",
+  "scripts": {
+    "start": "electron .",
+    "start:local": "cross-env RXNAIJA_URL=http://localhost:5273 electron .",
+    "dist": "electron-builder --win"
+  },
+  "//devDependencies": "cross-env because `VAR=value cmd` is not valid syntax in PowerShell or cmd.exe, and this is a Windows-targeted app that will be worked on from a Windows machine.",
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.rxnaija.desktop",
+    "productName": "RxNaija",
+    "//files": "Only the shell. The dashboard itself is loaded from the server, which is the point: a pharmacy never has a stale copy of the app, and shipping a fix does not mean shipping a new installer.",
+    "files": ["main.js", "splash.html", "error.html", "assets/**"],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "//": "oneClick false so the installer is a normal wizard rather than a window that appears and vanishes — on an unsigned app, silent installation looks exactly like something a pharmacy should be worried about.",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "RxNaija"
+    }
+  }
+}
