@@ -12,6 +12,19 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+
+// Lifts the local-WhatsApp guard for this file, and it must be set BEFORE the
+// require below: config/env.js reads process.env once at module load, so
+// setting it afterwards has no effect.
+//
+// These tests exercise start()'s database-retry path, which the guard now
+// short-circuits in development — correctly, since its whole purpose is to
+// refuse before touching anything. Opting in here is the honest fix: this file
+// is testing the restore machinery itself, so it has to be allowed to reach
+// it. No socket is opened regardless — every case passes a stub `db` that
+// returns no accounts, which is why these tests never needed a network.
+process.env.ALLOW_LOCAL_WHATSAPP = 'true';
+
 const { SessionManager } = require('../services/whatsapp/sessionManager');
 
 test('emitting the reserved "error" event does not throw', () => {

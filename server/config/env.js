@@ -83,6 +83,30 @@ const env = {
   // refuses to boot rather than allowing it.
   devAuthBypass: process.env.DEV_AUTH_BYPASS === 'true' && process.env.NODE_ENV !== 'production',
 
+  /**
+   * Permission for a NON-production process to open a real WhatsApp socket.
+   *
+   * WHAT THIS PREVENTS
+   * server/.env points at the production database, because that is what makes
+   * local development useful. But WhatsApp credentials live in that database,
+   * so any locally-started server restores the live session on boot and opens
+   * a second socket for the pharmacy's number. WhatsApp permits one: it knocks
+   * the production socket off with connectionReplaced (440), and
+   * disconnectPolicy correctly refuses to fight back.
+   *
+   * The pharmacy is then offline until a person notices. Nothing crashes,
+   * nothing alerts — customers message a number that no longer answers, which
+   * is the worst shape a failure can take in a messaging product.
+   *
+   * This is not hypothetical. It happened during development: a local server
+   * was started to check an unrelated route, and it took the live pharmacy
+   * down.
+   *
+   * Default OFF, so the safe thing needs no thought and the dangerous thing
+   * needs a deliberate flag.
+   */
+  allowLocalWhatsApp: process.env.ALLOW_LOCAL_WHATSAPP === 'true',
+
   supabase: {
     url: process.env.SUPABASE_URL,
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,

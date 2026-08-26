@@ -173,6 +173,29 @@ class SessionManager extends EventEmitter {
   // -------------------------------------------------------------------------
 
   /**
+   * Why this process must not open a WhatsApp socket, or null if it may.
+   *
+   * Guards BOTH entry points, and the boot one is the important half: a
+   * developer starting the server locally never asks to connect to WhatsApp.
+   * start() does it for them, silently, using credentials the shared
+   * production database happily hands over — and the pharmacy goes offline
+   * without a single error anywhere.
+   *
+   * Returning a reason rather than a boolean so the refusal can say what to do
+   * about it. A guard that blocks something and does not explain how to
+   * proceed gets deleted by the next person who needs to proceed.
+   */
+  _blockedReason() {
+    if (env.isProduction || env.allowLocalWhatsApp) return null;
+    return (
+      `NODE_ENV is "${env.nodeEnv}", so this process will not open a WhatsApp socket. `
+      + 'It shares a database with production, and a second socket for the same number '
+      + 'knocks the live pharmacy offline (connectionReplaced). '
+      + 'Set ALLOW_LOCAL_WHATSAPP=true only if you are certain no production instance is running.'
+    );
+  }
+
+  /**
    * Restore every session that was connected when the process last stopped.
    *
    * Staggered deliberately. Fifty sockets opening simultaneously after a
@@ -185,6 +208,18 @@ class SessionManager extends EventEmitter {
   // only way to exercise the retry below is against the real database, which
   // opens real sockets and (found the hard way) kills the live session.
   async start({ staggerMs = 750, retries = 5, db = getSql() } = {}) {
+    // Checked before the query, not after: restoring nothing is the entire
+    // point, and reading the account list first would be work done only to
+    // throw away.
+    const blocked = this._blockedReason();
+    if (blocked) {
+      // console.log, not this.emit: emitting a 'session-error' would file this
+      // alongside real faults, and it is not one. It is this process declining
+      // to do something dangerous, which is a normal outcome worth stating
+      // plainly once at boot.
+      console.log(JSON.stringify({ level: 'warn', msg: 'whatsapp restore skipped', reason: blocked }));
+      return 0;
+    }
 
     // RETRIED, BECAUSE FAILING HERE USED TO MEAN SILENTLY OFFLINE FOREVER.
     //
@@ -255,6 +290,13 @@ class SessionManager extends EventEmitter {
    */
   async connect(pharmacyId, accountId) {
     assertPharmacyId(pharmacyId);
+
+    // Throws here rather than returning quietly, unlike start(). This path is
+    // somebody pressing Connect and watching for an answer — a silent no-op
+    // would leave the dashboard saying "Connecting" forever, which is exactly
+    // the symptom this guard exists to prevent people chasing.
+    const blocked = this._blockedReason();
+    if (blocked) throw new Error(blocked);
 
     const existing = this.sessions.get(accountId);
     if (!needsNewSocket(existing)) return existing;
