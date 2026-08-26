@@ -21,6 +21,32 @@ npm start              # against https://app.rxnaija.com
 npm run start:local    # against http://localhost:5273 (Vite must be running)
 ```
 
+## When it misbehaves on a pharmacy's counter
+
+There is no console to look at there and no developer in the room, so the only
+evidence is what a pharmacist can describe over the phone — which for a window
+that "just went white" is nothing at all.
+
+```bash
+set RXNAIJA_DEBUG=1 && npm start
+```
+
+Prints the lifecycle, which is enough to tell the three failures apart:
+
+```
+[rxnaija] splash created
+[rxnaija] loading {"url":"https://app.rxnaija.com"}
+[rxnaija] page loaded, showing window {"url":"https://app.rxnaija.com/"}
+[rxnaija] splash dismissed
+```
+
+A `load failed` line names the real reason (`ERR_NAME_NOT_RESOLVED`,
+`ERR_CONNECTION_TIMED_OUT`), which separates "their internet is down" from
+"the server is down" from "the app is broken" — three calls that sound
+identical when they arrive.
+
+Off unless asked for: a shipped app writing to stdout nobody reads is noise.
+
 ## Building the installer
 
 ```bash

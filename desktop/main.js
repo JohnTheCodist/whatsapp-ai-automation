@@ -28,6 +28,23 @@ const fs = require('node:fs');
 const APP_URL = process.env.RXNAIJA_URL || 'https://app.rxnaija.com';
 const APP_ORIGIN = new URL(APP_URL).origin;
 
+/**
+ * Lifecycle logging, off unless asked for.
+ *
+ * When this app misbehaves on a pharmacy's counter there is no console to
+ * look at and no developer in the room — the only evidence is whatever a
+ * pharmacist can describe over the phone, which for a window that "just went
+ * white" is nothing at all. Setting RXNAIJA_DEBUG=1 and reading back the
+ * output turns that into a support call that can actually be answered.
+ *
+ * Off by default because a shipped app writing to stdout nobody reads is
+ * noise, and these lines name internal states that would only confuse.
+ */
+const DEBUG = process.env.RXNAIJA_DEBUG === '1';
+const trace = (msg, extra) => {
+  if (DEBUG) console.log(`[rxnaija] ${msg}${extra ? ' ' + JSON.stringify(extra) : ''}`);
+};
+
 // How long the dashboard may take before the splash admits it is slow. Long
 // enough that a normal load never sees it; short enough that somebody staring
 // at a stalled window is told something rather than left guessing.
@@ -81,6 +98,7 @@ function createSplash() {
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
   splash.loadFile(path.join(__dirname, 'splash.html'));
+  trace('splash created');
   splash.once('ready-to-show', () => splash.show());
 }
 
@@ -89,6 +107,7 @@ function dismissSplash() {
   if (!splash || splash.isDestroyed()) return;
   const s = splash;
   splash = null;
+  trace('splash dismissed');
   let opacity = 1;
   const timer = setInterval(() => {
     opacity -= 0.12;
@@ -137,6 +156,11 @@ function createWindow() {
 
   win.webContents.once('did-finish-load', () => {
     clearTimeout(slowTimer);
+    // The URL, not a fixed label: this same handler fires for the local error
+    // page after a failed load, and a support log claiming "dashboard loaded"
+    // while somebody is staring at "Can't reach RxNaija" sends whoever reads
+    // it looking in exactly the wrong place.
+    trace('page loaded, showing window', { url: win.webContents.getURL() });
     win.show();
     dismissSplash();
   });
@@ -148,6 +172,7 @@ function createWindow() {
     // failure. Treating it as one would flash an error page during normal use.
     if (!isMainFrame || code === -3) return;
     clearTimeout(slowTimer);
+    trace('load failed, showing error page', { code, desc });
     win.loadFile(path.join(__dirname, 'error.html'), {
       query: { code: String(code), desc: desc || '', target: APP_URL },
     });
@@ -189,6 +214,7 @@ function createWindow() {
   win.on('close', saveState);
   win.on('closed', () => { win = null; });
 
+  trace('loading', { url: APP_URL });
   win.loadURL(APP_URL);
 }
 
