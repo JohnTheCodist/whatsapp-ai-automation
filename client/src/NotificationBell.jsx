@@ -71,6 +71,25 @@ export default function NotificationBell({ consultations = 0, orders = 0, connec
   const count = (connected ? 0 : 1) + consultations + orders;
   const quiet = count === 0;
 
+  /**
+   * Put the count in the page title.
+   *
+   * WHY THE TITLE AND NOT AN API
+   * The desktop app needs this number to badge its taskbar icon, and the title
+   * is how a page tells a window something without either side needing an
+   * interface. The shell exposes NOTHING to the page — no preload, no bridge —
+   * which is the strongest version of that boundary, and it stays that way
+   * because this crosses through a field the browser already owns.
+   *
+   * It pays for itself in a plain browser too: "(3) RxNaija" on the tab is the
+   * same convention as every mail and chat client, and a pharmacist with the
+   * dashboard open behind other tabs can see something needs them without
+   * switching to it.
+   */
+  useEffect(() => {
+    document.title = count > 0 ? `(${count > 9 ? '9+' : count}) RxNaija` : 'RxNaija';
+  }, [count]);
+
   // Same close-on-outside-click / Escape-returns-focus pattern as
   // AccountMenu, so the two dropdowns in this header behave identically.
   useEffect(() => {

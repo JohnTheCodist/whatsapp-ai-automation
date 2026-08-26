@@ -21,7 +21,7 @@
  * script — would run in a window that looks like our application.
  */
 
-const { app, BrowserWindow, shell, Menu, dialog } = require('electron');
+const { app, BrowserWindow, shell, Menu, dialog, nativeImage } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 
@@ -208,6 +208,57 @@ function createWindow() {
       }
     });
   });
+
+  // ---- the taskbar badge ----
+  //
+  // HOW THE COUNT GETS HERE
+  // Through the page title, which the dashboard sets to "(3) RxNaija". No
+  // preload, no bridge, nothing exposed to the page — the count crosses
+  // through a field the browser already owns, so the shell keeps offering
+  // remote code no API at all. It also means the same code works in a plain
+  // browser tab, where "(3) RxNaija" is the convention every mail client uses.
+  let lastCount = 0;
+
+  win.on('page-title-updated', (e, title) => {
+    // The shell owns the window title. Without this the title flickers between
+    // "(3) RxNaija" and whatever the router last set, which looks broken in
+    // the taskbar's window preview.
+    e.preventDefault();
+    win.setTitle('RxNaija');
+
+    const m = /^\((\d+\+?|9\+)\)/.exec(title);
+    const raw = m ? m[1] : null;
+    const count = raw ? (raw.includes('+') ? 10 : parseInt(raw, 10)) : 0;
+    if (count === lastCount) return;
+
+    if (count === 0) {
+      win.setOverlayIcon(null, '');
+    } else {
+      const key = count > 9 ? '9plus' : String(count);
+      const file = path.join(__dirname, 'assets', 'badges', `${key}.png`);
+      try {
+        const img = nativeImage.createFromPath(file);
+        if (!img.isEmpty()) {
+          win.setOverlayIcon(img, `${count} ${count === 1 ? 'thing needs' : 'things need'} you`);
+        }
+      } catch { /* a missing badge must never take the window down */ }
+
+      // Flash the taskbar button, but ONLY on a rise and only when the window
+      // is not already in front. Flashing while somebody is looking at the
+      // screen is nagging, and re-flashing on every poll that returns the same
+      // number is how an app teaches people to ignore it.
+      if (count > lastCount && !win.isFocused()) {
+        win.flashFrame(true);
+      }
+    }
+    trace('badge', { count });
+    lastCount = count;
+  });
+
+  // Stop the flashing the moment they look at it — the attention request has
+  // been answered, and a taskbar button still blinking at a focused window is
+  // the app talking over itself.
+  win.on('focus', () => win.flashFrame(false));
 
   win.on('resize', saveState);
   win.on('move', saveState);
