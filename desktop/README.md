@@ -53,9 +53,19 @@ Off unless asked for: a shipped app writing to stdout nobody reads is noise.
 npm run dist
 ```
 
-Produces `dist/RxNaija Setup <version>.exe` — an NSIS wizard, not a one-click
-installer. On unsigned software a silent install looks exactly like the thing a
-pharmacy should be suspicious of.
+Produces `dist/RxNaija Setup <version>.exe`.
+
+Two choices in `build` worth keeping, which cannot be commented in
+`package.json` because electron-builder rejects unknown keys in its config:
+
+**`files` lists only the shell** — `main.js`, the two HTML pages, the icon. The
+dashboard itself is loaded from the server every launch, which is the point: no
+pharmacy ever holds a stale copy of the app, and shipping a fix does not mean
+shipping a new installer to everyone.
+
+**`oneClick: false`** makes it a normal wizard rather than a window that appears
+and vanishes. On unsigned software a silent install looks exactly like the
+thing a pharmacy should be suspicious of.
 
 **It is unsigned**, so Windows shows a SmartScreen warning. The dashboard tells
 people to expect it, which is the honest mitigation until there is a

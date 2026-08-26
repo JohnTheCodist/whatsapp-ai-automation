@@ -19,14 +19,12 @@
   "build": {
     "appId": "com.rxnaija.desktop",
     "productName": "RxNaija",
-    "//files": "Only the shell. The dashboard itself is loaded from the server, which is the point: a pharmacy never has a stale copy of the app, and shipping a fix does not mean shipping a new installer.",
     "files": ["main.js", "splash.html", "error.html", "assets/**"],
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
       "icon": "assets/icon.ico"
     },
     "nsis": {
-      "//": "oneClick false so the installer is a normal wizard rather than a window that appears and vanishes — on an unsigned app, silent installation looks exactly like something a pharmacy should be worried about.",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
