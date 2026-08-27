@@ -39,3 +39,6 @@ server/*.pdf
 # Electron build output and the downloaded runtime.
 /desktop/node_modules/
 /desktop/dist/
+
+# Voice agent scratch output — audio renders, not source.
+/voice-samples/
