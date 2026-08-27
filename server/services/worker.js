@@ -30,6 +30,7 @@ const { shouldClose, IDLE_HOURS } = require('./whatsapp/conversationPolicy');
 const { onAssistantReplied } = require('./whatsapp/conversationService');
 const { raiseOrConsolidateHandoff } = require('./whatsapp/handoffService');
 const { evaluateWarmup } = require('./whatsapp/warmupPolicy');
+const { decideBurst } = require('./whatsapp/burstPolicy');
 const { normalizeMsisdn } = require('./whatsapp/senderIdentity');
 const { expireStaleHolds } = require('./orders/orderService');
 const { escalationMessage, readEscalationAnswer } = require('./safety/escalationMessage');
@@ -505,6 +506,68 @@ async function processInbound(db, job) {
   const { messageId, conversationId } = job.payload || {};
   if (!messageId || !conversationId) {
     throw new Error(`process_inbound payload missing messageId/conversationId: ${JSON.stringify(job.payload)}`);
+  }
+
+  // ---- is this the whole question, and is now the moment to answer it? ----
+  //
+  // BEFORE the big row read and long before the model call, because the most
+  // common outcome here is "say nothing yet" and none of that work is worth
+  // doing to reach it. A customer sending four fragments should cost one
+  // model call, not four.
+  const [burst] = await db`
+    select
+      -- Someone typing a second line is still asking the first question.
+      exists (
+        select 1 from messages
+         where conversation_id = ${conversationId}
+           and direction = 'inbound'
+           and id > ${messageId}
+      ) as has_newer,
+      (select extract(epoch from (now() - created_at)) * 1000
+         from messages where id = ${messageId}) as age_ms,
+      -- Across the whole pharmacy, not this conversation: ten customers
+      -- waiting produce ten replies at once unless the gap is global.
+      (select extract(epoch from (now() - max(created_at))) * 1000
+         from messages
+        where pharmacy_id = ${job.pharmacy_id} and direction = 'outbound') as ms_since_last_send
+  `;
+
+  const burstDecision = decideBurst({
+    hasNewerMessage: Boolean(burst?.has_newer),
+    messageAgeMs: Number(burst?.age_ms ?? Number.MAX_SAFE_INTEGER),
+    msSinceLastSend: burst?.ms_since_last_send === null || burst?.ms_since_last_send === undefined
+      ? null
+      : Number(burst.ms_since_last_send),
+  });
+
+  if (burstDecision.action === 'skip') {
+    // Not a failure. The customer is answered by the job for their last
+    // message, which reads this one as conversation history.
+    console.log(JSON.stringify({
+      level: 'info', msg: 'inbound superseded', messageId, reason: burstDecision.reason,
+    }));
+    return { sent: false, reason: burstDecision.reason };
+  }
+
+  if (burstDecision.action === 'defer') {
+    // Re-queue THIS job rather than dropping it: if nothing else arrives,
+    // this message is still the one that has to be answered.
+    await db`
+      update jobs
+         set status = 'queued',
+             locked_at = null,
+             locked_by = null,
+             run_after = now() + make_interval(secs => ${burstDecision.delayMs / 1000}),
+             updated_at = now()
+       where id = ${job.id}
+    `;
+    console.log(JSON.stringify({
+      level: 'info', msg: 'inbound deferred', messageId,
+      reason: burstDecision.reason, delayMs: Math.round(burstDecision.delayMs),
+    }));
+    // Deliberately NOT an error: succeed() must not mark it done, and fail()
+    // would burn an attempt. The caller checks `deferred`.
+    return { sent: false, deferred: true, reason: burstDecision.reason };
   }
 
   const [row] = await db`
@@ -1352,7 +1415,16 @@ async function tick() {
     // call that never returns — used to block the loop forever rather than
     // failing, which stopped every subsequent message for that pharmacy with
     // no error anywhere. A timeout makes it a normal retryable failure.
-    await withTimeout(handler(db, job), JOB_TIMEOUT_MS, `job ${job.id} (${job.kind})`);
+    const result = await withTimeout(handler(db, job), JOB_TIMEOUT_MS, `job ${job.id} (${job.kind})`);
+    // A handler may re-queue itself with a later run_after — see the burst
+    // rules in processInbound. Marking it succeeded here would overwrite that
+    // and the message would never be answered at all, which is a worse
+    // outcome than the burst the delay exists to prevent.
+    //
+    // Not modelled as an error on purpose: fail() burns an attempt, and a
+    // customer typing five lines would exhaust max_attempts and land the job
+    // in 'dead' having done nothing wrong.
+    if (result?.deferred) return true;
     await succeed(db, job);
   } catch (err) {
     await fail(db, job, err);
