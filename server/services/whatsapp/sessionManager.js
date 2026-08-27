@@ -53,6 +53,15 @@ const baileysLogger = pino({ level: process.env.BAILEYS_LOG_LEVEL || 'warn' });
 // delivery lag while still refusing anything that is genuinely old history.
 const LIVE_MESSAGE_WINDOW_MS = 3 * 60 * 1000;
 
+// How long a "is this number on WhatsApp" answer stays good for, and how many
+// are kept. Six hours because people do not leave WhatsApp hourly, and the
+// cost of a stale positive is one failed send — far cheaper than a lookup on
+// every alert. Cleared wholesale at the cap rather than evicted one by one:
+// the map is a latency optimisation, not a source of truth, and rebuilding it
+// costs one round trip per number actually used.
+const WA_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const WA_CACHE_MAX = 500;
+
 /**
  * Should this inbound message be treated as live (worth acting on), or as
  * history backfill (ignore — it was already handled, possibly days ago)?
@@ -145,6 +154,8 @@ class SessionManager extends EventEmitter {
     super();
     /** @type {Map<string, object>} accountId -> session record */
     this.sessions = new Map();
+    /** @type {Map<string, {exists: boolean, expiresAt: number}>} jid -> is it on WhatsApp */
+    this._waCache = new Map();
     this.stopping = false;
 
     // 'error' is a RESERVED EventEmitter name: emitting it with no listener
@@ -599,13 +610,78 @@ class SessionManager extends EventEmitter {
     };
   }
 
-  async sendText(accountId, jid, text, { delay = true } = {}) {
+  /**
+   * Is this number actually on WhatsApp?
+   *
+   * WHY IT MATTERS BEYOND THE OBVIOUS
+   * Sending to numbers that are not on WhatsApp is one of the signals abuse
+   * detection weighs, because a high failure rate is what list-blasting looks
+   * like. One mistyped staff alert number, retried on every order, produces
+   * exactly that pattern from an otherwise well-behaved pharmacy.
+   *
+   * CACHED, because this is a network round trip and the answer barely
+   * changes — people do not leave WhatsApp hourly. Bounded so a long-running
+   * process cannot grow it without limit.
+   *
+   * Returns null for "could not tell", which is deliberately different from
+   * false. See the caller: an unanswered check must never block a real
+   * message, only a definite "this number is not on WhatsApp" should.
+   */
+  async isOnWhatsApp(accountId, jid) {
+    // A @lid has no phone number to look up — and any jid in that form
+    // reached us through a real conversation, so its existence is not in
+    // question.
+    if (!jid || jid.includes('@lid') || !jid.includes('@s.whatsapp.net')) return null;
+
+    const now = Date.now();
+    const cached = this._waCache.get(jid);
+    if (cached && cached.expiresAt > now) return cached.exists;
+
+    const session = this.sessions.get(accountId);
+    if (!session?.sock?.onWhatsApp) return null;
+
+    try {
+      const number = jid.split('@')[0];
+      const [result] = (await session.sock.onWhatsApp(number)) || [];
+      const exists = result ? Boolean(result.exists) : false;
+
+      if (this._waCache.size >= WA_CACHE_MAX) this._waCache.clear();
+      this._waCache.set(jid, { exists, expiresAt: now + WA_CACHE_TTL_MS });
+      return exists;
+    } catch {
+      // Network blip, rate limit, API change. Unknown — not "absent".
+      return null;
+    }
+  }
+
+  /**
+   * @param {object} [opts]
+   * @param {boolean} [opts.verifyNumber] check the number exists before sending.
+   *   OPT-IN, not the default: somebody who just messaged us is self-evidently
+   *   on WhatsApp, and checking on every reply would add a round trip to the
+   *   hot path to answer a question we already know. It is for sends to
+   *   numbers we have not heard from — a staff alert line typed into settings,
+   *   a proactive message to a number entered by hand.
+   */
+  async sendText(accountId, jid, text, { delay = true, verifyNumber = false } = {}) {
     const session = this.sessions.get(accountId);
     if (!session || !session.sock) {
       throw new Error(`No live session for account ${accountId}. It may be disconnected or logged out.`);
     }
     if (!text || !String(text).trim()) {
       throw new Error('Refusing to send an empty message.');
+    }
+
+    if (verifyNumber) {
+      const exists = await this.isOnWhatsApp(accountId, jid);
+      // STRICTLY false. null means the check could not be made, and a failed
+      // lookup must not silently stop a pharmacy's alerts — that would turn a
+      // risk-reduction measure into a new way to lose messages.
+      if (exists === false) {
+        throw new Error(
+          `${jid.split('@')[0]} is not a WhatsApp number. Nothing was sent — check the number is correct.`,
+        );
+      }
     }
 
     // Formatted HERE, at the one place every outbound message passes through,

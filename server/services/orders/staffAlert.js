@@ -109,7 +109,14 @@ async function alertStaffOfConsultation(pharmacyId, { briefing, customer = {}, i
 
   try {
     const sent = await sessionManager.sendText(
-      target.accountId, `${target.to}@s.whatsapp.net`, lines.join('\n'), { delay: false },
+      target.accountId, `${target.to}@s.whatsapp.net`, lines.join('\n'),
+      // verifyNumber because this is a number somebody TYPED into a settings
+      // field, not one that reached us by messaging first. A digit wrong and
+      // every alert is a send to a number that is not on WhatsApp — repeated
+      // on every consultation, which is precisely the failure pattern abuse
+      // detection reads as list-blasting. The error also names the problem
+      // instead of alerts vanishing quietly.
+      { delay: false, verifyNumber: true },
     );
     return { sent: true, reason: 'ok', providerMessageId: sent.providerMessageId };
   } catch (err) {
@@ -172,7 +179,11 @@ async function alertStaffOfNewOrder(pharmacyId, order, customer = {}) {
       lines.join('\n'),
       // No human-latency delay: this is an internal alert to the pharmacy's
       // own staff, not a customer reply, and the point of it is speed.
-      { delay: false },
+      //
+      // verifyNumber for the same reason as the consultation alert above:
+      // notify_phone is typed by hand, and a wrong digit turns every order
+      // into a send to a number that does not exist.
+      { delay: false, verifyNumber: true },
     );
     return { sent: true, reason: 'ok', providerMessageId: sent.providerMessageId };
   } catch (err) {
