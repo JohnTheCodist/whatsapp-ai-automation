@@ -219,7 +219,20 @@ app.use('/api/orders', require('./routes/orders'));               // Phase 5 —
   // Untracked files are left alone by reset, so uploading it once keeps it
   // across every future deploy.
   const dir = process.env.DOWNLOAD_DIR || path.join(__dirname, '..', 'downloads');
-  const FILES = new Set(['rxnaija-sync.exe']);
+  // Two different programs, and people confuse them, so the names are as
+  // unlike each other as possible rather than both starting "rxnaija-".
+  //
+  //   RxNaija-Setup.exe   the dashboard as a Windows app — what a pharmacy
+  //                       owner wants, installed on whatever they work on
+  //   rxnaija-sync.exe    the stock connector — installed once on the ONE
+  //                       computer that holds their POS data, and never
+  //                       opened again
+  //
+  // Deliberately not the electron-builder default "RxNaija Setup 0.1.0.exe":
+  // spaces become %20 in a URL somebody has to type or send over WhatsApp,
+  // and the version in the filename means every release is a new link, so the
+  // old one keeps working and quietly serves an old build forever.
+  const FILES = new Set(['rxnaija-sync.exe', 'RxNaija-Setup.exe']);
 
   app.get('/download/:file', (req, res) => {
     // Allowlist, not path sanitising. The set of files this route may serve is
