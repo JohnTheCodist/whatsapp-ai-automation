@@ -13,7 +13,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  buildMenu, buildWelcome, menuItems, isMenuRequest, isGreeting, parseSelection, cleanName,
+  buildMenu, menuItems, isMenuRequest, isGreeting, parseSelection, cleanName,
 } = require('../services/ai/menu');
 
 const P = { pharmacyName: 'Sterling Pharmacy', botName: 'Ada' };
@@ -171,28 +171,34 @@ test('isGreeting does not throw on non-string input', () => {
   }
 });
 
-// ---- buildWelcome: the short first-ever-contact reply ----
+// ---- what a brand-new number sees after a bare "hello" ----
+//
+// This used to be a short welcome ending "How may I assist you today?", which
+// asks somebody who has never used this to guess what it does. These assert
+// the opposite behaviour on purpose, so reverting to the short version fails
+// here rather than going unnoticed until a pharmacist complains again.
 
-test('the welcome is short — no itemized menu in it', () => {
-  const text = buildWelcome(P);
+test('a first-contact greeting shows what the assistant can actually do', () => {
+  const text = buildMenu({ ...P, returning: false });
   for (const item of menuItems(P)) {
-    assert.ok(!text.includes(item.title), `welcome leaked a menu item: "${item.title}"`);
+    assert.ok(text.includes(item.title), `first-contact reply is missing "${item.title}"`);
   }
 });
 
-test('the welcome introduces the bot and points to *menu*, same as the menu\'s own intro', () => {
-  const text = buildWelcome({ ...P, customerName: 'John' });
+test('it still introduces the bot by name', () => {
+  const text = buildMenu({ ...P, customerName: 'John', returning: false });
   assert.match(text, /Hi John/);
   assert.match(text, /I'm Ada from Sterling Pharmacy/);
-  assert.match(text, /type \*menu\*/i);
 });
 
-test('the welcome asks how it can help, matching the ticket\'s expected wording', () => {
-  const text = buildWelcome(P);
-  assert.match(text, /how may I assist you today/i);
+test('it invites plain typing, not only numbers', () => {
+  // A menu that accepts only digits trains people out of saying what they
+  // want, which is the thing the assistant is actually good at.
+  const text = buildMenu({ ...P, returning: false });
+  assert.match(text, /just type your question/i);
 });
 
-test('the welcome degrades the same way the menu does when the push name is unusable', () => {
-  const text = buildWelcome({ ...P, customerName: '👑' });
+test('it degrades the same way when the push name is unusable', () => {
+  const text = buildMenu({ ...P, customerName: '👑', returning: false });
   assert.match(text, /^Hi, I'm Ada from Sterling Pharmacy\./m);
 });

@@ -111,27 +111,18 @@ function buildMenu({ pharmacyName, botName, customerName, welcomeNote, returning
   return lines.join('\n');
 }
 
-/**
- * The FIRST-EVER message a genuinely new customer sees — deliberately short.
+/* buildWelcome — the short "How may I assist you today?" first reply — was
+ * removed rather than left unused.
  *
- * The full itemized menu is a contract offering eight specific things; a
- * stranger who just said "Good morning" has not asked for that list, and
- * dumping it on them is the exact behaviour this function exists to replace.
- * They get a warm line and a pointer to *menu*, then decide for themselves
- * what to do next — which is what lets "I need paracetamol" on the very next
- * message go straight to the AI instead of through a menu they never wanted.
+ * A bare greeting from a new number now gets buildMenu, because somebody
+ * messaging a pharmacy for the first time does not know what this is or what
+ * it can do, and an open-ended question asks them to guess. See the caller in
+ * worker.js.
  *
- * Sent at most ONCE per customer, ever — see customers.onboarded_at (0028).
- * Never sent to a returning customer regardless of how long the gap since
- * their last message; that decision is made by the caller before this
- * function is reached at all, not by anything in here.
+ * Deleted rather than kept "in case": two functions for the first message a
+ * customer ever sees, with only one wired up, is how a fix later lands in the
+ * wrong one. Git has it if the short version is ever wanted back.
  */
-function buildWelcome({ pharmacyName, botName, customerName, welcomeNote }) {
-  const lines = introLines({ pharmacyName, botName, customerName, welcomeNote });
-  lines.push('How may I assist you today?');
-  lines.push('You can also type *menu* any time to see what I can help with.');
-  return lines.join('\n');
-}
 
 /**
  * WhatsApp push names are user-controlled. Strip anything that would read
@@ -244,5 +235,5 @@ function intentBriefing(intent, { pharmacyName }) {
 }
 
 module.exports = {
-  buildMenu, buildWelcome, menuItems, isMenuRequest, isGreeting, parseSelection, intentBriefing, cleanName,
+  buildMenu, menuItems, isMenuRequest, isGreeting, parseSelection, intentBriefing, cleanName,
 };

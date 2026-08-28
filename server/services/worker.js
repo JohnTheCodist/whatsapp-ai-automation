@@ -42,7 +42,7 @@ const { respond } = require('./ai/assistant');
 const { screenMessage } = require('./safety/clinicalFilter');
 const clinicalRouter = require('./clinical/clinicalRouter');
 const { handleTurn, isClinicalWorkflowEnabled } = require('./clinical/clinicalWorkflow');
-const { buildMenu, buildWelcome, isMenuRequest, isGreeting, parseSelection, intentBriefing } = require('./ai/menu');
+const { buildMenu, isMenuRequest, isGreeting, parseSelection, intentBriefing } = require('./ai/menu');
 const { env } = require('../config/env');
 
 /**
@@ -930,11 +930,20 @@ async function processInbound(db, job) {
   const menuOn = row.menu_enabled !== false;
   const wantsMenu = menuOn && isMenuRequest(row.body);
   const isFirstContact = menuOn && !row.onboarded_at;
-  // A bare "Good morning" from someone never onboarded gets the SHORT
-  // welcome, not the full itemized menu — see buildWelcome's own comment for
-  // why. Checked only when isFirstContact: a returning customer's greeting
-  // never reaches this function at all, it goes straight to the AI below,
-  // which already replies to small talk naturally.
+  // A bare "hello" from a number we have never seen gets the FULL menu.
+  //
+  // It used to get a short welcome ending "How may I assist you today?", on
+  // the reasoning that a stranger who said good morning had not asked for a
+  // list of eight things. That reasoning is wrong in the one case it applies
+  // to. Somebody messaging a pharmacy's WhatsApp for the first time does not
+  // know this is an assistant, let alone that it can check stock, quote a
+  // price or take a request — and "how may I assist you" asks them to guess
+  // the shape of something they have never used. The menu answers the
+  // question they actually have, which is "what is this and what can it do".
+  //
+  // Still only on FIRST contact. A returning customer's greeting never
+  // reaches here — it goes to the AI, which answers small talk like a person
+  // rather than re-presenting a list they have already seen.
   const isBareGreeting = isFirstContact && !wantsMenu && isGreeting(row.body);
 
   // Explicit "menu" always wins over a bare-greeting welcome — someone who
@@ -966,13 +975,17 @@ async function processInbound(db, job) {
   }
 
   if (isBareGreeting) {
-    const text = buildWelcome({
+    const text = buildMenu({
       pharmacyName: row.pharmacy_name,
       botName: row.bot_name,
       // WhatsApp's pushName — what the customer calls themselves. Used as a
       // greeting only, never as identity.
       customerName: row.display_name,
       welcomeNote: row.welcome_note,
+      // Never 'returning' here: isFirstContact is a precondition of reaching
+      // this branch, so the intro and the pharmacy's own welcome note are
+      // exactly what this person has not seen.
+      returning: false,
     });
 
     const sent = await sessionManager.sendText(row.account_id, row.wa_jid, text);
