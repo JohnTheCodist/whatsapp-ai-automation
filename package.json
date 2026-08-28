@@ -10,7 +10,9 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "node --test \"server/tests/*.test.js\"",
+    "lint": "eslint .",
+    "//test": "Lint FIRST. A ReferenceError in a branch no test happens to walk is invisible to the suite but fatal in production — which is exactly how `shelfHasMore` survived being deleted. eslint finds it in milliseconds without touching the database.",
+    "test": "eslint . && node --test \"server/tests/*.test.js\"",
     "build": "npm --prefix client install --include=dev --no-audit --no-fund && npm --prefix client run build",
     "migrate": "node scripts/migrate.js",
     "doctor": "node scripts/doctor.js"
@@ -28,5 +30,10 @@
     "pino": "^10.3.1",
     "postgres": "^3.4.9",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^17.11.0"
   }
 }

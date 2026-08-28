@@ -219,6 +219,11 @@ test('an absurdly long message escalates rather than being scanned', () => {
 });
 
 test('zero-width characters cannot smuggle a clinical word past the filter', () => {
+  // The zero-width character below is the POINT of this test, so the rule is
+  // disabled for this line rather than for string literals generally — that
+  // is where an accidental invisible character actually hides, and it has bitten
+  // this codebase before (tradeCode.js's alphabet once held a full-width ９).
+  // eslint-disable-next-line no-irregular-whitespace
   const r = screenMessage('I took an over​dose of paracetamol');
   assert.equal(r.allow, false, 'invisible characters are a cheap way to break a word boundary');
   assert.equal(r.category, 'overdose');
