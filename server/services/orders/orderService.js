@@ -34,6 +34,7 @@ const crypto = require('node:crypto');
 const { getSql, assertPharmacyId } = require('../db');
 const { recordEvent, orderEventType } = require('../customers/customerEvents');
 const { PATIENT_EVENTS } = require('../customers/patientEventTypes');
+const { checkLine } = require('./orderLimits');
 
 /**
  * Reference alphabet, minus everything that is ambiguous out loud or in
@@ -49,7 +50,8 @@ function generateReference() {
   return `${out.slice(0, 3)}-${out.slice(3)}`;
 }
 
-const MAX_QTY_PER_LINE = 100;
+// Replaced by orderLimits.js — the ceiling is now a share of stock, not a
+// constant unrelated to what the pharmacy has. See that file's header.
 const MAX_LINES = 20;
 
 /**
@@ -137,15 +139,12 @@ async function createOrder(pharmacyId, {
     if (!Number.isInteger(quantity) || quantity < 1) {
       return { ok: false, code: 'BAD_QUANTITY', error: 'Quantity must be a whole number of at least 1.' };
     }
-    if (quantity > MAX_QTY_PER_LINE) {
-      return {
-        ok: false,
-        code: 'QUANTITY_TOO_LARGE',
-        // A wholesale-sized request through a chat assistant is exactly the
-        // case a person should look at, not one to quietly accept.
-        error: `${quantity} is more than this assistant can take in one order. A member of staff will need to help with that.`,
-      };
-    }
+    // The quantity check used to live here, against a fixed 100. It cannot:
+    // the limit now depends on stock and price, and neither is known until
+    // the product is read below. Moved rather than duplicated — two places
+    // deciding what is too much is how a customer gets told a number that the
+    // next check disagrees with, which is exactly the "I can send 135 / I
+    // cannot send 135" contradiction this replaces.
     wanted.set(productId, (wanted.get(productId) || 0) + quantity);
   }
 
@@ -198,9 +197,71 @@ async function createOrder(pharmacyId, {
           : `${p.name} has no price in the catalogue, so it cannot be ordered here. A member of staff can confirm the price.`,
       };
     }
-    // Checked here for a good error message, but NOT relied on — the real
-    // guard is the conditional UPDATE inside the transaction below. Between
-    // this read and that write, another customer can take the last pack.
+    // How much of the shelf one order may take, and whether the money on it
+    // needs a person. Both need the product row, which is why this is here
+    // and not up with the payload validation.
+    //
+    // BEFORE the insufficient-stock check below, deliberately. Asking for
+    // 5,000 from a shelf of 135 would otherwise be told "there are only 135
+    // in stock" — so the customer asks for 135 and is told "up to 33". Two
+    // refusals to learn one number, which is the exact behaviour being fixed.
+    // The limit answers both questions at once, and covers the empty shelf
+    // itself when max is 0.
+    const limit = checkLine({
+      quantity,
+      stockQty: p.stock_qty,
+      stockTracked: p.stock_tracked,
+      unitPriceKobo: p.price_kobo,
+    });
+
+    if (!limit.ok && limit.action === 'reduce') {
+      // The NUMBER, every time. Saying only "that is too many" is what sent a
+      // customer guessing 205, then 135, then 100 — and had the assistant
+      // offer 135 and then refuse it, because nothing in the conversation knew
+      // what the limit actually was.
+      //
+      // Three different situations, and the wording has to match which one it
+      // is. "We keep the rest on the shelf" is TRUE when a share is being
+      // withheld and FALSE when the cap is simply everything in stock — and a
+      // reassuring sentence that is not true is worse than a blunt one.
+      const shelfHasMore = p.stock_tracked && limit.max < (p.stock_qty ?? 0);
+      const error = limit.max === 0
+        ? `${p.name} is out of stock, so it cannot be ordered right now.`
+        : shelfHasMore
+          ? `I can put through up to ${limit.max} of ${p.name} in one order — we keep the rest on the shelf for people coming into the shop. Would you like ${limit.max}?`
+          : `There ${limit.max === 1 ? 'is' : 'are'} only ${limit.max} of ${p.name} in stock. Would you like ${limit.max}?`;
+
+      return {
+        ok: false,
+        // The code follows the REASON, not the mechanism. A customer asking
+        // for more than exists has hit a stock problem, and callers keyed on
+        // INSUFFICIENT_STOCK — including a test written before this rule —
+        // are right to expect that answer rather than a limit error.
+        code: shelfHasMore ? 'QUANTITY_TOO_LARGE' : 'INSUFFICIENT_STOCK',
+        error,
+        maxQuantity: limit.max,
+      };
+    }
+
+    if (!limit.ok && limit.action === 'review') {
+      return {
+        ok: false,
+        code: 'NEEDS_STAFF_REVIEW',
+        // NOT a refusal, and the wording must not read as one. A pharmacy
+        // that turns away a large order because a chat assistant has a rule
+        // has lost a real sale — the request is fine, it just should not be
+        // committed by an assistant without a person seeing it.
+        error: `That is a large order, so I will pass it to a member of staff to confirm with you directly rather than sending it through myself.`,
+        needsHandoff: true,
+        valueKobo: limit.valueKobo,
+      };
+    }
+
+    // Kept even though the limit above already caps quantity at stock: stock
+    // is read once and the shelf can move underneath it. Not relied on either
+    // way — the real guard is the conditional UPDATE inside the transaction
+    // below. This exists so the common case gets a sentence about stock
+    // rather than a constraint error.
     if (p.stock_tracked && (p.stock_qty ?? 0) < quantity) {
       return {
         ok: false,
@@ -472,13 +533,10 @@ async function amendPendingOrder(pharmacyId, orderId, { productId, quantity }) {
   if (!Number.isInteger(qty) || qty < 0) {
     return { ok: false, code: 'BAD_QUANTITY', error: 'Quantity must be a whole number, or 0 to remove the item.' };
   }
-  if (qty > MAX_QTY_PER_LINE) {
-    return {
-      ok: false,
-      code: 'QUANTITY_TOO_LARGE',
-      error: `${qty} is more than this assistant can take in one order. A member of staff will need to help with that.`,
-    };
-  }
+  // The quantity ceiling is checked inside the transaction below, once the
+  // product's stock is known. It cannot be done here against a constant: the
+  // limit is a share of what is on the shelf, and this function does not know
+  // what that is yet.
 
   const db = getSql();
 
@@ -515,6 +573,43 @@ async function amendPendingOrder(pharmacyId, orderId, { productId, quantity }) {
       `;
       if (!line) {
         return { ok: false, code: 'NOT_ON_ORDER', error: 'That product is not on this order.' };
+      }
+
+      // Raising a quantity is subject to the same shelf-share rule as adding
+      // one. Without this, "change it to 500" walks straight past the limit
+      // that "order 500" was refused by — the customer just has to phrase it
+      // as an amendment.
+      //
+      // Only when going UP: reducing a line, or removing it with 0, can never
+      // take more of the shelf than is already committed.
+      if (qty > line.quantity) {
+        const [stockRow] = await tx`
+          select stock_qty, stock_tracked from products
+          where id = ${line.product_id} and pharmacy_id = ${pharmacyId}
+        `;
+        const limit = checkLine({
+          quantity: qty,
+          stockQty: stockRow?.stock_qty,
+          stockTracked: stockRow?.stock_tracked ?? false,
+          unitPriceKobo: line.unit_price_kobo,
+        });
+        if (!limit.ok) {
+          return limit.action === 'review'
+            ? {
+              ok: false,
+              code: 'NEEDS_STAFF_REVIEW',
+              error: 'That is a large order, so a member of staff will confirm it with you directly.',
+              needsHandoff: true,
+            }
+            : {
+              ok: false,
+              code: 'QUANTITY_TOO_LARGE',
+              error: limit.max === 0
+                ? `${line.name_snapshot} is out of stock, so the quantity cannot be raised.`
+                : `I can put through up to ${limit.max} of ${line.name_snapshot} in one order — we keep the rest on the shelf for people coming into the shop.`,
+              maxQuantity: limit.max,
+            };
+        }
       }
 
       // Priced from the LINE's own stored unit price, never recomputed from
