@@ -220,24 +220,24 @@ async function createOrder(pharmacyId, {
       // offer 135 and then refuse it, because nothing in the conversation knew
       // what the limit actually was.
       //
-      // Three different situations, and the wording has to match which one it
-      // is. "We keep the rest on the shelf" is TRUE when a share is being
-      // withheld and FALSE when the cap is simply everything in stock — and a
-      // reassuring sentence that is not true is worse than a blunt one.
-      const shelfHasMore = p.stock_tracked && limit.max < (p.stock_qty ?? 0);
+      // The limit is now simply what is on the shelf, so there is one true
+      // sentence rather than a branch. An earlier version also had a "we keep
+      // the rest for walk-in customers" wording for the withheld-share rule;
+      // that rule is gone, and a reassuring sentence that is no longer true
+      // is worse than a blunt one, so it went with it.
       const error = limit.max === 0
         ? `${p.name} is out of stock, so it cannot be ordered right now.`
-        : shelfHasMore
-          ? `I can put through up to ${limit.max} of ${p.name} in one order — we keep the rest on the shelf for people coming into the shop. Would you like ${limit.max}?`
-          : `There ${limit.max === 1 ? 'is' : 'are'} only ${limit.max} of ${p.name} in stock. Would you like ${limit.max}?`;
+        : `Sorry, we cannot fill ${quantity} of ${p.name} — there ${limit.max === 1 ? 'is' : 'are'} only ${limit.max} in stock. We can do ${limit.max}. Would you like that?`;
 
       return {
         ok: false,
-        // The code follows the REASON, not the mechanism. A customer asking
-        // for more than exists has hit a stock problem, and callers keyed on
-        // INSUFFICIENT_STOCK — including a test written before this rule —
-        // are right to expect that answer rather than a limit error.
-        code: shelfHasMore ? 'QUANTITY_TOO_LARGE' : 'INSUFFICIENT_STOCK',
+        // The code follows the REASON, not the mechanism. Now that the limit
+        // IS the stock, every refusal here is a stock problem — there is no
+        // longer a policy ceiling to hit below it — so this is always
+        // INSUFFICIENT_STOCK. It briefly read `shelfHasMore ? ... : ...`,
+        // which survived the removal of the withheld-share rule as a
+        // reference to a variable that no longer existed.
+        code: 'INSUFFICIENT_STOCK',
         error,
         maxQuantity: limit.max,
       };
@@ -604,9 +604,15 @@ async function amendPendingOrder(pharmacyId, orderId, { productId, quantity }) {
             : {
               ok: false,
               code: 'QUANTITY_TOO_LARGE',
+              // Same sentence as createOrder's, and for the same reason: it
+              // names the number that CAN be done. This is the path a
+              // customer hits when they say "make it 135 instead", and
+              // without the number the model has nothing to offer them —
+              // which is how it looped, gave up, and escalated a request the
+              // pharmacy could have filled.
               error: limit.max === 0
                 ? `${line.name_snapshot} is out of stock, so the quantity cannot be raised.`
-                : `I can put through up to ${limit.max} of ${line.name_snapshot} in one order — we keep the rest on the shelf for people coming into the shop.`,
+                : `Sorry, we cannot fill ${qty} of ${line.name_snapshot} — there ${limit.max === 1 ? 'is' : 'are'} only ${limit.max} in stock. We can do ${limit.max}. Would you like that?`,
               maxQuantity: limit.max,
             };
         }

@@ -166,13 +166,20 @@ test('bad quantities are refused rather than coerced', { skip: SKIP && skipReaso
   }
 });
 
-test('a wholesale-sized quantity goes to a human instead', { skip: SKIP && skipReason }, async () => {
+test('a wholesale-sized quantity is refused against the shelf, with the number', { skip: SKIP && skipReason }, async () => {
+  // Was asserted as QUANTITY_TOO_LARGE, against a fixed ceiling of 100.
+  // There is no policy ceiling any more — the limit IS the stock — so a
+  // request for 5000 is a stock answer, not a rule answer, and it must carry
+  // the number the pharmacy CAN do. A refusal without that number is what had
+  // a customer guessing 205, then 135, then 100.
   const r = await orders.createOrder(ctx.a.id, {
     customerId: ctx.customerId,
     items: [{ productId: ctx.priced.id, quantity: 5000 }],
   });
   assert.equal(r.ok, false);
-  assert.equal(r.code, 'QUANTITY_TOO_LARGE');
+  assert.equal(r.code, 'INSUFFICIENT_STOCK');
+  assert.ok(Number.isInteger(r.maxQuantity), 'the caller cannot offer a number it was not given');
+  assert.match(r.error, new RegExp(String(r.maxQuantity)), 'the number must be in the sentence the customer reads');
 });
 
 test('an empty order is refused', { skip: SKIP && skipReason }, async () => {

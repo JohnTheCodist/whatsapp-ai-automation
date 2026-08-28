@@ -11,19 +11,22 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
-  maxOrderableQuantity, checkLine, ALWAYS_ALLOWED, UNTRACKED_CAP, REVIEW_ABOVE_KOBO,
+  maxOrderableQuantity, checkLine, UNTRACKED_CAP, REVIEW_ABOVE_KOBO,
 } = require('../services/orders/orderLimits');
 
-test('a large shelf gives a share of itself, not all of it', () => {
-  assert.equal(maxOrderableQuantity({ stockQty: 400, stockTracked: true }), 100);
-  assert.equal(maxOrderableQuantity({ stockQty: 135, stockTracked: true }), 33);
+test('the whole shelf is orderable — nothing is held back', () => {
+  // This was a quarter. Withholding a share only makes sense where a
+  // reservation DECREMENTS stock; here an order holds stock without removing
+  // it from the count, so the share was protecting against a subtraction that
+  // never happens — while refusing a customer the exact quantity the pharmacy
+  // had sitting on the shelf.
+  assert.equal(maxOrderableQuantity({ stockQty: 400, stockTracked: true }), 400);
+  assert.equal(maxOrderableQuantity({ stockQty: 135, stockTracked: true }), 135);
 });
 
-test('a small shelf still allows a sensible order', () => {
-  // A quarter of 8 is 2, and refusing somebody a fortnight's course because
-  // the shelf is short is not something a pharmacist would do.
-  assert.equal(maxOrderableQuantity({ stockQty: 8, stockTracked: true }), ALWAYS_ALLOWED);
-  assert.equal(maxOrderableQuantity({ stockQty: 20, stockTracked: true }), ALWAYS_ALLOWED);
+test('a small shelf offers exactly what it has', () => {
+  assert.equal(maxOrderableQuantity({ stockQty: 8, stockTracked: true }), 8);
+  assert.equal(maxOrderableQuantity({ stockQty: 1, stockTracked: true }), 1);
 });
 
 test('never more than actually exists', () => {
@@ -59,17 +62,17 @@ test('the refusal carries the number, so nobody has to guess', () => {
   // the assistant only ever said "that is too many".
   const d = checkLine({ quantity: 205, stockQty: 135, stockTracked: true, unitPriceKobo: 1000 });
   assert.equal(d.action, 'reduce');
-  assert.equal(d.max, 33, 'the caller cannot state a limit it was not given');
+  assert.equal(d.max, 135, 'the caller cannot state a limit it was not given');
 });
 
 test('the same answer whether asked for 205, 135 or 100', () => {
   // The contradiction was: refuse 205, offer 135, refuse 135. One rule
   // evaluated the same way every time cannot do that.
   const at = (q) => checkLine({ quantity: q, stockQty: 135, stockTracked: true, unitPriceKobo: 1000 });
-  assert.equal(at(205).max, 33);
-  assert.equal(at(135).max, 33);
-  assert.equal(at(100).max, 33);
-  assert.equal(at(33).ok, true, 'the number it tells the customer must itself be accepted');
+  assert.equal(at(205).max, 135);
+  assert.equal(at(500).max, 135);
+  assert.equal(at(135).ok, true, 'the number it tells the customer must itself be accepted');
+  assert.equal(at(100).ok, true, 'anything at or below the shelf goes through');
 });
 
 // ---- money, which quantity alone does not catch ----

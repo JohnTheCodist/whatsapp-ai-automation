@@ -31,22 +31,20 @@
  */
 
 /**
- * The most of any one product a single order may take, as a share of stock.
+ * A customer may order up to everything on the shelf.
  *
- * A quarter. Low enough that a shelf survives one enthusiastic customer, high
- * enough that ordinary requests — a month's supply, a family's worth — never
- * touch it.
- */
-const MAX_STOCK_SHARE = 0.25;
-
-/**
- * Always allowed if the stock is there, whatever the share works out to.
+ * THIS WAS A QUARTER, AND THE QUARTER WAS WRONG
+ * Reserving a share for walk-in customers is the right instinct in a shop
+ * that decrements stock on reservation. This one does not: an order HOLDS
+ * stock, it does not remove it from the count, so keeping three quarters back
+ * was protecting inventory from a subtraction that never happens. The cost
+ * was real — a customer wanting 135 of the 135 in stock was refused, told a
+ * number nobody had explained, and eventually handed to a human for a request
+ * the pharmacy could have filled exactly.
  *
- * Without this, a quarter of a shelf of 8 is 2, and somebody needing a
- * fortnight's course is refused for no reason a pharmacist would recognise.
- * A small absolute allowance is what makes the share sane at low stock.
+ * The only genuine ceiling is what exists. Above that the answer is not a
+ * policy, it is a fact — and the customer is told the fact and offered it.
  */
-const ALWAYS_ALLOWED = 5;
 
 /**
  * The cap when the pharmacy does not count stock at all.
@@ -84,11 +82,8 @@ function maxOrderableQuantity({ stockQty, stockTracked }) {
   const stock = Number(stockQty);
   if (!Number.isFinite(stock) || stock <= 0) return 0;
 
-  const share = Math.floor(stock * MAX_STOCK_SHARE);
-  // Never more than exists, whatever the floor says — promising 5 from a
-  // shelf of 3 is how a customer is told their order is placed and then told
-  // it is not.
-  return Math.max(1, Math.min(Math.max(share, ALWAYS_ALLOWED), stock));
+  // Everything on the shelf. Nothing held back — see the note above.
+  return Math.floor(stock);
 }
 
 /**
@@ -122,8 +117,6 @@ function checkLine({ quantity, stockQty, stockTracked, unitPriceKobo }) {
 module.exports = {
   maxOrderableQuantity,
   checkLine,
-  MAX_STOCK_SHARE,
-  ALWAYS_ALLOWED,
   UNTRACKED_CAP,
   REVIEW_ABOVE_KOBO,
 };
