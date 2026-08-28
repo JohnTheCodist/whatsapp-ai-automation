@@ -212,6 +212,10 @@ async function createOrder(pharmacyId, {
       stockQty: p.stock_qty,
       stockTracked: p.stock_tracked,
       unitPriceKobo: p.price_kobo,
+      // Read from the customer record above, never from anything the model or
+      // the customer supplied — the same rule the trade PRICING follows, and
+      // for the same reason: nobody may talk their way into a trade account.
+      wholesale,
     });
 
     if (!limit.ok && limit.action === 'reduce') {
@@ -546,10 +550,16 @@ async function amendPendingOrder(pharmacyId, orderId, { productId, quantity }) {
       // between the status check and the write — without this, an amend and a
       // confirm can interleave and the order gets edited after commitStock
       // already counted the old quantities off the shelf.
+      // customer_type joined in because the value ceiling below is retail-only.
+      // Without it an amendment would escalate a trade buyer's order that
+      // createOrder would have accepted outright — the same request treated
+      // differently depending on whether they said it in one message or two.
       const [order] = await tx`
-        select id, status, reference, total_kobo from orders
-        where id = ${orderId} and pharmacy_id = ${pharmacyId}
-        for update
+        select o.id, o.status, o.reference, o.total_kobo, c.customer_type
+        from orders o
+        join customers c on c.id = o.customer_id
+        where o.id = ${orderId} and o.pharmacy_id = ${pharmacyId}
+        for update of o
       `;
       if (!order) return { ok: false, code: 'NOT_FOUND', error: 'Order not found.' };
 
@@ -592,6 +602,7 @@ async function amendPendingOrder(pharmacyId, orderId, { productId, quantity }) {
           stockQty: stockRow?.stock_qty,
           stockTracked: stockRow?.stock_tracked ?? false,
           unitPriceKobo: line.unit_price_kobo,
+          wholesale: order.customer_type === 'wholesale',
         });
         if (!limit.ok) {
           return limit.action === 'review'

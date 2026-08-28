@@ -96,19 +96,37 @@ function maxOrderableQuantity({ stockQty, stockTracked }) {
  *   review — within the quantity rule but worth real money. Not a refusal:
  *            the caller hands this to a person with the request intact.
  */
-function checkLine({ quantity, stockQty, stockTracked, unitPriceKobo }) {
+function checkLine({ quantity, stockQty, stockTracked, unitPriceKobo, wholesale = false }) {
   const max = maxOrderableQuantity({ stockQty, stockTracked });
 
   if (max <= 0) {
     return { ok: false, action: 'reduce', max: 0, reason: 'out_of_stock' };
   }
   if (quantity > max) {
-    return { ok: false, action: 'reduce', max, reason: 'above_stock_share' };
+    return { ok: false, action: 'reduce', max, reason: 'above_stock_reduce' };
   }
 
-  const lineValue = Number(unitPriceKobo || 0) * quantity;
-  if (lineValue >= REVIEW_ABOVE_KOBO) {
-    return { ok: false, action: 'review', reason: 'high_value', valueKobo: lineValue };
+  // The value check is for RETAIL only.
+  //
+  // A ₦500,000 order from a walk-in customer is unusual enough that a person
+  // should see it. The same figure from a trade account is an ordinary
+  // Tuesday — it is what a wholesale relationship IS — and stopping it to ask
+  // a human would escalate every real order the feature exists to serve,
+  // while teaching staff that the alert means nothing.
+  //
+  // Safe to skip because a trade account is not self-declared: customer_type
+  // is set once, by arriving through a code the pharmacy printed on its own
+  // invoices and handed to buyers it already deals with (0040). The pharmacy
+  // has already decided this buyer can place large orders; asking again on
+  // every one of them is asking a question that was answered at the door.
+  //
+  // Stock is still the ceiling. "No limit" here means no VALUE limit, not an
+  // order for more than exists.
+  if (!wholesale) {
+    const lineValue = Number(unitPriceKobo || 0) * quantity;
+    if (lineValue >= REVIEW_ABOVE_KOBO) {
+      return { ok: false, action: 'review', reason: 'high_value', valueKobo: lineValue };
+    }
   }
 
   return { ok: true };

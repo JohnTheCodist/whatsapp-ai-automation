@@ -107,3 +107,37 @@ test('a missing price does not crash the value check', () => {
   const d = checkLine({ quantity: 2, stockQty: 50, stockTracked: true, unitPriceKobo: null });
   assert.equal(d.ok, true);
 });
+
+// ---- wholesale ----------------------------------------------------------
+//
+// A large order from a trade account is the point of having trade accounts.
+// Escalating it would stop every real order the feature exists to serve, and
+// teach staff that the alert means nothing.
+
+test('a trade account is not stopped for order value', () => {
+  const big = {
+    quantity: 100, stockQty: 500, stockTracked: true,
+    unitPriceKobo: 3378087, // ₦33,780.87 — the real Claritin figure
+  };
+  assert.equal(checkLine({ ...big }).action, 'review', 'retail: ₦3.3m should reach a person');
+  assert.equal(checkLine({ ...big, wholesale: true }).ok, true, 'wholesale: this is an ordinary order');
+});
+
+test('wholesale is still bounded by the shelf', () => {
+  // "No limit" means no VALUE limit. A trade account cannot order stock that
+  // does not exist, and must be told the number like anyone else.
+  const d = checkLine({
+    quantity: 900, stockQty: 135, stockTracked: true, unitPriceKobo: 3378087, wholesale: true,
+  });
+  assert.equal(d.ok, false);
+  assert.equal(d.action, 'reduce');
+  assert.equal(d.max, 135);
+});
+
+test('the exemption is opt-in, not the default', () => {
+  // checkLine is called from two places. If wholesale defaulted to true, a
+  // caller that forgot to pass it would silently exempt every retail customer
+  // from the value ceiling — a failure that looks like nothing at all.
+  const args = { quantity: 100, stockQty: 500, stockTracked: true, unitPriceKobo: 3378087 };
+  assert.equal(checkLine(args).action, 'review', 'omitting the flag must mean retail');
+});
