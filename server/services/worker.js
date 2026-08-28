@@ -29,6 +29,9 @@ const { shouldClose, IDLE_HOURS } = require('./whatsapp/conversationPolicy');
 // for the transition matrix it enforces.
 const { onAssistantReplied } = require('./whatsapp/conversationService');
 const { raiseOrConsolidateHandoff } = require('./whatsapp/handoffService');
+const {
+  classify: classifyEscalation, recoveryMessage,
+} = require('./safety/escalationPolicy');
 const { evaluateWarmup } = require('./whatsapp/warmupPolicy');
 const { decideBurst } = require('./whatsapp/burstPolicy');
 const { normalizeMsisdn } = require('./whatsapp/senderIdentity');
@@ -1248,6 +1251,53 @@ async function processInbound(db, job) {
       throw new Error(`Transient assistant failure (${outcome.category}): ${outcome.reason}`);
     }
 
+    // ---- is this worth a pharmacist, or just a bad turn? ----
+    //
+    // Every stopped turn used to raise a handoff. Nine categories are clinical
+    // and should; the rest are the assistant's own failures and were paging a
+    // pharmacist for them. A handoff queue full of "the AI got confused" is a
+    // queue nobody reads, and the emergency in it goes unread with the rest.
+    //
+    // The count is per conversation and consecutive: one bad turn is noise,
+    // three in a row is genuinely stuck and does deserve a person.
+    const failuresSoFar = Number(row.context?.assistantFailures || 0);
+    const verdict = classifyEscalation({
+      category: outcome.category,
+      recoveriesSoFar: failuresSoFar,
+    });
+
+    if (verdict.action === 'recover') {
+      const text = recoveryMessage(outcome.category);
+      const sent = await sessionManager.sendText(row.account_id, row.wa_jid, text);
+      await db.begin(async (tx) => {
+        await insertOutboundMessage(tx, {
+          pharmacyId: job.pharmacy_id, customerId: row.customer_id, conversationId: row.conversation_id,
+          providerMessageId: sent.providerMessageId, body: text, author: 'assistant',
+          category: CATEGORIES.TRANSACTIONAL, eligibilityReason: 'REPLY_TO_CUSTOMER',
+        });
+        // Counted so a conversation that keeps failing still reaches someone.
+        // Stored on the conversation rather than in memory because the next
+        // message is a different job, possibly a different process.
+        await tx`
+          update conversations
+             set context = coalesce(context, '{}'::jsonb)
+                           || jsonb_build_object('assistantFailures', ${failuresSoFar + 1}::int),
+                 last_message_at = now()
+           where id = ${row.conversation_id}
+        `;
+      });
+
+      console.log(JSON.stringify({
+        level: 'info',
+        msg: 'assistant recovered without escalating',
+        category: outcome.category,
+        failuresSoFar: failuresSoFar + 1,
+        to: row.wa_phone,
+      }));
+      await markWarmupStarted(db, job.pharmacy_id);
+      return { sent: true, reason: `recovered:${outcome.category}` };
+    }
+
     const escalation = escalationMessage(outcome.category, { pharmacyPhone: row.pharmacy_phone });
 
     let raised;
@@ -1385,6 +1435,19 @@ async function processInbound(db, job) {
         update conversations
         set context = context || ${tx.json(outcome.contextUpdate)}
         where id = ${row.conversation_id}
+      `;
+    }
+    // A good reply clears the failure count.
+    //
+    // The escalation rule counts CONSECUTIVE failures, and without this it
+    // would be counting lifetime ones — a conversation with two bad turns
+    // months apart would escalate on the second, and every conversation
+    // eventually accumulates enough to page a pharmacist over nothing.
+    if (Number(row.context?.assistantFailures || 0) > 0) {
+      await tx`
+        update conversations
+           set context = coalesce(context, '{}'::jsonb) - 'assistantFailures'
+         where id = ${row.conversation_id}
       `;
     }
     // We answered, so the ball is with the customer. Inside the same
