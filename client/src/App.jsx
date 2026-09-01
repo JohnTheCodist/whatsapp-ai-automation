@@ -37,8 +37,9 @@ import { playOrderChime, playConsultationAlarm, unlockChime, isUnlocked } from '
 import {
   IconOverview, IconConsultations, IconInbox, IconOrders, IconRequests,
   IconCustomers, IconSetup, IconSearch, IconVolumeOn, IconVolumeOff, IconLink, IconAi,
-  IconInventory, IconUpload, IconDeals,
+  IconInventory, IconUpload, IconDeals, IconBilling, IconAlertTriangle,
 } from './Icons.jsx';
+import Billing from './Billing.jsx';
 
 const SECTIONS = [
   { id: 'overview', label: 'Overview', Icon: IconOverview, title: 'Overview' },
@@ -103,6 +104,14 @@ const SECTIONS = [
  */
 const SETUP = { id: 'setup', label: 'Setup', Icon: IconSetup, title: 'Setup' };
 
+/**
+ * Billing sits beside Setup for the same reason Setup sits at the foot of
+ * the rail: it is about the installation, not about today's work. Nobody
+ * opens this daily, and putting it above the queues would give a monthly
+ * concern the same weight as the people currently waiting.
+ */
+const BILLING = { id: 'billing', label: 'Billing', Icon: IconBilling, title: 'Billing' };
+
 const SUBTITLE = {
   overview: 'How the pharmacy is doing',
   ai: 'What the assistant is handling, and what it is passing to you',
@@ -114,6 +123,7 @@ const SUBTITLE = {
   inventory: 'What the assistant can see and sell',
   'inventory-upload': 'What the assistant can see and sell',
   setup: 'Connection, catalogue and assistant identity',
+  billing: 'Your plan, and what happens when it ends',
 };
 
 /** Flattened once, so a child tab can find its parent without a nested scan. */
@@ -134,6 +144,7 @@ const PARENT_OF = Object.fromEntries(
 const VALID_TABS = new Set([
   ...SECTIONS.flatMap((s) => [s.id, ...(s.children || []).map((c) => c.id)]),
   SETUP.id,
+  BILLING.id,
 ]);
 
 /** Read the tab to open on load from the URL, or null if there isn't one. */
@@ -150,12 +161,19 @@ function readTabFromUrl() {
  */
 function sectionFor(tab) {
   if (tab === SETUP.id) return SETUP;
+  // Same explicit check as SETUP, and for the same reason: BILLING lives
+  // outside SECTIONS, so without this, opening Billing would fall through to
+  // SECTIONS[0] and light "Overview" instead.
+  if (tab === BILLING.id) return BILLING;
   return PARENT_OF[tab] || SECTIONS.find((s) => s.id === tab) || SECTIONS[0];
 }
 
 export default function App({ onSignOut, pharmacy = null, email = '' }) {
   const [tab, setTab] = useState(() => readTabFromUrl() || 'overview');
   const [health, setHealth] = useState(null);
+  // null until the first read — the banner and the rail dot stay hidden
+  // rather than flashing a wrong state on load.
+  const [billing, setBilling] = useState(null);
   // The name shown in the account chip. Handed down by AuthGate when there is
   // a session; fetched here only for the DEV_AUTH_BYPASS path, which renders
   // App directly and so has no pharmacy to pass. Seeded from the prop rather
@@ -257,6 +275,32 @@ export default function App({ onSignOut, pharmacy = null, email = '' }) {
     };
     poll();
     const t = setInterval(poll, 30000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, []);
+
+  /**
+   * Billing status for the rail dot and the banner.
+   *
+   * SEPARATE FROM THE BADGE POLL, AND MUCH SLOWER. A trial that has six days
+   * left will still have six days left in ten minutes; polling it every 30
+   * seconds alongside the badges would be the same mistake /api/summary
+   * exists to undo. Ten minutes is far more often than the state can
+   * meaningfully change, and a page load always refetches.
+   *
+   * /api/billing/status, not /api/billing: the full view is owner-only and
+   * carries payment history. Everyone needs to know why the assistant
+   * stopped; not everyone needs the receipts.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    const read = async () => {
+      try {
+        const b = await fetch('/api/billing/status').then((r) => (r.ok ? r.json() : null));
+        if (!cancelled && b) setBilling(b);
+      } catch { /* the dashboard works without the banner */ }
+    };
+    read();
+    const t = setInterval(read, 600000);
     return () => { cancelled = true; clearInterval(t); };
   }, []);
 
@@ -414,6 +458,33 @@ export default function App({ onSignOut, pharmacy = null, email = '' }) {
             <span className="shrink-0"><SETUP.Icon /></span>
             <span className="min-w-0 flex-1 truncate text-[13px] font-medium tracking-tight">{SETUP.label}</span>
           </button>
+
+          {/* Billing, beneath Setup. Both are about the installation rather
+              than today's work. The dot appears when the trial is running
+              out or has run out — the one case where a monthly concern
+              becomes this week's. */}
+          <button
+            type="button"
+            onClick={() => setTab(BILLING.id)}
+            aria-current={tab === BILLING.id ? 'page' : undefined}
+            className={`relative mt-1 flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left transition
+              ${tab === BILLING.id
+                ? 'bg-[var(--ui-accent-wash)] text-[var(--ui-accent-ink)]'
+                : 'text-[var(--ui-ink-soft)] hover:bg-[var(--ui-sunk)] hover:text-[var(--ui-ink)]'}`}
+          >
+            {tab === BILLING.id && (
+              <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r bg-[var(--ui-accent)]" />
+            )}
+            <span className="shrink-0"><BILLING.Icon /></span>
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium tracking-tight">{BILLING.label}</span>
+            {(billing?.warn || billing?.needsPayment) && (
+              <span
+                className={`ml-auto h-1.5 w-1.5 shrink-0 rounded-full ${
+                  billing.needsPayment ? 'bg-red-500' : 'bg-amber-500'}`}
+                aria-hidden="true"
+              />
+            )}
+          </button>
         </div>
       </nav>
 
@@ -547,6 +618,43 @@ export default function App({ onSignOut, pharmacy = null, email = '' }) {
         {/* ---- canvas ---- */}
         <main className="ui-canvas flex-1 px-5 py-6">
           <div className="mx-auto max-w-6xl">
+            {/* ---- billing ----
+                Above everything, on every screen, and only when it matters:
+                the trial is nearly out, or the assistant has already stopped.
+                A pharmacy discovering on day 7 that it needed a card has been
+                ambushed, and the first thing they would otherwise notice is
+                customers going unanswered.
+
+                Hidden entirely on the Billing screen itself — repeating a
+                warning immediately above the page that explains it reads as
+                a system that is not paying attention. */}
+            {billing && (billing.warn || billing.needsPayment) && tab !== BILLING.id && (
+              <button
+                type="button"
+                onClick={() => setTab(BILLING.id)}
+                className={`mb-5 flex w-full items-start gap-3 rounded-lg border px-4 py-3 text-left transition
+                  ${billing.needsPayment
+                    ? 'border-red-200 bg-red-50 hover:bg-red-100'
+                    : 'border-amber-200 bg-amber-50 hover:bg-amber-100'}`}
+              >
+                <span className={`mt-0.5 shrink-0 ${billing.needsPayment ? 'text-red-600' : 'text-amber-600'}`}>
+                  <IconAlertTriangle />
+                </span>
+                <span className="min-w-0">
+                  <span className={`block text-sm font-medium ${billing.needsPayment ? 'text-red-900' : 'text-amber-900'}`}>
+                    {billing.needsPayment
+                      ? 'The assistant has stopped replying to customers'
+                      : 'Your free trial is ending'}
+                  </span>
+                  {billing.message && (
+                    <span className={`mt-0.5 block text-sm ${billing.needsPayment ? 'text-red-800' : 'text-amber-800'}`}>
+                      {billing.message}
+                    </span>
+                  )}
+                </span>
+              </button>
+            )}
+
             {/* Setup is the one screen that titles itself: its heading names
                 the settings AREA you are in ("Customer contact"), which a
                 fixed "Setup" above it would only repeat one level too high. */}
@@ -669,6 +777,8 @@ export default function App({ onSignOut, pharmacy = null, email = '' }) {
             {tab === 'setup' && (
               <Settings health={health} onBack={() => setTab('overview')} />
             )}
+
+            {tab === 'billing' && <Billing />}
           </div>
         </main>
       </div>

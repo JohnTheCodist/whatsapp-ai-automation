@@ -135,6 +135,18 @@ export const IconSetup = (p) => (
   </svg>
 );
 
+/**
+ * Billing. A card, not a naira sign or a wallet: the pharmacy is on a
+ * subscription, and a wallet would imply the prepaid balance this product
+ * deliberately does not have.
+ */
+export const IconBilling = (p) => (
+  <svg {...base} {...p}>
+    <rect x="2" y="5" width="20" height="14" rx="2" />
+    <path d="M2 10h20" />
+  </svg>
+);
+
 export const IconSearch = (p) => (
   <svg {...base} {...p}>
     <circle cx="11" cy="11" r="6.5" />

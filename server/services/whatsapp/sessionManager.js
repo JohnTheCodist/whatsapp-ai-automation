@@ -41,6 +41,7 @@ const { classifyDisconnect, backoffMs, MAX_RECONNECT_ATTEMPTS } = require('./dis
 const { isDirectUserChat } = require('./jidPolicy');
 const { resolveSender } = require('./senderIdentity');
 const { formatForWhatsApp } = require('./messageFormat');
+const { startTrialIfUnstarted } = require('../billing/subscriptionService');
 
 // Baileys is chatty at info level and every line is protocol noise. Warnings
 // and errors are worth having; the rest is not, and drowning real problems is
@@ -832,6 +833,19 @@ class SessionManager extends EventEmitter {
               updated_at = now()
           where id = ${accountId}
         `;
+
+        // The free trial starts HERE, at the first successful connection —
+        // not at sign-up. A pharmacy that registered on Monday and connected
+        // on Friday should not have spent four days of its trial waiting for
+        // us. See subscriptionService for why, and for why calling this on
+        // every reconnect is safe: the update only fires when
+        // trial_started_at is still null, so a re-pair cannot hand out
+        // another seven days and a restart cannot reset the clock.
+        //
+        // Inside the same non-fatal try as the status write above, and for
+        // the same reason: failing to record a success must never undo it.
+        // A pharmacy is connected whether or not we managed to note the date.
+        await startTrialIfUnstarted(db, session.pharmacyId);
       } catch (err) {
         this.emit('session-error', { accountId, phase: 'markConnected', error: err });
       }

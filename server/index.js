@@ -178,6 +178,7 @@ app.use('/api/customers', require('./routes/customers'));    // patient identity
 // the URL space would imply a second record that does not exist.
 app.use('/api/customers', require('./routes/conditions'));   // purchase-based condition profiles
 app.use('/api/orders', require('./routes/orders'));               // Phase 5 — order queue
+app.use('/api/billing', require('./routes/billing'));        // plan, trial clock, payments
 
 // ---------- the dashboard itself ----------
 //

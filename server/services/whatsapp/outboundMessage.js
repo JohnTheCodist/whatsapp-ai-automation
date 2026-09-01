@@ -31,6 +31,7 @@ const { sessionManager } = require('./sessionManager');
 const { recordEvent } = require('../customers/customerEvents');
 const { PATIENT_EVENTS } = require('../customers/patientEventTypes');
 const { canSendMessage, withRequiredFooter } = require('./communicationPolicy');
+const { recordConversationUsage } = require('../billing/usageMeter');
 
 const ACTOR_BY_AUTHOR = { assistant: 'ai', staff: 'staff', system: 'system' };
 
@@ -77,6 +78,23 @@ async function insertOutboundMessage(sql, {
       metadata: { author, conversationId, preview: (body || '').slice(0, 200) },
     });
   }
+
+  // Meter the conversation, once, on the first assistant reply in it.
+  //
+  // HERE BECAUSE THIS IS THE CHOKE POINT. Six call sites across the worker
+  // reach an outbound row, and every one of them comes through this
+  // function — the same reason the timeline event is written here rather
+  // than at each site. A seventh send path added later is metered by
+  // existing, which is the only version of this that stays true.
+  //
+  // In the SAME transaction as the message on purpose: a counted
+  // conversation with no message, or a message that was never counted, are
+  // both states nobody could reconstruct afterwards. The unique index makes
+  // the repeat case a no-op rather than an error, so this cannot fail a
+  // reply that would otherwise have gone out.
+  await recordConversationUsage(sql, {
+    pharmacyId, conversationId, author,
+  });
 
   return message;
 }
