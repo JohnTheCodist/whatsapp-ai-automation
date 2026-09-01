@@ -129,6 +129,42 @@ function priceTierOf(ctx) {
  * deliberate and is what migration 0040 promised: a model that never receives
  * both figures cannot quote the wrong one, however the conversation goes.
  */
+/**
+ * Tell the model to say the refusal and STOP.
+ *
+ * WHAT THIS FIXES, MEASURED
+ * A customer amended an order from 3 cards of Claritin to 135 (2026-08-28,
+ * 07:20). At ₦33,780.87 each that is ₦4.56m, over the retail review ceiling,
+ * so orderService returned NEEDS_STAFF_REVIEW with `needsHandoff: true` and a
+ * perfectly good sentence to read out.
+ *
+ * The tool then dropped `needsHandoff` on the floor — it was set in
+ * orderService and read absolutely nowhere — and handed the model a bare
+ * refusal with no instruction. The model, reasonably, treated it as something
+ * to work around: it called the tool again, and again, hit
+ * MAX_TOOL_ITERATIONS, and the customer got "Sorry, I got a bit tangled
+ * there. Could you say that again, in a few words?" twice, then a handoff
+ * that named no reason at all.
+ *
+ * Three exchanges and the customer never learned the actual answer, which was
+ * simply: that order is large enough that a person has to approve it.
+ *
+ * A REFUSAL THE MODEL CAN RETRY IS A REFUSAL THE MODEL WILL RETRY. The
+ * instruction has to be explicit that the request was understood and that
+ * trying again is wrong, or the loop is the default behaviour.
+ */
+function stopRetrying(result) {
+  if (!result.needsHandoff) return {};
+  return {
+    needsHandoff: true,
+    note: 'Tell the customer this in your own words, warmly, and STOP. '
+      + 'Do NOT call this tool again, do NOT propose a smaller quantity, and do NOT '
+      + 'ask them to repeat themselves — their request was understood perfectly and is '
+      + 'being passed to a person to confirm. Retrying here is what turns a clear answer '
+      + 'into a silent handoff the customer cannot explain.',
+  };
+}
+
 function presentProduct(row) {
   return {
     id: row.id,
@@ -844,7 +880,7 @@ const TOOLS = [
         // Returned as a refusal the model can read out, not an exception.
         // The customer needs to hear why — "only 2 left" is useful, a stack
         // trace is not.
-        return { created: false, reason: result.error, code: result.code };
+        return { created: false, reason: result.error, code: result.code, ...stopRetrying(result) };
       }
 
       // Staff already got an alert for this reference when the cart was
@@ -953,7 +989,7 @@ const TOOLS = [
 
       if (!result.ok) {
         // A refusal the model can read out, same discipline as create_order.
-        return { changed: false, reason: result.error, code: result.code };
+        return { changed: false, reason: result.error, code: result.code, ...stopRetrying(result) };
       }
 
       if (result.cancelled) {
