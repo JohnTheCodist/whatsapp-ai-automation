@@ -96,6 +96,10 @@ function isQuietHour(hour, start, end) {
  * @param {Date}    [args.now]
  * @param {object}  [args.limits]         caps and quiet hours for this pharmacy
  * @param {object}  [args.counts]         { repliesToday, repliesThisConversationHour, identicalRecentReplies }
+ * @param {boolean} [args.isReply]        answering a message the customer sent
+ *   us. Defaults FALSE so an unmarked caller keeps the caps — a send path
+ *   added later has to state that it is a reply to be exempt, rather than
+ *   inheriting the exemption by forgetting to mention it.
  * @param {string}  [args.defaultCountryCode]
  * @returns {{send: boolean, reason: string, pause?: boolean}}
  *   `pause` asks the caller to trip the circuit breaker — a breach that
@@ -110,6 +114,7 @@ function evaluateOutbound({
   now = new Date(),
   limits = {},
   counts = {},
+  isReply = false,
   defaultCountryCode = '234',
 }) {
   // 1. The breaker. Checked first so nothing below can talk past it.
@@ -172,20 +177,49 @@ function evaluateOutbound({
     return { send: false, reason: 'repeating_itself', pause: true };
   }
 
-  const perConversation = counts.repliesThisConversationHour ?? 0;
-  const conversationCap = limits.hourlyConversationCap ?? 15;
-  if (perConversation >= conversationCap) {
-    // Not a pause: one chatty customer is not evidence the system is broken.
-    return { send: false, reason: 'conversation_rate_limit' };
-  }
+  // 6. VOLUME CAPS — business-initiated sends only.
+  //
+  //    THE SAME MISTAKE WARM-UP ALREADY MADE, IN A SECOND PLACE.
+  //    warmupPolicy used to be fed replies_today, so a pharmacy answering
+  //    customers who had messaged it first burned its allowance on the one
+  //    kind of traffic warm-up does not protect against. On a live pharmacy
+  //    that meant the assistant going silent mid-afternoon, indistinguishable
+  //    from a crash. That was fixed by counting business-INITIATED sends only
+  //    (see worker.js, `sentToday: counts[0].initiated_today`).
+  //
+  //    These two caps had the identical flaw and were not fixed with it. A
+  //    customer mid-conversation is the LEAST likely traffic to get a number
+  //    banned — they opened the thread, and a reply inside an open thread is
+  //    the most ordinary thing a WhatsApp number can do. Meanwhile 15 replies
+  //    in an hour is one attentive customer working through an order, and
+  //    that customer gets silence with no explanation, which is the exact
+  //    failure this codebase keeps having to fix.
+  //
+  //    What the caps genuinely protect against is a number sending volume at
+  //    people who did not ask, and that is unaffected: `isReply` is false for
+  //    every business-initiated path, which is where the ban risk actually
+  //    lives.
+  //
+  //    NOT SKIPPED FOR A REPLY: the breaker, opt-out, the allowlist, quiet
+  //    hours, and the loop protection above. Those are about whether we may
+  //    speak to this person at all, or whether something is broken — neither
+  //    becomes acceptable just because a customer spoke first.
+  if (!isReply) {
+    const perConversation = counts.repliesThisConversationHour ?? 0;
+    const conversationCap = limits.hourlyConversationCap ?? 15;
+    if (perConversation >= conversationCap) {
+      // Not a pause: one chatty customer is not evidence the system is broken.
+      return { send: false, reason: 'conversation_rate_limit' };
+    }
 
-  // 6. Daily ceiling. Hitting it PAUSES rather than throttles. On an
-  //    unofficial channel, unexplained volume is exactly the moment to stop
-  //    and let a person look, not to keep going at a slower rate.
-  const today = counts.repliesToday ?? 0;
-  const dailyCap = limits.dailyReplyCap ?? 200;
-  if (today >= dailyCap) {
-    return { send: false, reason: 'daily_cap_reached', pause: true };
+    //  Daily ceiling. Hitting it PAUSES rather than throttles. On an
+    //  unofficial channel, unexplained volume is exactly the moment to stop
+    //  and let a person look, not to keep going at a slower rate.
+    const today = counts.repliesToday ?? 0;
+    const dailyCap = limits.dailyReplyCap ?? 200;
+    if (today >= dailyCap) {
+      return { send: false, reason: 'daily_cap_reached', pause: true };
+    }
   }
 
   return { send: true, reason: 'ok' };

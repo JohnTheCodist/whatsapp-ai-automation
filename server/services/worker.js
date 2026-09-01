@@ -840,6 +840,12 @@ async function processInbound(db, job) {
       quietHoursStart: row.quiet_hours_start,
       quietHoursEnd: row.quiet_hours_end,
     },
+    // processInbound only ever runs because a customer sent us something, so
+    // everything it sends is a reply inside a thread they opened. That exempts
+    // it from the volume caps — see conductPolicy step 6 — and from nothing
+    // else: the breaker, opt-out, allowlist, quiet hours and loop protection
+    // all still apply here exactly as before.
+    isReply: true,
     counts: {
       repliesToday: counts[0].replies_today,
       repliesThisConversationHour: counts[0].replies_this_conversation_hour,

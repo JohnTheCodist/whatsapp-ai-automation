@@ -151,6 +151,80 @@ test('the daily ceiling PAUSES rather than throttles', () => {
   );
 });
 
+// ---- the caps are for cold outbound, not for answering someone ----------
+//
+// A customer amended an order at 07:20 on 2026-08-28 and the assistant went
+// quiet on them. That particular silence was a different bug, but it sent us
+// looking at every path that can stop a reply without saying so — and these
+// two caps could stop one at message 16 of a conversation the customer was
+// driving, with no message to them and nothing but a log line.
+//
+// warmupPolicy already had exactly this flaw and was already fixed for it:
+// it used to count replies_today and now counts business-initiated sends
+// only. These caps were not fixed with it.
+
+test('a reply inside a conversation the customer opened is not rate limited', () => {
+  const d = evaluateOutbound({
+    ...base,
+    isReply: true,
+    limits: { quietHoursEnabled: false, hourlyConversationCap: 15 },
+    counts: { repliesThisConversationHour: 40 },
+  });
+  assert.equal(d.send, true, 'an attentive customer working through an order must not be cut off');
+});
+
+test('the daily ceiling does not silence replies either', () => {
+  const d = evaluateOutbound({
+    ...base,
+    isReply: true,
+    limits: { quietHoursEnabled: false, dailyReplyCap: 200 },
+    counts: { repliesToday: 500 },
+  });
+  assert.equal(d.send, true);
+  assert.ok(!d.pause, 'answering customers must never trip the circuit breaker');
+});
+
+test('the exemption is opt-in, not the default', () => {
+  // If isReply defaulted true, a business-initiated send path added later
+  // would inherit the exemption by forgetting to mention it — and cold
+  // outbound volume is the thing the caps actually exist for. Same discipline
+  // as checkLine's `wholesale` flag in orderLimits.
+  const d = evaluateOutbound({
+    ...base,
+    limits: { quietHoursEnabled: false, hourlyConversationCap: 15 },
+    counts: { repliesThisConversationHour: 40 },
+  });
+  assert.equal(d.send, false, 'omitting the flag must mean "not a reply"');
+  assert.equal(d.reason, 'conversation_rate_limit');
+});
+
+test('being a reply exempts the VOLUME caps and nothing else', () => {
+  // Everything below is about whether we may speak to this person at all, or
+  // whether something is broken. Neither becomes acceptable because a
+  // customer spoke first, and a blanket "replies always send" would have
+  // quietly deleted all four.
+  const reply = { ...base, isReply: true, limits: { quietHoursEnabled: false } };
+
+  assert.equal(evaluateOutbound({ ...reply, optedOut: true }).reason, 'opted_out');
+  assert.equal(evaluateOutbound({ ...reply, sendingPaused: true }).reason, 'sending_paused');
+  assert.equal(
+    evaluateOutbound({ ...reply, counts: { identicalRecentReplies: 3 } }).reason,
+    'repeating_itself',
+  );
+  assert.equal(
+    evaluateOutbound({
+      ...reply,
+      now: new Date('2026-08-09T03:00:00'),
+      limits: { quietHoursEnabled: true, quietHoursStart: 22, quietHoursEnd: 6 },
+    }).reason,
+    'quiet_hours',
+  );
+  assert.equal(
+    evaluateOutbound({ ...reply, phone: '2340000000000', allowlist: [ALLOWED] }).reason,
+    'not_allowlisted',
+  );
+});
+
 test('a repeating assistant trips the breaker', () => {
   // Two automated systems talking to each other look like ordinary traffic
   // until they suddenly do not. Repetition is the give-away.
