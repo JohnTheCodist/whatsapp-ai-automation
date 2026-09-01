@@ -1,0 +1,179 @@
+# The gate between a change and production.
+#
+# WHAT THIS IS FOR
+# This repository deploys by running deploy/update.sh on the VPS, which pulls
+# main and restarts the service. There is nothing between a commit and a live
+# pharmacy except somebody remembering to run the tests. This is that
+# something.
+#
+# WHY THE GATE IS NOT "npm test"
+# `npm test` exits 1 today and will keep doing so until seven known failures
+# are fixed (see test-baseline.json). A gate that is red on every commit from
+# the day it is installed blocks nothing — it gets ignored, then disabled, and
+# the one time it was right nobody was reading it.
+#
+# So the gate asks "did anything get WORSE" rather than "is everything green",
+# by comparing the run against a committed baseline. That is the question a
+# regression gate actually exists to answer, and the only one that can be
+# enforced honestly against a suite with known failures.
+#
+# NO PRODUCTION SECRETS ARE USED HERE, deliberately. Nothing in this workflow
+# needs DATABASE_URL, SUPABASE_SERVICE_ROLE_KEY or SESSION_ENCRYPTION_KEY, and
+# a CI runner that can reach the live database is a second way for a test to
+# write to it — the exact hazard the test-database separation removed.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A second push to the same branch makes the first run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------
+  # THE GATE. This is the job to make required in branch protection.
+  # ---------------------------------------------------------------------
+  gate:
+    name: Lint and regression gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 22.12 is a hard floor, not a preference: Baileys 7 is ESM and this
+      # server is CommonJS, so require()-ing it only works from 22.12 onward.
+      # Below that the app throws ERR_REQUIRE_ESM at boot. See package.json.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Lint FIRST and on its own step, so "lint failed" and "a test failed"
+      # are visibly different outcomes in the checks list rather than one red
+      # X on a combined command. A ReferenceError in a branch no test walks is
+      # invisible to the suite but fatal in production — that is how a deleted
+      # variable reached orderService.js.
+      - name: Lint
+        run: npm run lint
+
+      - name: Regression gate
+        run: node scripts/check-baseline.js
+
+      # Runs even when the gate fails, because the failure output is the part
+      # somebody needs to read.
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### Regression gate'
+            echo ''
+            echo 'Compared against `test-baseline.json`. Blocks on a NEW failure,'
+            echo 'on fewer passing tests, or on MORE skipped tests.'
+            echo ''
+            echo 'A skipped suite proves nothing. See AGENTS.md.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------
+  # The client build, because a broken build is a failed deploy.
+  # deploy/update.sh runs `npm run build` on the box; if it fails there,
+  # it fails after the service has already been stopped.
+  # ---------------------------------------------------------------------
+  client-build:
+    name: Client build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # This also runs the client's own eslint config, which the root config
+      # deliberately ignores (client/ is excluded there).
+      - name: Build
+        run: npm run build
+        env:
+          # Build-time only, and not secret — the anon key is shipped to every
+          # browser by design. Placeholders are enough to prove the bundle
+          # compiles; nothing here talks to a real project.
+          VITE_SUPABASE_URL: https://placeholder.supabase.co
+          VITE_SUPABASE_ANON_KEY: placeholder-anon-key
+
+  # ---------------------------------------------------------------------
+  # The 386 tests that currently prove nothing.
+  #
+  # NON-BLOCKING ON PURPOSE, FOR NOW. These suites have never run against a
+  # freshly migrated database — until 2026-08-29 they ran against production,
+  # where the data they expected already existed. Making them required on day
+  # one would mean a red gate nobody can fix in one sitting, which is the
+  # failure mode this whole file is written to avoid.
+  #
+  # They still RUN, so the output exists and the failures can be triaged.
+  #
+  # TO PROMOTE THIS TO A REAL GATE, once it is green:
+  #   1. delete `continue-on-error: true` below
+  #   2. update test-baseline.json — skipped will drop far below 386
+  #   3. add this job to the required checks in branch protection
+  # ---------------------------------------------------------------------
+  database-suites:
+    name: Database suites (informational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rxnaija_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # An ephemeral container that is destroyed with the runner. It cannot be
+      # production, and DATABASE_URL is deliberately left unset — with no
+      # production URL in scope there is nothing for the guard in
+      # server/tests/helpers/testDb.js to collide with.
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/rxnaija_test
+      # Required by services/crypto.js. A throwaway 32-byte key: this encrypts
+      # nothing that outlives the job.
+      SESSION_ENCRYPTION_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Applies db/test-bootstrap.sql first (the auth schema shim — the real
+      # schema has 14 foreign keys into auth.users), then every migration.
+      - name: Prepare the test database
+        run: npm run migrate:test
+
+      - name: Run the database suites
+        run: node --test --test-reporter=tap "server/tests/*.test.js"

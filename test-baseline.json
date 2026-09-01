@@ -1,0 +1,69 @@
+{
+  "//": "Machine-readable companion to the baseline section of AGENTS.md. scripts/check-baseline.js reads THIS file; AGENTS.md explains it to humans. Keep the two in step — they are updated in the same commit or not at all.",
+  "measuredOn": "2026-08-29",
+  "commit": "75e2689",
+  "commitSubject": "Let a trade account place a trade-sized order",
+  "workingTree": "dirty — 40 paths (test-database separation work)",
+  "command": "node --test \"server/tests/*.test.js\"",
+  "//counts": "Floors and ceilings, not equalities. More passing is fine. Fewer passing means something stopped running. MORE skipped means coverage was silently lost, which is the failure this whole file exists to make visible.",
+  "counts": {
+    "total": 1200,
+    "pass": 807,
+    "skipped": 386,
+    "failed": 7
+  },
+  "//skipReason": "386 tests skip because TEST_DATABASE_URL is not configured. That is the safe state — until 2026-08-29 it was byte-identical to DATABASE_URL and the write-and-delete suites ran against live pharmacy data. A skipped suite proves NOTHING; do not read this baseline as coverage of the clinical engine, orders, customers or tenant isolation.",
+  "//knownFailures": "Matched on exact test name. A failure whose name is NOT in this list is a new regression and blocks. Fix the code, not the test — see AGENTS.md rule 2.",
+  "knownFailures": [
+    {
+      "name": "18. A single purchase is PENDING, not confirmed, under the default threshold",
+      "file": "server/tests/conditionEngine.test.js",
+      "category": "pre-existing",
+      "since": "before 2026-08-29",
+      "note": "Deterministic — fails in isolation and in the full run. File and services/clinical/conditionEngine.js both unmodified at 75e2689. Not diagnosed."
+    },
+    {
+      "name": "thresholds are configuration, and the engine reads them per condition",
+      "file": "server/tests/conditionEngine.test.js",
+      "category": "pre-existing",
+      "since": "before 2026-08-29",
+      "note": "Same file, same run, same status as above."
+    },
+    {
+      "name": "a locally-written Nigerian number and its international form are the same number",
+      "file": "server/tests/customerIdentity.test.js",
+      "category": "surfaced-by-test-db-separation",
+      "since": "2026-08-29",
+      "note": "Fails with 'normalizePhone is not a function'. A pure unit test needing no database, but the module is required inside before(), which returns early when SKIP is true. Was passing only because the suite ran against production. Fix is to move the require to module scope — a test edit, so it needs its own change."
+    },
+    {
+      "name": "a foreign number is not silently rewritten as Nigerian",
+      "file": "server/tests/customerIdentity.test.js",
+      "category": "surfaced-by-test-db-separation",
+      "since": "2026-08-29",
+      "note": "Same cause as above."
+    },
+    {
+      "name": "unusable input is null rather than a plausible-looking guess",
+      "file": "server/tests/customerIdentity.test.js",
+      "category": "surfaced-by-test-db-separation",
+      "since": "2026-08-29",
+      "note": "Same cause as above."
+    },
+    {
+      "name": "a sender with no phone falls back to the LID, clearly marked",
+      "file": "server/tests/customerIdentity.test.js",
+      "category": "surfaced-by-test-db-separation",
+      "since": "2026-08-29",
+      "note": "Same cause as above."
+    },
+    {
+      "name": "nothing identifying at all yields null, not a fabricated key",
+      "file": "server/tests/customerIdentity.test.js",
+      "category": "surfaced-by-test-db-separation",
+      "since": "2026-08-29",
+      "note": "Same cause as above."
+    }
+  ],
+  "//goldenSuite": "server/tests/golden.test.js — one test per lesson that cost something. Organised by incident, not by module. Never skips: no database, no network, no model. Entries are only ever added. GOLDEN-001 (tenant isolation, 3), GOLDEN-002 (test-database separation, 3), GOLDEN-003 (tool refusal retry loop, 1). Added 2026-08-29."
+}
