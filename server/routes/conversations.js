@@ -66,20 +66,54 @@ router.get('/waiting', requireAuth, async (req, res, next) => {
     // card. Fifty cards would otherwise be fifty round trips to a pooler that
     // has already been exhausted once in this project.
     const ids = rows.map((r) => r.conversation_id);
+    // ISO strings, not Date objects. postgres.js serialises a JS Date array as
+    // timestamptz[] already, so the explicit ::timestamptz[] below becomes a
+    // double cast and Postgres rejects it outright ("cannot cast type timestamp
+    // with time zone to timestamp with time zone[]"). Strings arrive as text[]
+    // and the cast is then the ordinary one — the same reason ::uuid[] is
+    // needed for the ids.
+    const anchors = rows.map((r) => new Date(r.requested_at).toISOString());
+
+    // THE WINDOW IS ANCHORED ON THE HANDOFF, NOT ON "MOST RECENT".
+    //
+    // This used to take the 12 newest messages per conversation, and that
+    // silently deleted the briefing as a case got older. A customer keeps
+    // typing after being handed over — "Hellp", "Hii", "My Order list" — and
+    // once they have sent 12, every message in the window is from AFTER the
+    // escalation. buildBriefing splits on the handoff time, finds nothing
+    // before it, and renders "No trigger message recorded".
+    //
+    // Observed on a real queue: a case waiting 48h showed the pharmacist four
+    // messages of chatter and NO indication of why it had been escalated. The
+    // longer someone waited, the less the pharmacist was told — exactly
+    // backwards, and worst for the person who had waited longest.
+    //
+    // So the two sides are ranked separately: the last 8 messages before the
+    // handoff (why they are here) and the last 8 after it (what they have
+    // asked since). Both sides always survive, however long the queue takes.
     const messages = ids.length
       ? await db`
-          select conversation_id, direction, body, created_at
-          from (
-            select conversation_id, direction, body, created_at,
-                   row_number() over (partition by conversation_id order by id desc) as rn
-            from messages
+          with anchor (conversation_id, requested_at) as (
             -- ::uuid[] is required. postgres.js sends a JS string array as
             -- text[], and Postgres will not compare a uuid against a text
             -- array — it fails with 22P02 rather than quietly returning
             -- nothing, which at least surfaces immediately.
-            where conversation_id = any(${ids}::uuid[])
+            select * from unnest(${ids}::uuid[], ${anchors}::timestamptz[])
+          )
+          select conversation_id, direction, body, created_at
+          from (
+            select m.conversation_id, m.direction, m.body, m.created_at,
+                   row_number() over (
+                     -- The boolean is part of the partition key, so "before"
+                     -- and "after" get their own count of 8 rather than
+                     -- competing for one budget.
+                     partition by m.conversation_id, (m.created_at <= a.requested_at)
+                     order by m.id desc
+                   ) as rn
+            from messages m
+            join anchor a on a.conversation_id = m.conversation_id
           ) ranked
-          where rn <= 12
+          where rn <= 8
           order by conversation_id, created_at
         `
       : [];

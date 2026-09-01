@@ -156,6 +156,13 @@ function CaseDetail({ item, onOpenConversation, onResolve, busy }) {
           <p className={`text-sm font-medium ${item.urgent ? 'text-red-800' : 'text-slate-800'}`}>
             {item.headline}
           </p>
+          {/* The headline is a label; this is the instruction. For the
+              technical categories it is also the only thing that tells a
+              pharmacist the case is NOT medical, which is what they most
+              need to know before spending triage attention on it. */}
+          {item.situation && (
+            <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{item.situation}</p>
+          )}
           {enc?.redFlags && (
             <p className="mt-2 rounded border border-red-200 bg-red-50 px-2 py-1.5 text-sm text-red-800">
               Red flag: {enc.redFlags}
@@ -175,7 +182,39 @@ function CaseDetail({ item, onOpenConversation, onResolve, busy }) {
               “{item.trigger}”
             </blockquote>
           ) : (
-            <p className="text-sm text-slate-400">No trigger message recorded.</p>
+            <p className="text-sm text-slate-400">
+              Nothing was recorded from before this was escalated.
+            </p>
+          )}
+
+          {/* The exchange, both directions.
+              Four patient messages on their own read as someone repeating
+              themselves for no reason. With the assistant's replies between
+              them — "Sorry, I got a bit tangled there" — the same four
+              messages become an obvious story. */}
+          {item.exchange?.length > 1 && (
+            <div className="mt-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                How it went
+              </p>
+              <ul className="mt-1.5 space-y-1.5">
+                {item.exchange.map((m, i) => (
+                  <li key={i} className="flex gap-2 text-sm">
+                    <span
+                      className={`shrink-0 text-[11px] font-medium uppercase tracking-wide ${
+                        m.from === 'patient' ? 'text-slate-500' : 'text-emerald-700'
+                      }`}
+                      style={{ minWidth: '4.5rem' }}
+                    >
+                      {m.from === 'patient' ? 'Patient' : 'Assistant'}
+                    </span>
+                    <span className={m.from === 'patient' ? 'text-slate-800' : 'text-slate-500'}>
+                      {m.body}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
 
           {item.unansweredSince > 0 && (

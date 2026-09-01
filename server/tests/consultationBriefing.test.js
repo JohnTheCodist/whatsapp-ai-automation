@@ -139,3 +139,94 @@ test('an empty conversation does not throw', () => {
   assert.deepEqual(b.said, []);
   assert.equal(b.unansweredSince, 0);
 });
+
+// ---- what a pharmacist is actually told ---------------------------------
+//
+// Reported from the live queue, 2026-08-30: a case that had been waiting 48
+// hours showed "Assistant could not settle on an answer", "No trigger message
+// recorded", and four fragments — "Hellp", "Hii", "My Order list", "Add it".
+// The pharmacist could not tell what had happened, whether it was medical, or
+// what they were being asked to do.
+
+test('every escalation category says what the pharmacist should do about it', () => {
+  const { HEADLINE, SITUATION } = require('../services/safety/consultationBriefing');
+  for (const category of Object.keys(HEADLINE)) {
+    assert.ok(
+      SITUATION[category],
+      `category "${category}" has a headline but no situation line — a label is not an instruction`,
+    );
+  }
+});
+
+test('a technical escalation says plainly that it is not medical', () => {
+  // The whole cost of getting this wrong is a pharmacist spending triage
+  // attention on a system fault, wondering whether somebody is unwell.
+  for (const category of ['max_iterations', 'unverified_reply', 'assistant_unavailable', 'assistant_error']) {
+    const b = buildBriefing({ category, requestedAt: at(5), messages: [] });
+    assert.match(
+      b.situation, /NOT a medical question/,
+      `"${category}" must tell the pharmacist it is not clinical`,
+    );
+    assert.equal(b.technical, true);
+  }
+});
+
+test('an unknown category still gets a usable instruction', () => {
+  const b = buildBriefing({ category: 'something_new', requestedAt: at(5), messages: [] });
+  assert.ok(b.situation && b.situation.length > 20, 'never leave the pharmacist with a bare label');
+});
+
+test('the exchange shows the assistant, not just the patient', () => {
+  // Four patient messages alone read as someone repeating themselves. The
+  // assistant's replies are what make them a story.
+  const b = buildBriefing({
+    category: 'max_iterations',
+    requestedAt: at(10),
+    messages: [
+      { direction: 'inbound', body: 'Can u make it 135 cards', created_at: at(14) },
+      { direction: 'outbound', body: 'Sorry, I got a bit tangled there.', created_at: at(13) },
+      { direction: 'inbound', body: 'I need 135 cards instead', created_at: at(12) },
+      { direction: 'outbound', body: 'Sorry, I got a bit tangled there.', created_at: at(11) },
+      { direction: 'inbound', body: '135 cards', created_at: at(10) },
+    ],
+  });
+
+  assert.equal(b.exchange.length, 5);
+  assert.deepEqual(
+    b.exchange.map((m) => m.from),
+    ['patient', 'assistant', 'patient', 'assistant', 'patient'],
+  );
+  assert.match(b.lastAssistantReply, /tangled/,
+    'the pharmacist must know what the patient was last told, or they open by ignoring it too');
+});
+
+test('the exchange is still verbatim — nothing is rewritten', () => {
+  const said = 'Can u make it 135 cards';
+  const b = buildBriefing({
+    category: 'max_iterations',
+    requestedAt: at(5),
+    messages: [{ direction: 'inbound', body: said, created_at: at(6) }],
+  });
+  assert.equal(b.exchange[0].body, said);
+});
+
+test('a long wait does not erase why the case exists', () => {
+  // The bug this is named for. The route used to fetch the 12 NEWEST messages
+  // per conversation; a patient who kept typing after being escalated pushed
+  // their own trigger out of the window, so the briefing emptied itself as the
+  // case aged. buildBriefing must still find the trigger when the messages it
+  // is handed span the handoff.
+  const b = buildBriefing({
+    category: 'max_iterations',
+    requestedAt: at(2880), // 48 hours ago
+    messages: [
+      { direction: 'inbound', body: '135 cards', created_at: at(2881) },
+      { direction: 'inbound', body: 'Hellp', created_at: at(600) },
+      { direction: 'inbound', body: 'Hii', created_at: at(500) },
+      { direction: 'inbound', body: 'My Order list', created_at: at(400) },
+      { direction: 'inbound', body: 'Add it', created_at: at(300) },
+    ],
+  });
+  assert.equal(b.trigger, '135 cards', 'the reason for escalation must survive the wait');
+  assert.equal(b.unansweredSince, 4);
+});

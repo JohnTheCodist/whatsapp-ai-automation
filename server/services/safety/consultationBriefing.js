@@ -44,6 +44,77 @@ const HEADLINE = {
   max_iterations: 'Assistant could not settle on an answer',
 };
 
+/**
+ * The one-line answer to "what am I looking at and why is it mine?"
+ *
+ * WHY THIS EXISTS
+ * The headline alone is a label, and for the technical categories it is a
+ * label written from the SYSTEM's point of view. A pharmacist opening a queue
+ * and reading "Assistant could not settle on an answer" learns nothing they
+ * can act on: not whether it is medical, not what the patient wanted, not
+ * what they should do about it. Reported from the real queue as "confusing as
+ * hell", which is fair.
+ *
+ * WHY IT IS A LOOKUP AND NOT A MODEL
+ * The obvious build is to send the thread to the LLM for a summary, and it is
+ * the wrong one HERE for the reason at the top of this file: a pharmacist
+ * acts clinically on what they read, and a paraphrase that turns "three
+ * months" into "three years" reads perfectly and causes harm. Every other
+ * claim in this product is verified against a tool result before anyone sees
+ * it; the briefing for the person making the medical decision cannot be the
+ * one place that rule is dropped.
+ *
+ * The failure being fixed was never a missing summary anyway — it was an
+ * empty window (routes/conversations.js) leaving the pharmacist with no
+ * patient words at all. A model asked to summarise nothing would have written
+ * something confident and wrong, which is strictly worse than a blank.
+ *
+ * So: a fixed sentence per category, plus the patient's own words underneath.
+ * Deterministic, auditable, and it says the thing the category actually means.
+ */
+const SITUATION = {
+  emergency:
+    'The patient may be describing an emergency. Read their words first and respond immediately.',
+  overdose:
+    'The patient may have taken too much of a medicine. This needs you before anything else in the queue.',
+  adverse_reaction:
+    'The patient is describing a reaction to a medicine they have taken.',
+  paediatric:
+    'The patient is asking about medicine for a child. The assistant is not permitted to answer this.',
+  pregnancy:
+    'The patient is asking about medicine during pregnancy or breastfeeding. The assistant is not permitted to answer this.',
+  dosage:
+    'The patient is asking how much or how often to take something. The assistant is not permitted to answer this.',
+  drug_interaction:
+    'The patient is asking whether medicines can be taken together. The assistant is not permitted to answer this.',
+  symptoms:
+    'The patient described symptoms and wants a recommendation. Choosing a medicine for symptoms is your call, not the assistant’s.',
+  clinical_comparison:
+    'The patient is asking which of two medicines is better for them. That is a clinical judgement, so it came to you.',
+  prescription:
+    'The patient is asking about a prescription.',
+  human_requested:
+    'The patient asked to speak to a person. Nothing has gone wrong — they simply want you.',
+
+  // The technical ones. Saying plainly that these are NOT medical is the
+  // whole point: a pharmacist should not spend triage attention wondering
+  // whether someone is unwell when the assistant merely fell over.
+  max_iterations:
+    'NOT a medical question. The assistant got stuck trying to complete what the patient asked and gave up. Read their messages below and answer them directly.',
+  unverified_reply:
+    'NOT a medical question. The assistant drafted a reply it could not verify against the catalogue, so it stopped rather than risk quoting a wrong price.',
+  assistant_unavailable:
+    'NOT a medical question. The assistant could not be reached, so this fell to you. The patient may not know anything went wrong.',
+  assistant_error:
+    'NOT a medical question. The assistant failed mid-turn. The patient is waiting on an answer it never sent.',
+  filter_error:
+    'The safety check itself failed, so this was escalated rather than answered. Treat the patient’s words below as unscreened.',
+  unreadable:
+    'The message could not be read — it may be an image, a voice note, or a prescription photo. Open the conversation to see it.',
+  prompt_injection:
+    'The message looked like an attempt to manipulate the assistant, so it was not answered. Usually harmless curiosity; judge it yourself.',
+};
+
 /** Categories a pharmacist should look at before anything else. */
 const URGENT = new Set(['emergency', 'overdose', 'adverse_reaction']);
 
@@ -109,10 +180,48 @@ function buildBriefing({ category, requestedAt, messages = [], context = {} }) {
   // and got silence. A pharmacist opening this needs to see both.
   const since = after.slice(-4).map((m) => String(m.body).slice(0, 300));
 
+  // THE EXCHANGE, BOTH DIRECTIONS.
+  //
+  // `said` and `since` are inbound only, and on a technical escalation that
+  // hides the half that explains everything. The real queue showed a patient
+  // asking to change an order to 135 cards and the assistant replying "Sorry,
+  // I got a bit tangled there" twice — and the pharmacist saw only the
+  // patient's three attempts, which read as someone repeating themselves for
+  // no reason. Seeing the assistant's replies is what turns four confusing
+  // fragments into an obvious story.
+  //
+  // ANCHORED ON THE HANDOFF, for the same reason the route's query is.
+  // A plain slice(-6) of everything shows the six NEWEST messages, so on a
+  // case that has waited two days the pharmacist gets recent chatter and none
+  // of the exchange that caused the escalation — the failure this whole
+  // change exists to fix, reintroduced one layer up.
+  const withBody = messages.filter((m) => m.body);
+  const shape = (m) => ({
+    from: m.direction === 'inbound' ? 'patient' : 'assistant',
+    body: String(m.body).slice(0, 300),
+    at: m.created_at,
+  });
+  const exchange = [
+    // Weighted towards BEFORE: that is the part that explains why this is in
+    // the queue, and it is the part that goes missing.
+    ...withBody.filter((m) => new Date(m.created_at).getTime() <= cutoff).slice(-5).map(shape),
+    ...withBody.filter((m) => new Date(m.created_at).getTime() > cutoff).slice(-3).map(shape),
+  ];
+
+  // The last thing the assistant actually said to them. On a technical
+  // escalation this is usually an apology the patient is still holding, and a
+  // pharmacist who opens with "how can I help" without knowing that reads as
+  // a second system that has not been listening either.
+  const lastAssistant = [...messages].reverse().find((m) => m.direction === 'outbound' && m.body);
+
   const minutes = minutesSince(requestedAt);
 
   return {
     headline: HEADLINE[category] || 'Needs a person',
+    // One sentence: what this is, and what the pharmacist is being asked to
+    // do about it. Deterministic — see the note above SITUATION.
+    situation: SITUATION[category]
+      || 'The assistant stepped back and asked for a person. Read the patient’s words below.',
     category: category || null,
     urgent: URGENT.has(category),
     technical: TECHNICAL.has(category),
@@ -125,6 +234,10 @@ function buildBriefing({ category, requestedAt, messages = [], context = {} }) {
     // yet, so every one of these is a message sitting in silence.
     since,
     unansweredSince: since.length,
+    // The back-and-forth, so the patient's messages have the assistant's
+    // replies around them instead of standing alone.
+    exchange,
+    lastAssistantReply: lastAssistant ? String(lastAssistant.body).slice(0, 300) : null,
     messageCount: messages.length,
     // Context the pharmacist would otherwise have to scroll for.
     discussed: context?.last_product_name || null,
@@ -136,4 +249,4 @@ function buildBriefing({ category, requestedAt, messages = [], context = {} }) {
   };
 }
 
-module.exports = { buildBriefing, HEADLINE, URGENT, TECHNICAL };
+module.exports = { buildBriefing, HEADLINE, SITUATION, URGENT, TECHNICAL };
