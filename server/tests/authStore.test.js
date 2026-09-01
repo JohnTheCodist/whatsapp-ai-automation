@@ -27,7 +27,7 @@ const TEST_URL = process.env.TEST_DATABASE_URL;
 const SKIP = !TEST_URL;
 const skipReason = 'TEST_DATABASE_URL not set — auth store NOT verified';
 
-if (TEST_URL) process.env.DATABASE_URL = TEST_URL;
+require('./helpers/testDb').useTestDatabase(TEST_URL);
 if (!process.env.SESSION_ENCRYPTION_KEY) {
   process.env.SESSION_ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
 }

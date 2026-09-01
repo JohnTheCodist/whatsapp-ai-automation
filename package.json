@@ -13,8 +13,12 @@
     "lint": "eslint .",
     "//test": "Lint FIRST. A ReferenceError in a branch no test happens to walk is invisible to the suite but fatal in production — which is exactly how `shelfHasMore` survived being deleted. eslint finds it in milliseconds without touching the database.",
     "test": "eslint . && node --test \"server/tests/*.test.js\"",
+    "//test:ci": "The gate CI runs. Same lint, same suite, but compared against test-baseline.json instead of requiring green — the suite has 7 known failures and a gate that is red on every commit gets switched off. Blocks on a NEW failure, on fewer passing, or on more skipped.",
+    "test:ci": "eslint . && node scripts/check-baseline.js",
     "build": "npm --prefix client install --include=dev --no-audit --no-fund && npm --prefix client run build",
     "migrate": "node scripts/migrate.js",
+    "//migrate:test": "Applies db/migrations to TEST_DATABASE_URL, refusing if that resolves to the same database as DATABASE_URL. Applies db/test-bootstrap.sql first when the target has no auth schema — the schema has 14 foreign keys into auth.users. One command for both a second Supabase project and a plain Postgres.",
+    "migrate:test": "node scripts/migrate-test.js",
     "doctor": "node scripts/doctor.js"
   },
   "dependencies": {

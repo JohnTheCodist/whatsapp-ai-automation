@@ -21,7 +21,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env'), quiet: true
 const TEST_URL = process.env.TEST_DATABASE_URL;
 const SKIP = !TEST_URL;
 const skipReason = 'TEST_DATABASE_URL not set — the guidance model was NOT verified';
-if (TEST_URL) process.env.DATABASE_URL = TEST_URL;
+require('./helpers/testDb').useTestDatabase(TEST_URL);
 
 const gate = require('../services/clinical/safetyGate');
 const { getSql } = require('../services/db');

@@ -37,7 +37,7 @@ const skipReason = 'TEST_DATABASE_URL not set — isolation gate NOT verified';
 // Point the app's own config at the test database before anything reads
 // it, so the service under test uses the same connection this file cleans
 // up. Setting it here rather than in the shell keeps the two from drifting.
-if (TEST_URL) process.env.DATABASE_URL = TEST_URL;
+require('./helpers/testDb').useTestDatabase(TEST_URL);
 
 let db;
 let pharmacies;
