@@ -51,9 +51,24 @@ app.use(helmet({
       // Vite emits a small inline bootstrap; styles are inlined by Tailwind's
       // build. Neither is user-controlled — they are build output.
       'script-src': ["'self'"],
-      'style-src': ["'self'", "'unsafe-inline'"],
+      // fonts.googleapis.com serves the @font-face STYLESHEET, and
+      // fonts.gstatic.com serves the font FILES it points at. Both are
+      // needed or neither works, and the failure is quiet: the page renders
+      // perfectly in fallback system type with only a console warning, so it
+      // looks like a font that did not load rather than a policy that
+      // blocked it.
+      //
+      // client/index.html has referenced Inter and Manrope since the
+      // dashboard was designed; this CSP was written before that and never
+      // caught up. Measured on the live dashboard 2026-09-02: the sign-in
+      // screen was rendering in the browser default.
+      //
+      // Exact hosts, never a wildcard. `https:` here would let any origin on
+      // the internet deliver CSS into the dashboard, which is most of what
+      // this header exists to prevent.
+      'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
       'img-src': ["'self'", 'data:', 'blob:'],
-      'font-src': ["'self'", 'data:'],
+      'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com'],
       // Nothing here should ever be framed; clickjacking a pharmacy dashboard
       // is a real attack, not a theoretical one.
       'frame-ancestors': ["'none'"],
