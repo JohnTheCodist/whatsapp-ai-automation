@@ -32,11 +32,16 @@ app.rxnaija.com {
 		# staff who were only trying to look at a queue, while the app itself
 		# was perfectly capable of serving them.
 		#
-		# It also made the probe expensive. Measured 2026-09-06 against the
-		# live host: /api/health takes ~0.9s because it round-trips to the
-		# Supabase pooler in Paris. /api/live does no work at all — no queries,
-		# no awaits — so it answers immediately and cannot be made to fail by
-		# anything happening in another datacentre.
+		# It also made the probe do real work every 30 seconds, forever.
+		# Measured 2026-09-06 from an external client: /api/health ~0.97s and
+		# /api/live ~0.84s. Both figures are dominated by network latency to
+		# the host and neither is the interesting number — the DIFFERENCE is,
+		# and it is about 120ms. That is the Supabase round trip to Paris.
+		#
+		# Caddy probes over localhost, so it does not pay that latency at all
+		# and ~120ms is essentially the entire cost of a /api/health probe
+		# versus roughly nothing for /api/live. Modest either way: the reason
+		# to change this is the failure mode above, not the milliseconds.
 		#
 		# WhatsApp was never affected either way: Baileys dials outbound and
 		# does not go through this proxy. The cost of getting this wrong was
