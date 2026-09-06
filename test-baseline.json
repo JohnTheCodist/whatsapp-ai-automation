@@ -3,7 +3,7 @@
   "measuredOn": "2026-09-06",
   "commit": "6cc7d19",
   "commitSubject": "Let the dashboard load the fonts it was designed in",
-  "workingTree": "dirty — render.yaml health check fix",
+  "workingTree": "dirty — Caddy health check fix",
   "command": "node --test \"server/tests/*.test.js\"",
   "//counts": "Floors and ceilings, not equalities. More passing is fine. Fewer passing means something stopped running. MORE skipped means coverage was silently lost, which is the failure this whole file exists to make visible.",
   "counts": {
@@ -66,5 +66,5 @@
     }
   ],
   "//goldenSuite": "server/tests/golden.test.js — one test per lesson that cost something. Organised by incident, not by module. Never skips: no database, no network, no model. Entries are only ever added. GOLDEN-001 (tenant isolation, 3), GOLDEN-002 (test-database separation, 3), GOLDEN-003 (tool refusal retry loop, 1), GOLDEN-006 (platform health check restarting the process on a database blip, 1). Added 2026-08-29, extended 2026-09-06. GOLDEN-004 and 005 arrive with the website builder branch; numbering is unique across both.",
-  "//lastChange": "GOLDEN-006 (2026-09-06) added 1 test, which needs no database: render.yaml pointed its platform health check at /api/health, which pings Postgres. Render restarts a service whose health check fails, and this process holds every pharmacy live WhatsApp socket — so a transient database blip would have forced a re-pair and a cold start for every pharmacy, silently. server/index.js had argued against exactly this for months; the blueprint simply disagreed with it. The test asserts the two stay in agreement and was confirmed to fail with the old value."
+  "//lastChange": "GOLDEN-006 (2026-09-06) covers BOTH health-check configurations, and the live one is deploy/Caddyfile — this project deploys to a VPS behind Caddy, not to Render, so render.yaml describes a platform it is not hosted on. Both pointed their health probe at /api/health, which pings Postgres. Caddy marks its only upstream down when that probe fails, so a database blip answered 502 for the entire dashboard while the app was perfectly able to serve it; the probe also cost ~0.9s because it round-trips to the Supabase pooler in Paris. /api/live does no work and cannot be failed by another datacentre. The test was confirmed to fail with the old value in each file. No test count change — GOLDEN-006 gained an assertion rather than a sibling."
 }

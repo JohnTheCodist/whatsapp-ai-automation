@@ -19,7 +19,31 @@ app.rxnaija.com {
 		# which the dashboard's live connections rely on.
 
 		# Fail fast rather than hanging if the app is restarting mid-deploy.
-		health_uri /api/health
+		#
+		# /api/live, NOT /api/health — and the difference is the whole point of
+		# there being two endpoints. See the comment above the route in
+		# server/index.js; this line disagreed with it until 2026-09-06.
+		#
+		# An ACTIVE health check is Caddy asking "should I send traffic here".
+		# /api/health answers a different question: it pings Postgres and
+		# returns 503 when the database is unreachable. With a single upstream,
+		# a failed check marks it down and Caddy answers 502 for everything —
+		# so a transient database blip took the ENTIRE dashboard offline, for
+		# staff who were only trying to look at a queue, while the app itself
+		# was perfectly capable of serving them.
+		#
+		# It also made the probe expensive. Measured 2026-09-06 against the
+		# live host: /api/health takes ~0.9s because it round-trips to the
+		# Supabase pooler in Paris. /api/live does no work at all — no queries,
+		# no awaits — so it answers immediately and cannot be made to fail by
+		# anything happening in another datacentre.
+		#
+		# WhatsApp was never affected either way: Baileys dials outbound and
+		# does not go through this proxy. The cost of getting this wrong was
+		# the dashboard, not the messaging.
+		#
+		# GOLDEN-006 asserts this stays pointed at the dependency-free endpoint.
+		health_uri /api/live
 		health_interval 30s
 		health_timeout 5s
 	}

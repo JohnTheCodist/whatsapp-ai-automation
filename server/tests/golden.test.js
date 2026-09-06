@@ -318,6 +318,31 @@ test('GOLDEN-006: the platform health check does not depend on the database', ()
     + "pharmacy's WhatsApp socket with it — whenever the database blips",
   );
 
+  // ---- and the one that is actually deployed ----
+  //
+  // THE CADDYFILE IS THE LIVE CONFIGURATION. render.yaml above describes a
+  // platform this project is not currently hosted on; deploy/Caddyfile is
+  // what sits in front of the running service on the VPS. The same mistake in
+  // this file has a different and narrower consequence — Caddy does not
+  // restart anything, it stops routing — but with a single upstream that
+  // still means the whole dashboard answers 502 for a database blip the app
+  // was built to survive.
+  //
+  // Checked second but it matters first. A test that guarded only the
+  // aspirational file while the live one carried the bug would be worse than
+  // no test: it would report the problem as solved.
+  const caddyfile = fs.readFileSync(
+    pathMod.join(__dirname, '..', '..', 'deploy', 'Caddyfile'), 'utf8',
+  );
+  const probe = /^\s*health_uri\s+(\S+)\s*$/m.exec(caddyfile);
+  assert.ok(probe, 'deploy/Caddyfile must declare a health_uri');
+  assert.equal(
+    probe[1], '/api/live',
+    'Caddy marks its only upstream down when this probe fails — pointing it at '
+    + 'a database-dependent endpoint takes the whole dashboard offline for a '
+    + 'Postgres blip, and makes every probe a round trip to another datacentre',
+  );
+
   // And the endpoint it names must actually be the dependency-free one. A
   // correct path pointing at a route that had grown a database call would be
   // the same incident wearing the right label.
