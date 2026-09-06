@@ -9,6 +9,56 @@
 # expires eighteen months from now on a box nobody has logged into since.
 # For a single-service deploy that is the whole difference.
 
+# HTTP/3 IS OFF, DELIBERATELY.
+#
+# Caddy turns HTTP/3 on by default and advertises it as
+# `Alt-Svc: h3=":443"; ma=2592000` — which the browser caches for thirty
+# days and then PREFERS over TCP on every later visit.
+#
+# 2026-09-05: the dashboard would not open. The 606 KB JavaScript bundle
+# aborted mid-transfer with ERR_QUIC_PROTOCOL_ERROR, and since that bundle
+# IS the single-page app, the whole dashboard died with it. Nothing was
+# wrong with the file. Measured 2026-09-06 over TCP, five consecutive
+# requests: 606,385 bytes every time, byte-complete, 175 KB on the wire
+# after gzip. The bytes are fine. The QUIC path is not.
+#
+# QUIC is UDP, and UDP is where a hostile network shows up. Two things
+# break it here, neither visible from inside the application:
+#
+#   1. Linux ships net.core.rmem_max at ~208 KB. quic-go wants ~7 MB, logs
+#      "failed to sufficiently increase receive buffer size" once at
+#      startup, and then quietly drops packets under load. A single 606 KB
+#      asset is exactly the size that turns that into a failed transfer
+#      rather than a slow one.
+#   2. Mobile networks and middleboxes throttle, rate-limit or plainly drop
+#      sustained UDP/443. Nothing on this box can fix that one.
+#
+# TCP has neither problem, and HTTP/2 costs this app nothing measurable —
+# it is one bundle and a handful of JSON calls, not a thousand-request
+# waterfall. Working on every network a Nigerian pharmacy is actually on
+# beats a handshake saving. That trade is not close.
+#
+# Browsers that already cached the Alt-Svc will still try h3 first. They
+# now get no UDP answer at all, which fails instantly and falls back to
+# TCP, instead of dying half way through a download. That is the fix
+# arriving even before the cache expires.
+#
+# No golden test pins this, unlike health_uri below. That one has a
+# correct answer; this is a judgement about the networks these users are
+# on. If you raise the receive buffer:
+#
+#     net.core.rmem_max=7500000
+#     net.core.wmem_max=7500000
+#
+# and can show h3 completing reliably from a real Nigerian mobile
+# connection, turning it back on is a legitimate call. Delete this block
+# and say why — do not weaken it quietly.
+{
+	servers {
+		protocols h1 h2
+	}
+}
+
 app.rxnaija.com {
 	# Everything is one upstream: the Node process serves both /api and the
 	# built dashboard (see the static block in server/index.js). No separate
