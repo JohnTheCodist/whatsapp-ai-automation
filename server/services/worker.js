@@ -1472,7 +1472,24 @@ async function processInbound(db, job) {
   return { sent: true, reason: decision.reason };
 }
 
-const HANDLERS = { process_inbound: processInbound };
+/**
+ * Re-render a pharmacy's published website.
+ *
+ * Queued by services/website/renderQueue.js whenever a pharmacy's own details
+ * change, so a published page picks up a new phone number or address without
+ * the owner opening the builder. A pharmacy with no published site is a
+ * no-op, which is most of them — the job is queued on every profile save
+ * rather than only for pharmacies that happen to have a website, because the
+ * check is one indexed read and the alternative is a condition that gets
+ * forgotten the next time a caller is added.
+ */
+async function websiteRender(db, job) {
+  const { rerenderPublished } = require('./website/publishService');
+  const result = await rerenderPublished(job.pharmacy_id);
+  return { skipped: result.skipped, bytes: result.bytes };
+}
+
+const HANDLERS = { process_inbound: processInbound, website_render: websiteRender };
 
 async function tick() {
   const db = getSql();

@@ -38,6 +38,10 @@ app.use(requestId);
 // The allowlist is explicit rather than a wildcard, and built from the
 // configured project URL rather than hardcoded, so a project change cannot
 // leave a stale origin permitted.
+// One origin, three uses: auth and REST over connect-src, and — since the
+// website builder — pharmacy logos and hero images over img-src, because
+// Supabase Storage serves from this same host. Computed once rather than
+// twice so the two directives can never drift apart.
 const supabaseOrigin = (() => {
   try { return new URL(process.env.SUPABASE_URL).origin; } catch { return null; }
 })();
@@ -67,7 +71,16 @@ app.use(helmet({
       // the internet deliver CSS into the dashboard, which is most of what
       // this header exists to prevent.
       'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-      'img-src': ["'self'", 'data:', 'blob:'],
+      // The Supabase Storage origin joins img-src for pharmacy logos and
+      // hero images. Derived from SUPABASE_URL rather than hardcoded, so a
+      // project change cannot leave a stale origin permitted — and so a
+      // deployment without storage configured simply omits it rather than
+      // naming a host that does not exist.
+      //
+      // Getting this wrong is SILENT: the page renders, the image does not,
+      // and the only trace is a console warning. Same failure shape as the
+      // fonts that rendered in the browser default until 2026-09-02.
+      'img-src': ["'self'", 'data:', 'blob:', ...(supabaseOrigin ? [supabaseOrigin] : [])],
       'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com'],
       // Nothing here should ever be framed; clickjacking a pharmacy dashboard
       // is a real attack, not a theoretical one.
@@ -195,6 +208,26 @@ app.use('/api/customers', require('./routes/conditions'));   // purchase-based c
 app.use('/api/orders', require('./routes/orders'));               // Phase 5 — order queue
 app.use('/api/billing', require('./routes/billing'));        // plan, trial clock, payments
 
+// ---------- the website builder ----------
+//
+// MOUNTED CONDITIONALLY, and that is the point of the flag. While it is off
+// these routes do not exist at all — not 403, not 404-from-a-handler, simply
+// absent — so a half-built feature on main adds no API surface to
+// production. See env.websiteBuilderEnabled for why it is a flag rather than
+// a branch.
+//
+// Logged either way: a feature that is silently off is one somebody spends
+// an afternoon wondering about.
+if (env.websiteBuilderEnabled) {
+  app.use('/api/website', require('./routes/website'));
+  console.log(JSON.stringify({ level: 'info', msg: 'website builder ENABLED' }));
+} else {
+  console.log(JSON.stringify({
+    level: 'info',
+    msg: 'website builder disabled (set WEBSITE_BUILDER_ENABLED=true to mount /api/website)',
+  }));
+}
+
 // ---------- the dashboard itself ----------
 //
 // ONE SERVICE, NOT TWO. In development Vite serves the client on its own port
@@ -279,6 +312,20 @@ app.use('/api/billing', require('./routes/billing'));        // plan, trial cloc
   });
 }
 
+// ---------- published pharmacy websites ----------
+//
+// PUBLIC, and mounted BEFORE the static/SPA block below — that block's
+// fallback would otherwise answer /p/<address> with the dashboard shell.
+//
+// MOUNTED UNCONDITIONALLY, unlike /api/website above. The builder's flag
+// controls whether a pharmacy can BUILD a site; it must not control whether
+// sites that are already live stay up. Switching the dashboard feature off
+// and thereby taking every pharmacy's public website off the internet is a
+// blast radius nobody would expect from a flag named for the builder. With
+// the flag off nothing can reach 'published' anyway, so this serves nothing
+// until there is something to serve.
+app.use('/p', require('./routes/publicSite'));
+
 {
   const path = require('node:path');
   const fs = require('node:fs');
@@ -310,7 +357,12 @@ app.use('/api/billing', require('./routes/billing'));        // plan, trial cloc
     // did not match a real file is a client route, so hand back index.html and
     // let the browser router decide — that is what makes a refresh on /orders
     // work instead of 404ing.
-    app.get(/^\/(?!api\/|webhooks\/|pdf\/).*/, (req, res, next) => {
+    // `p/` joins the exclusions for published pharmacy websites. Without it
+    // this fallback answers /p/<address> with index.html and a 200 — the
+    // dashboard shell served at every pharmacy's public URL, to their
+    // customers and to search engines. A wrong document, not an error, which
+    // is the hardest kind of failure to notice. Asserted by GOLDEN-005.
+    app.get(/^\/(?!api\/|webhooks\/|pdf\/|p\/).*/, (req, res, next) => {
       if (req.method !== 'GET') return next();
       return res.sendFile(index);
     });
@@ -372,6 +424,13 @@ async function start() {
   // Then keep them warm through the gaps between WhatsApp messages, which
   // routinely exceed the old 30s idle_timeout.
   startKeepAlive();
+
+  // Website analytics buffer in memory and flush on a timer, so a busy
+  // pharmacy website cannot put a write on the pool for every visitor — see
+  // services/website/analytics.js. Started here and stopped in shutdown(),
+  // which also performs one last flush so a deliberate restart does not throw
+  // away the interval it landed in.
+  require('./services/website/analytics').startFlushing();
 
   if (env.devAuthBypass) {
     console.warn(JSON.stringify({
@@ -490,6 +549,7 @@ async function start() {
   const shutdown = async (signal) => {
     console.log(JSON.stringify({ level: 'info', msg: 'shutting down', signal }));
     server.close();
+    await require('./services/website/analytics').stopFlushing();
     stopKeepAlive();
     await sessionManager.stop();
     process.exit(0);

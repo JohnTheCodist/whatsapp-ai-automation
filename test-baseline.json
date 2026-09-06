@@ -1,18 +1,18 @@
 {
   "//": "Machine-readable companion to the baseline section of AGENTS.md. scripts/check-baseline.js reads THIS file; AGENTS.md explains it to humans. Keep the two in step — they are updated in the same commit or not at all.",
-  "measuredOn": "2026-08-29",
-  "commit": "75e2689",
-  "commitSubject": "Let a trade account place a trade-sized order",
-  "workingTree": "dirty — 40 paths (test-database separation work)",
+  "measuredOn": "2026-09-06",
+  "commit": "6cc7d19",
+  "commitSubject": "Let the dashboard load the fonts it was designed in",
+  "workingTree": "dirty — website builder phases 1–7 (subdomains + analytics)",
   "command": "node --test \"server/tests/*.test.js\"",
-  "//counts": "Floors and ceilings, not equalities. More passing is fine. Fewer passing means something stopped running. MORE skipped means coverage was silently lost, which is the failure this whole file exists to make visible.",
+  "//counts": "Floors and ceilings, not equalities, and they must hold in BOTH environments. Without TEST_DATABASE_URL: 1385/936/442/7. With a test database configured: 1385/1381/0/4. The recorded numbers are the no-database ones — the floor on passing and the ceiling on skipping — so a configured machine passes comfortably and an unconfigured one passes exactly.",
   "counts": {
-    "total": 1200,
-    "pass": 807,
-    "skipped": 386,
+    "total": 1385,
+    "pass": 936,
+    "skipped": 442,
     "failed": 7
   },
-  "//skipReason": "386 tests skip because TEST_DATABASE_URL is not configured. That is the safe state — until 2026-08-29 it was byte-identical to DATABASE_URL and the write-and-delete suites ran against live pharmacy data. A skipped suite proves NOTHING; do not read this baseline as coverage of the clinical engine, orders, customers or tenant isolation.",
+  "//skipReason": "442 tests skip when TEST_DATABASE_URL is unset, which is the committed default (server/.env is gitignored). A skipped suite proves NOTHING. Configuring a test database turns all 442 back on: 1381 passing, 0 skipped, 4 failing. The website builder keeps as much as possible out of that gate — the block contract, the theme, the renderer, the web-address rules, image identification, the subdomain host resolver and the tracked-link rules are all database-free and always run.",
   "//knownFailures": "Matched on exact test name. A failure whose name is NOT in this list is a new regression and blocks. Fix the code, not the test — see AGENTS.md rule 2.",
   "knownFailures": [
     {
@@ -63,7 +63,22 @@
       "category": "surfaced-by-test-db-separation",
       "since": "2026-08-29",
       "note": "Same cause as above."
+    },
+    {
+      "name": "a quantity can be changed while the order is still pending",
+      "file": "server/tests/amendPendingOrder.test.js",
+      "category": "surfaced-by-configuring-a-test-database",
+      "since": "2026-09-05",
+      "note": "Fails with 'UNDEFINED_VALUE: Undefined values are not allowed' — postgres.js refusing an undefined interpolated into a query. A REAL bug in the order-amendment path, not a test artefact. Invisible until 2026-09-05 because this suite had always skipped. Unrelated to the website builder; needs its own diagnosis and fix."
+    },
+    {
+      "name": "the price comes from the line, not from a re-read of the catalogue",
+      "file": "server/tests/amendPendingOrder.test.js",
+      "category": "surfaced-by-configuring-a-test-database",
+      "since": "2026-09-05",
+      "note": "Same cause and same file as above. Both fail only when the suite actually runs."
     }
   ],
-  "//goldenSuite": "server/tests/golden.test.js — one test per lesson that cost something. Organised by incident, not by module. Never skips: no database, no network, no model. Entries are only ever added. GOLDEN-001 (tenant isolation, 3), GOLDEN-002 (test-database separation, 3), GOLDEN-003 (tool refusal retry loop, 1). Added 2026-08-29."
+  "//goldenSuite": "server/tests/golden.test.js — one test per lesson that cost something. Organised by incident, not by module. Never skips: no database, no network, no model. Entries are only ever added. GOLDEN-001 (tenant isolation, 3), GOLDEN-002 (test-database separation, 3), GOLDEN-003 (tool refusal retry loop, 1), GOLDEN-004 (test-database redirect defeated by require order, 1), GOLDEN-005 (SPA fallback swallowing published pharmacy websites, 2). Added 2026-08-29, extended 2026-09-05 and 2026-09-06.",
+  "//lastChange": "Website builder phase 7 (2026-09-06) added 25 tests in websiteAnalytics.test.js: 16 database-free (the subdomain host resolver against nested labels, foreign domains, ports, trailing dots and reserved names; the canonical-link rules that decide what may be tracked; and a whole-template check that no raw wa.me/tel:/maps link escapes untracked) and 9 database-gated (buffered flush and increment, per-tenant summaries, and the click-target resolver refusing unknown kinds and unpublished sites). Skipped ceiling moved 433 to 442. Two Phase 4 assertions were updated because published pages now route canonical links through a counting redirect — an intended change, recorded in comments in websitePublish.test.js. A real hole was found and fixed by these tests: www.rxnaija.com resolved as the pharmacy address \"www\"."
 }

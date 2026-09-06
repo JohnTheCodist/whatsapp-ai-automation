@@ -97,11 +97,59 @@ async function bootstrapIfNeeded() {
   }
 }
 
+/**
+ * Stamp the database as one this tool prepared.
+ *
+ * THIS IS HOW A DATABASE IDENTIFIES ITSELF AS A TEST DATABASE, and it is the
+ * only signal in the safety chain that a plausible-looking connection string
+ * cannot forge. A hostname can be misread, a database name can coincide, an
+ * environment variable can be set in haste — but this table exists only where
+ * `npm run migrate:test` has run, and the production runner (`npm run
+ * migrate`) never creates it.
+ *
+ * helpers/testDb.js#assertIsTestDatabase reads it. A destructive suite can
+ * therefore demand proof of preparation rather than inferring safety from a
+ * URL.
+ *
+ * SAFE FOR THE SAME REASON bootstrapIfNeeded IS: useTestDatabase() has
+ * already refused to continue if this URL resolves to the production database
+ * or does not look like a test target at all.
+ */
+async function stampTestMarker() {
+  const postgres = require('postgres');
+  const sql = postgres(TEST_URL, { max: 1, prepare: false, connect_timeout: 30 });
+  try {
+    await sql`
+      create table if not exists test_database_marker (
+        id          integer primary key default 1,
+        stamped_at  timestamptz not null default now(),
+        note        text not null,
+        constraint one_row check (id = 1)
+      )
+    `;
+    await sql`
+      insert into test_database_marker (id, note)
+      values (1, 'Prepared by npm run migrate:test. Suites write and DELETE here.')
+      on conflict (id) do update set stamped_at = now()
+    `;
+    console.log('Test marker stamped.');
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
 (async () => {
   try {
     await bootstrapIfNeeded();
   } catch (err) {
     console.error(`\n  Could not prepare the test database: ${err.message}\n`);
+    process.exit(1);
+  }
+
+  try {
+    await stampTestMarker();
+  } catch (err) {
+    console.error(`\n  Could not stamp the test marker: ${err.message}\n`);
     process.exit(1);
   }
 

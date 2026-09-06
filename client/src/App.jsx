@@ -20,7 +20,7 @@
  * ever the accent — so an alert can never be mistaken for "the active tab".
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import Overview from './Overview.jsx';
 import AiPerformance from './AiPerformance.jsx';
 import UploadCatalogue from './UploadCatalogue.jsx';
@@ -37,9 +37,21 @@ import { playOrderChime, playConsultationAlarm, unlockChime, isUnlocked } from '
 import {
   IconOverview, IconConsultations, IconInbox, IconOrders, IconRequests,
   IconCustomers, IconSetup, IconSearch, IconVolumeOn, IconVolumeOff, IconLink, IconAi,
-  IconInventory, IconUpload, IconDeals, IconBilling, IconAlertTriangle,
+  IconInventory, IconUpload, IconDeals, IconBilling, IconAlertTriangle, IconWebsite,
 } from './Icons.jsx';
 import Billing from './Billing.jsx';
+/**
+ * The whole Website section, in its own chunk.
+ *
+ * Not only the GrapesJS editor: the picker, the guided form, the publish bar
+ * and the preview are all behind this too. A pharmacy opens Website a handful
+ * of times a year, and the dashboard's initial download is what every member
+ * of staff waits for on every shift — so none of it belongs in the main
+ * bundle. Measured 2026-09-06: this moved the main chunk back under its
+ * budget and the editor into a chunk nobody fetches until they ask for it.
+ */
+const WebsitePanel = lazy(() => import('./website/WebsitePanel.jsx'));
+import { isWebsiteBuilderEnabled } from './website/api.js';
 
 const SECTIONS = [
   { id: 'overview', label: 'Overview', Icon: IconOverview, title: 'Overview' },
@@ -75,6 +87,15 @@ const SECTIONS = [
     ],
   },
   { id: 'customers', label: 'Patients', Icon: IconCustomers, title: 'Patients' },
+  // After Patients and before Inventory, which is where its rhythm puts it:
+  // a pharmacy sets its website up once and revisits it a few times a year.
+  // That is not daily work like the queues above, and not configuration like
+  // Setup at the foot of the rail — so it sits between them.
+  //
+  // Present in SECTIONS unconditionally so VALID_TABS, PARENT_OF and
+  // sectionFor all stay derived rather than special-cased; the RAIL hides it
+  // when the server has the feature switched off. See websiteEnabled below.
+  { id: 'website', label: 'Website', Icon: IconWebsite, title: 'Website' },
   // Inventory is daily work, not configuration. Buried in Setup it sat beside
   // one-off things like the WhatsApp pairing and the assistant's name, so the
   // one screen a pharmacy touches every week lived behind the screens they
@@ -120,6 +141,7 @@ const SUBTITLE = {
   orders: 'Reservations awaiting confirmation',
   requests: 'Asked for, not in the catalogue',
   customers: 'One record per person, per pharmacy',
+  website: 'Your pharmacy on the web, and the WhatsApp button on it',
   inventory: 'What the assistant can see and sell',
   'inventory-upload': 'What the assistant can see and sell',
   setup: 'Connection, catalogue and assistant identity',
@@ -170,6 +192,22 @@ function sectionFor(tab) {
 
 export default function App({ onSignOut, pharmacy = null, email = '' }) {
   const [tab, setTab] = useState(() => readTabFromUrl() || 'overview');
+  // The website builder ships behind a server-side flag, and while it is off
+  // its routes are not mounted at all. There is no config endpoint to ask, so
+  // the dashboard asks the feature itself: a 404 means absent, anything else
+  // means present. Starts null so the rail renders without it rather than
+  // flashing a tab that then disappears.
+  const [websiteEnabled, setWebsiteEnabled] = useState(null);
+
+  // Asked once, on mount. Nothing retries: if this request fails outright the
+  // helper answers true, so a transient error shows the tab and lets the
+  // panel report the real problem rather than silently removing a feature the
+  // pharmacy has.
+  useEffect(() => {
+    let live = true;
+    isWebsiteBuilderEnabled().then((on) => { if (live) setWebsiteEnabled(on); });
+    return () => { live = false; };
+  }, []);
   const [health, setHealth] = useState(null);
   // null until the first read — the banner and the rail dot stay hidden
   // rather than flashing a wrong state on load.
@@ -358,7 +396,14 @@ export default function App({ onSignOut, pharmacy = null, email = '' }) {
           Workspace
         </span>
 
-        {SECTIONS.map(({ id, label, Icon, children }) => {
+        {SECTIONS
+          // Website is in SECTIONS so every derived structure keeps working,
+          // but it must not appear in the rail until the server says the
+          // feature is mounted. `null` is "not asked yet" and hides it too:
+          // a tab that appears and then vanishes is worse than one that
+          // arrives a moment late.
+          .filter((s) => s.id !== 'website' || websiteEnabled === true)
+          .map(({ id, label, Icon, children }) => {
           // A group is lit when any of its segments is open, so "Manage Deals"
           // stays highlighted while you move between Inbox, Orders and
           // Requests — the rail should say which room you are in, not go dark
@@ -776,6 +821,12 @@ export default function App({ onSignOut, pharmacy = null, email = '' }) {
                 one is on screen at a time is new. */}
             {tab === 'setup' && (
               <Settings health={health} onBack={() => setTab('overview')} />
+            )}
+
+            {tab === 'website' && (
+              <Suspense fallback={<p className="text-slate-500">Loading…</p>}>
+                <WebsitePanel onNavigate={setTab} />
+              </Suspense>
             )}
 
             {tab === 'billing' && <Billing />}

@@ -147,6 +147,19 @@ export const IconBilling = (p) => (
   </svg>
 );
 
+/**
+ * Website. A globe, because that is what the section produces — a page on the
+ * open internet — rather than a browser chrome outline, which would say
+ * "something technical" instead of "your pharmacy, findable".
+ */
+export const IconWebsite = (p) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18" />
+    <path d="M12 3c2.5 2.5 3.75 5.5 3.75 9S14.5 18.5 12 21c-2.5-2.5-3.75-5.5-3.75-9S9.5 5.5 12 3Z" />
+  </svg>
+);
+
 export const IconSearch = (p) => (
   <svg {...base} {...p}>
     <circle cx="11" cy="11" r="6.5" />

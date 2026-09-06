@@ -206,9 +206,9 @@ writing the invariant, not by hitting the bug in production.
 You cannot prove you did not break the old code without knowing what was
 already broken. These are the numbers to compare against.
 
-**Measured 2026-08-29**, at commit `75e2689` *"Let a trade account place a
-trade-sized order"* on `main`, with an uncommitted working tree (40 paths —
-the test-database separation work).
+**Measured 2026-09-06**, at commit `6cc7d19` *"Let the dashboard load the
+fonts it was designed in"* on `main`, with an uncommitted working tree
+(website builder phases 1 and 2).
 
 ```
 Command:  npm test
@@ -216,19 +216,83 @@ Command:  npm test
 
 eslint    0 errors, 44 warnings          (all no-unused-vars, in tests/helpers)
 
-tests     1200
-pass       807
-skipped    386
+tests     1385
+pass       936
+skipped    442
 failed       7
 ```
+
+**These are the NO-DATABASE numbers, and that is deliberate.** `server/.env`
+is gitignored, so an unconfigured machine is the committed default and the
+gate has to be valid there. With `TEST_DATABASE_URL` configured the same
+commit measures **1385 / 1381 / 0 / 4** — so the recorded figures are a floor
+on passing and a ceiling on skipping, and both environments pass. See
+"What a test database changes" below, which is now a measured result rather
+than a prediction.
 
 Updated 2026-08-29 twice: the golden suite added 6 (1161/768 → 1167/774), then
 the reply-cap fix added 5 more (→ 1172/779), then the consultation-briefing
 fix added 6 (→ 1178/785), then billing phases 1–3 added 22 (→ 1200/807).
+
+Updated 2026-09-05: website builder phase 1 added 35 (→ 1235/825). **17 of
+those 35 skip**, which is why the skipped floor moved from 386 to 403 — they
+are the new `websiteService` database half and all of `websiteIsolation`,
+skipping for the same pre-existing reason as every other database suite. The
+gate correctly BLOCKED on the rise before this was recorded: it cannot tell a
+new test that skips from an old suite that stopped running, and it is right
+to stop rather than guess. The 18 that run are the validators, the template
+registry and the server/grapesjs import boundary — all of which need no
+database, deliberately.
+
+Updated 2026-09-06: website builder phase 2 added 48 (→ 1284/873). **47 of
+them do not touch a database and always run** — the block contract's registry,
+validation, rendering, escaping, template composition and editor-adapter
+tests. That is deliberate: the block contract is what turns a pharmacy's
+stored data into HTML on the public internet, and it is the last thing in this
+repository that should be guarded by a suite which skips. Only the 48th, a
+cross-tenant render assertion in `websiteIsolation`, needs a database, which
+is why the skipped ceiling moved 403 → 404.
+
+Updated 2026-09-06: website builder phase 3 added 22 (→ 1306/895), **all of
+them database-free** — the theme contract, the generated stylesheet and the
+published document, including the JSON-LD escaping and the noindex rule. The
+skipped ceiling did not move at all, which is the shape every phase of this
+feature has aimed for.
+
+Updated 2026-09-06: website builder phase 4 added 31 (→ 1337/910). 15 run
+anywhere — the web-address rules, the public resolver against malformed
+input, and GOLDEN-005, which asserts the SPA fallback cannot swallow a
+published pharmacy website. The other 16 need a database because publishing
+is a database act; they moved the skipped ceiling 404 → 420.
+
+Website builder phase 5 (2026-09-06) added the advanced editor and **no
+server tests at all** — these counts are unchanged by it. Its 18 tests are
+client-side and run under `npm run test:ci`, which is worth knowing before
+concluding that a phase shipped untested: the client suite is now 27 tests and
+is where the editor's correctness lives, because the editor is client code.
+The one that matters most asserts that `site_data` survives a round trip
+through the editor unchanged, against the server's real block manifest rather
+than a fixture — if that ever fails, merely opening the editor damages a page.
+
+Website builder phase 6 (2026-09-06) added 23 (→ 1360/920), 10 of them
+database-free. Its database half uses an in-memory store double rather than a
+real bucket: there is no test Supabase project, so the seam in
+`services/website/assetStore.js` is what makes tenant path prefixing and
+cross-tenant asset resolution testable at all. The Supabase calls themselves
+remain untested and are deliberately the thinnest code in the feature.
+
+Website builder phase 7 (2026-09-06) added 25 (→ 1385/936), 16 of them
+database-free. Analytics are counted server-side and buffered in memory,
+because published pages carry `script-src 'none'` and cannot host a tracking
+script without giving up the guarantee that makes the stored-XSS class
+unreachable. Subdomain resolution is implemented and tested but INERT: it
+needs `PUBLIC_SITE_DOMAIN`, which stays unset until wildcard DNS and TLS are
+confirmed. See docs/test-database-setup.md.
+
 `test-baseline.json` holds the machine-readable copy that `npm run test:ci`
 reads. **The two are updated in the same commit or not at all.**
 
-### Why 386 tests skip
+### Why 442 tests skip
 
 `TEST_DATABASE_URL` is **not yet configured**. Every database-backed suite
 skips itself, loudly, rather than running — and each one prints its own
@@ -242,16 +306,78 @@ pharmacies, a connected WhatsApp socket, and messages from that morning.
 the same database, including via a port swap or the direct-connection
 hostname.
 
-**A skipped suite is not a passing suite.** 386 tests currently prove
-nothing. Do not read a green-looking run as coverage of the clinical engine,
-orders, customers or tenant isolation — none of that is being exercised.
-Setting `TEST_DATABASE_URL` to a separate database and running
-`npm run migrate:test` turns these back on, and will surface real failures
-that are currently invisible.
+**A skipped suite is not a passing suite.** 442 tests prove nothing when the
+variable is unset. Do not read a green-looking run as coverage of the clinical
+engine, orders, customers, tenant isolation, or the pharmacy website record —
+none of that is being exercised.
 
-### The 7 known failures
+### What a test database changes — measured 2026-09-05
 
-Two distinct categories. Keep them distinct.
+This section used to end "…will surface real failures that are currently
+invisible." That has now been done, against a local PostgreSQL 17.10, and the
+prediction was correct.
+
+```
+                    unset      configured
+tests                1385            1385
+pass                  936            1381
+skipped               442               0
+failed                  7               4
+```
+
+Three distinct things happened, and they should not be confused:
+
+1. **Five of the seven known failures started passing.** The
+   `customerIdentity.test.js` five were never product defects — the module is
+   required inside a `before()` that returns early when `SKIP` is true, so the
+   binding was only assigned when a database existed. Running the suite fixes
+   them. They stay in `test-baseline.json` because they still fail on an
+   unconfigured machine, which is the committed default.
+
+2. **Two genuine, previously invisible bugs appeared** in
+   `amendPendingOrder.test.js`, both failing with `UNDEFINED_VALUE: Undefined
+   values are not allowed` — postgres.js refusing an `undefined` interpolated
+   into a query. Real, in the order-amendment path, and unrelated to whatever
+   work surfaced them. Recorded in `test-baseline.json` as
+   `surfaced-by-configuring-a-test-database`.
+
+3. **One test turned out to be flaky against a local database**:
+   `authStore.test.js` → "writing pre-keys costs a constant number of round
+   trips". Observed failing in **1 of 4 isolated runs and 3 of 5 full-suite
+   runs** — more often under a full run, not less, which is itself a clue:
+   `node --test` runs files in parallel, so the CPU term grows under load
+   while the floored divisor below cannot. It is a *test* defect, not a
+   product one, and the mechanism is worth knowing because the file's own
+   comment warns against it: the test normalises elapsed time by a measured
+   round trip so that latency cancels out, but floors that divisor at 1 ms.
+   A local `select 1` is sub-millisecond, so the divisor clamps to 1 and the
+   ratio degenerates back into the raw wall-clock threshold the comment
+   explains was removed for being flaky. The ~15–25 ms of CPU spent encrypting
+   60 keys then straddles the `LIMIT = 20` boundary. Correct against a remote
+   pooler, structurally broken against a fast local one.
+
+   **It is deliberately NOT in `test-baseline.json`.** Listing an
+   intermittent failure as "known" is how a flaky test becomes permanent, and
+   the gate blocking on it is the gate working. Fix the yardstick.
+
+### Setting one up
+
+Any separate Postgres works — a second Supabase project, or a local instance.
+No admin install is required: `embedded-postgres` from npm ships real
+PostgreSQL binaries that can be initialised into a scratch directory and
+started on a spare port, which is how the numbers above were measured.
+
+Then, for either:
+
+```bash
+npm run migrate:test
+```
+
+### The 9 known failures
+
+Three distinct categories. Keep them distinct — on an unconfigured machine
+you will see A and B (7 failures); with a test database you will see A and C
+(4 failures), because B passes as soon as the suite actually runs.
 
 **A. Pre-existing — `server/tests/conditionEngine.test.js` (2)**
 
@@ -287,16 +413,40 @@ move the `require` to module scope, which is a change to a test and is
 therefore **not** to be made as a drive-by; it needs its own change with its
 own reasoning.
 
+**These five pass whenever a test database is configured.** They are kept in
+the baseline because the unconfigured machine is the committed default.
+
+**C. Surfaced 2026-09-05 by configuring a test database — `server/tests/amendPendingOrder.test.js` (2)**
+
+```
+not ok - a quantity can be changed while the order is still pending
+not ok - the price comes from the line, not from a re-read of the catalogue
+```
+
+Both fail with `UNDEFINED_VALUE: Undefined values are not allowed` —
+postgres.js refusing an `undefined` interpolated into a query.
+
+**These are real bugs**, in the order-amendment path, and they are the first
+thing this project has learned from running its database suites. They had
+been invisible for as long as the suite had been skipping. Not diagnosed, and
+deliberately not fixed by whoever configured the database — a bug in order
+amendment deserves its own change, not a footnote in someone else's.
+
 ### How to use this baseline
 
 After `npm test`, compare:
 
 | Observation | Meaning |
 |---|---|
-| 768 pass / 386 skip / 7 fail, same 7 names | No regression. Proceed. |
-| Any failure NOT in the 7 above | **You broke something.** Fix the code, not the test. |
-| Fewer than 768 passing | Something stopped running. Find out what. |
-| More than 386 skipped | A suite started skipping. That is a silent loss of coverage, not a pass. |
+| **No test database:** 936 pass / 442 skip / 7 fail, categories A+B | No regression. Proceed. |
+| **Test database configured:** 1381 pass / 0 skip / 4 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. |
+| Any failure NOT among the 9 | **You broke something.** Fix the code, not the test. |
+| Fewer than 936 passing | Something stopped running. Find out what. |
+| More than 442 skipped | A suite started skipping. That is a silent loss of coverage, not a pass — unless you added tests that skip, in which case say so and move the ceiling in the same commit. |
+| "writing pre-keys costs a constant number of round trips" fails | Known flaky against a local database, ~1 run in 4. Not in the baseline on purpose. Do not re-run until green — read the entry above and fix the yardstick. |
+
+(These numbers were stale before 2026-09-05: the table read 768/386 while the
+block above it read 807/386. Both are now derived from measured runs.)
 | eslint errors > 0 | Blocking. Lint has caught a real production crash before. |
 
 Name the failures you saw. "7 failures, the known ones" is checkable;
