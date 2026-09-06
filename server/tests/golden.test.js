@@ -276,6 +276,143 @@ test('GOLDEN-002c: an unreadable connection string is not treated as safe', () =
 });
 
 // ===========================================================================
+// GOLDEN-004 — "The guard said the databases were different. The suite still
+//               wrote to production."
+//
+// Date:       2026-09-05
+// Symptom:    websiteService.test.js was run with TEST_DATABASE_URL pointed
+//             at a fresh local Postgres. Nine tests failed with
+//             `relation "pharmacy_websites" does not exist` — a table that
+//             demonstrably existed in the test database. It did not exist in
+//             production, which is where the suite had actually connected,
+//             after its before() hook had already run DELETEs and an INSERT
+//             there.
+// Cause:      config/env.js reads process.env ONCE, at require time, into
+//             `env`; services/db.js connects with env.databaseUrl and never
+//             consults process.env again. helpers/testDb.js redirected only
+//             process.env.DATABASE_URL. So the redirect worked or silently
+//             did nothing depending purely on whether the calling test file
+//             required a service ABOVE or BELOW its useTestDatabase() call —
+//             and requires-at-the-top is the natural way to write a file.
+//             The identity guard passed correctly and reported nothing,
+//             because the two URLs really were different databases. It was
+//             never asked the question that mattered.
+// Protection: the redirect must hold even when config/env.js was loaded
+//             first. Asserted here on the mechanism rather than on any one
+//             test file's layout, so a new suite written in the natural order
+//             is safe by default instead of safe by remembering.
+// ===========================================================================
+
+test('GOLDEN-004: redirecting the test database survives config/env being loaded first', () => {
+  const envPath = require.resolve('../config/env');
+
+  // Reproduce the dangerous order exactly: env loaded, THEN the redirect.
+  const savedEnvModule = require.cache[envPath];
+  const savedUrl = process.env.DATABASE_URL;
+  const savedTestUrl = process.env.TEST_DATABASE_URL;
+
+  try {
+    delete require.cache[envPath];
+    process.env.DATABASE_URL =
+      'postgresql://postgres.aaaaaaaaaaaaaaaa:pw@aws-0-eu-west-3.pooler.supabase.com:6543/postgres';
+
+    // The load that captures the production URL — the whole hazard.
+    const { env } = require('../config/env');
+    assert.match(env.databaseUrl, /aaaaaaaaaaaaaaaa/, 'precondition: env captured production');
+
+    // Now redirect, too late for process.env to help.
+    const testUrl = 'postgresql://postgres:pw@127.0.0.1:55432/rxnaija_test';
+    delete require.cache[require.resolve('./helpers/testDb')];
+    require('./helpers/testDb').useTestDatabase(testUrl);
+
+    assert.equal(
+      env.databaseUrl, testUrl,
+      'the ALREADY-LOADED env must be corrected, or every query goes to production',
+    );
+  } finally {
+    delete require.cache[envPath];
+    if (savedUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = savedUrl;
+    if (savedTestUrl === undefined) delete process.env.TEST_DATABASE_URL;
+    else process.env.TEST_DATABASE_URL = savedTestUrl;
+    if (savedEnvModule) require.cache[envPath] = savedEnvModule;
+  }
+});
+
+// ===========================================================================
+// GOLDEN-005 — "Our website shows the RxNaija dashboard."
+//
+// Date:       2026-09-06 (caught in design, before it shipped)
+// Symptom:    Anticipated, not observed — and the reason it was anticipated is
+//             that the identical mistake had already been made once. The
+//             /download/:file route carries a comment explaining that it must
+//             be registered before the SPA fallback, because that fallback
+//             answers every unmatched GET with index.html. A published
+//             pharmacy website at /p/<address> is exactly the same shape of
+//             route, and would have failed exactly the same way.
+// Cause:      server/index.js ends with a catch-all
+//             `app.get(/^\/(?!api\/|webhooks\/|pdf\/).*/, …)` that serves the
+//             dashboard shell. Any public path not named in that negative
+//             lookahead is swallowed by it — and swallowed with a 200, so
+//             nothing anywhere reports a problem. A pharmacy's customers, and
+//             Google, would receive the dashboard's HTML at the pharmacy's own
+//             advertised URL.
+// Protection: the fallback pattern, read out of the source, must not match a
+//             published website path. Asserted against the real regex rather
+//             than against a copy of it, so editing the route in index.js
+//             without thinking about /p/ fails here.
+// ===========================================================================
+
+test('GOLDEN-005: the SPA fallback never swallows a published pharmacy website', () => {
+  const fs = require('node:fs');
+  const pathMod = require('node:path');
+
+  const source = fs.readFileSync(pathMod.join(__dirname, '..', 'index.js'), 'utf8');
+
+  // The catch-all as it is actually written, not a restatement of it.
+  const declaration = /app\.get\((\/\^[^,]+?\/),\s*\(req, res, next\)/.exec(source);
+  assert.ok(declaration, 'could not find the SPA fallback route in server/index.js');
+
+  const body = declaration[1].slice(1, declaration[1].lastIndexOf('/'));
+  const fallback = new RegExp(body);
+
+  // Must NOT be caught by the fallback — each of these is served by a real
+  // route registered before it.
+  for (const publicPath of ['/p/ikeja-family-pharmacy', '/p/abc', '/p/x/robots.txt']) {
+    assert.equal(
+      fallback.test(publicPath), false,
+      `${publicPath} must not fall through to the dashboard shell`,
+    );
+  }
+  for (const apiPath of ['/api/website', '/webhooks/twilio', '/pdf/report']) {
+    assert.equal(fallback.test(apiPath), false, `${apiPath} must not fall through either`);
+  }
+
+  // Must STILL be caught — the fallback exists so a refresh on a dashboard
+  // route works, and an exclusion list that grew too broad would break that.
+  for (const appPath of ['/', '/orders', '/settings', '/pharmacy']) {
+    assert.equal(
+      fallback.test(appPath), true,
+      `${appPath} is a dashboard route and must still reach index.html`,
+    );
+  }
+});
+
+test('GOLDEN-005b: the public website router is mounted before the SPA fallback', () => {
+  // Excluding /p/ from the fallback is only half of it. If the router were
+  // registered after the static block, express would still match in order and
+  // the outcome would be a 404 rather than a page.
+  const fs = require('node:fs');
+  const pathMod = require('node:path');
+  const source = fs.readFileSync(pathMod.join(__dirname, '..', 'index.js'), 'utf8');
+
+  const mount = source.indexOf("require('./routes/publicSite')");
+  const fallback = source.indexOf("(?!api");
+
+  assert.ok(mount >= 0, 'the public website router must be mounted in server/index.js');
+  assert.ok(fallback >= 0, 'the SPA fallback must still exist');
+  assert.ok(mount < fallback, 'the public router must be registered BEFORE the SPA fallback');
+});
 // GOLDEN-006 — "Every pharmacy went offline because Postgres had a bad minute."
 //
 // Date:       2026-09-06 (found by reading, before it fired)
@@ -297,8 +434,9 @@ test('GOLDEN-002c: an unreadable connection string is not treated as safe', () =
 //             /api/health — which looks like the more thorough choice, and is
 //             exactly the wrong one — fails here.
 //
-// (004 and 005 land with the website builder branch; the numbering is unique
-// across both, which is what matters.)
+// (Written on a branch alongside 004 and 005, which is why it was numbered
+// last despite landing first. Merged 2026-09-06; the numbering is unique
+// across both, which is the part that matters.)
 // ===========================================================================
 
 test('GOLDEN-006: the platform health check does not depend on the database', () => {

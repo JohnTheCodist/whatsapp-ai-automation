@@ -17,6 +17,9 @@ const { getSql, assertPharmacyId, isRetryableConnectionError } = require('./db')
 const { generateTradeCode } = require('./whatsapp/tradeCode');
 const { isValidTone, DEFAULT_TONE } = require('./ai/assistantTone');
 const { normalizeMsisdn } = require('./whatsapp/senderIdentity');
+// Tiny, and dependency-free on purpose — see renderQueue.js for why it is not
+// simply a call into publishService.
+const { enqueueRerender } = require('./website/renderQueue');
 
 const DAYS = Object.freeze(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -266,6 +269,12 @@ async function updatePharmacy(pharmacyId, fields = {}) {
      where id = ${pharmacyId}
     returning id, name, slug, status, created_at, updated_at
   `;
+
+  // A rename reaches the published website: the pharmacy's name is in the
+  // header, the footer, the page title and the structured data. Queued
+  // rather than rendered inline, so a rename does not wait on a render.
+  // Deduped and non-throwing — see website/renderQueue.js.
+  if (row) await enqueueRerender(db, pharmacyId);
   return row || null;
 }
 
@@ -442,7 +451,9 @@ async function getProfile(pharmacyId) {
     insert into pharmacy_profile (pharmacy_id) values (${pharmacyId})
     on conflict (pharmacy_id) do update set pharmacy_id = pharmacy_profile.pharmacy_id
     returning pharmacy_id, address_line, city, state, landmark, phone,
-              opening_hours, delivers, delivery_note, extra_info, updated_at
+              opening_hours, delivers, delivery_note, extra_info,
+              description, services, logo_asset_id, brand_primary,
+              brand_secondary, maps_url, latitude, longitude, updated_at
   `;
   return row || null;
 }
@@ -459,7 +470,89 @@ const TEXT_FIELDS = Object.freeze({
   landmark: 200,
   delivery_note: 300,
   extra_info: 2000,
+  // Added with the website builder (migration 0049). This is WEBSITE COPY —
+  // an owner's own introduction, shown to visitors. It is NOT part of the
+  // assistant's context, unlike extra_info directly above it, and wiring it
+  // in would be a separate change with its own clinical review. The migration
+  // says the same thing, in the same words, on the column itself.
+  description: 1200,
 });
+
+/** Six-digit hex, the only colour format the website theme accepts. */
+const HEX_COLOUR = /^#[0-9a-f]{6}$/i;
+
+/**
+ * Website fields that need more than a length check.
+ *
+ * They live on pharmacy_profile rather than on the website record because of
+ * the rule the whole builder is built around: the profile is the single
+ * source of truth for what a pharmacy IS, and the website reads from it. A
+ * pharmacy that changes its services here changes them everywhere, including
+ * on an already-published page, without editing the site.
+ */
+function applyWebsiteProfileFields(fields, patch, db) {
+  if ('services' in fields) {
+    const raw = fields.services;
+    if (raw === null || raw === '') {
+      patch.services = db.json([]);
+    } else {
+      if (!Array.isArray(raw)) {
+        throw Object.assign(new Error('services must be a list'), { status: 400, code: 'INVALID_FIELD' });
+      }
+      if (raw.length > 12) {
+        throw Object.assign(new Error('services cannot have more than 12 entries'), { status: 400, code: 'INVALID_FIELD' });
+      }
+      const cleaned = raw.map((item, i) => {
+        if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+          throw Object.assign(new Error(`services[${i}] must be an object`), { status: 400, code: 'INVALID_FIELD' });
+        }
+        const name = String(item.name ?? '').trim();
+        if (!name) {
+          throw Object.assign(new Error(`services[${i}].name is required`), { status: 400, code: 'INVALID_FIELD' });
+        }
+        const out = { name: name.slice(0, 80) };
+        if (item.description) out.description = String(item.description).trim().slice(0, 300);
+        if (item.icon) out.icon = String(item.icon).trim().slice(0, 40);
+        return out;
+      });
+      // jsonb column — must be sent as JSON, not as a Postgres array, which is
+      // what the driver would otherwise infer from a JS array. Same reasoning
+      // as opening_hours above.
+      patch.services = db.json(cleaned);
+    }
+  }
+
+  for (const key of ['brand_primary', 'brand_secondary']) {
+    if (!(key in fields)) continue;
+    const raw = fields[key];
+    if (raw === null || raw === '') { patch[key] = null; continue; }
+    if (typeof raw !== 'string' || !HEX_COLOUR.test(raw)) {
+      throw Object.assign(
+        new Error(`${key} must be a hex colour like #0f766e`),
+        { status: 400, code: 'INVALID_FIELD' },
+      );
+    }
+    patch[key] = raw.toLowerCase();
+  }
+
+  if ('maps_url' in fields) {
+    const raw = fields.maps_url;
+    if (raw === null || raw === '') { patch.maps_url = null; } else {
+      // Same allowlist as the block contract's url type, and for the same
+      // reason: this value is rendered as an href on a public page, so
+      // `javascript:` must never reach it. Checked here too rather than only
+      // at render, so the owner gets the error while they can still fix it.
+      let parsed;
+      try { parsed = new URL(String(raw)); } catch {
+        throw Object.assign(new Error('maps_url is not a valid URL'), { status: 400, code: 'INVALID_FIELD' });
+      }
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        throw Object.assign(new Error('maps_url must be an http or https link'), { status: 400, code: 'INVALID_FIELD' });
+      }
+      patch.maps_url = parsed.toString();
+    }
+  }
+}
 
 /**
  * Partial update. Only keys actually present in `fields` are written, so a
@@ -529,6 +622,37 @@ async function updateProfile(pharmacyId, fields = {}) {
     patch.opening_hours = db.json(hours.value);
   }
 
+  // The website-builder fields (0049). Kept in their own function rather than
+  // inlined, so this one is still readable — it already handles six shapes.
+  applyWebsiteProfileFields(fields, patch, db);
+
+  /**
+   * The logo, which is a REFERENCE to a row this pharmacy owns.
+   *
+   * Checked here rather than left to the foreign key, because the FK only
+   * proves the asset exists — not that it belongs to this pharmacy. Without
+   * this check an owner could set their logo to another pharmacy's asset id
+   * and publish their competitor's branding on their own site, with a valid
+   * foreign key the whole way.
+   *
+   * Async, which is why it is not inside applyWebsiteProfileFields.
+   */
+  if ('logo_asset_id' in fields) {
+    const raw = fields.logo_asset_id;
+    if (raw === null || raw === '') {
+      patch.logo_asset_id = null;
+    } else {
+      const { ownsAsset } = require('./website/assetService');
+      if (!(await ownsAsset(pharmacyId, String(raw)))) {
+        throw Object.assign(
+          new Error('That image does not belong to this pharmacy'),
+          { status: 404, code: 'NOT_FOUND' },
+        );
+      }
+      patch.logo_asset_id = String(raw);
+    }
+  }
+
   if (Object.keys(patch).length === 0) return getProfile(pharmacyId);
 
   // UPSERT, not UPDATE. createPharmacy() inserts an empty profile row
@@ -551,8 +675,17 @@ async function updateProfile(pharmacyId, fields = {}) {
     insert into pharmacy_profile ${db(insertFields)}
     on conflict (pharmacy_id) do update set ${db(patch)}, updated_at = now()
     returning pharmacy_id, address_line, city, state, landmark, phone,
-              opening_hours, delivers, delivery_note, extra_info, updated_at
+              opening_hours, delivers, delivery_note, extra_info,
+              description, services, logo_asset_id, brand_primary,
+              brand_secondary, maps_url, latitude, longitude, updated_at
   `;
+
+  // The profile is what a published website inherits — address, hours,
+  // services, description. A change here must reach the live page without
+  // the owner opening the builder, so a re-render is queued rather than
+  // left until they next publish. Deduped and non-throwing; see
+  // website/renderQueue.js.
+  if (row) await enqueueRerender(db, pharmacyId);
   return row || null;
 }
 

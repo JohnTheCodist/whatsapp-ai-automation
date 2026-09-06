@@ -107,6 +107,24 @@ const env = {
    */
   allowLocalWhatsApp: process.env.ALLOW_LOCAL_WHATSAPP === 'true',
 
+  /**
+   * The pharmacy website builder, off until it is finished.
+   *
+   * WHY A FLAG AND NOT A BRANCH
+   * This feature lands over seven phases, and a long-lived branch against a
+   * repository this active is a merge conflict that grows for a month. With
+   * the flag off, the routes are not mounted at all — there is no new API
+   * surface, no new attack surface, and nothing for a pharmacy to stumble
+   * into half-built — so unfinished work can sit on main safely and be
+   * switched on per environment when it is ready.
+   *
+   * Default OFF, so production stays unchanged until somebody deliberately
+   * sets it. Read at boot, not per request: it selects which routes exist,
+   * and a route that appears and disappears between requests would be a
+   * worse thing to debug than a restart.
+   */
+  websiteBuilderEnabled: process.env.WEBSITE_BUILDER_ENABLED === 'true',
+
   supabase: {
     url: process.env.SUPABASE_URL,
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,

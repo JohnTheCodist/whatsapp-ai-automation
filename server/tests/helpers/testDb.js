@@ -171,8 +171,133 @@ function useTestDatabase(testUrl) {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // POSITIVE ASSERTION: is this unmistakably a test target?
+  //
+  // The identity check above is NEGATIVE — it proves the target is not the
+  // one database DATABASE_URL happens to name right now. That is necessary
+  // and not sufficient: it passes for a staging database, for a colleague's
+  // project, for the production database of a second deployment, and for any
+  // remote Postgres somebody pasted in while tired. This suite writes and
+  // deletes; "not today's production" is a weaker claim than it sounds.
+  //
+  // So the target must also LOOK like a test target, by one of three
+  // positive signals, and be refused otherwise. A loopback host cannot be
+  // anybody's production. A database or role named for testing is a
+  // deliberate act. And the escape hatch is an explicit environment variable
+  // that somebody has to type, which is the documented route for a second
+  // Supabase project — where the database is always called `postgres` and
+  // neither of the first two signals can ever fire.
+  // ---------------------------------------------------------------------
+  const target = testTargetKind(testUrl);
+  if (!target.ok) {
+    throw new Error(refusal(
+      `TEST_DATABASE_URL (${target.summary}) does not look like a test database.`
+    ));
+  }
+
   process.env.DATABASE_URL = testUrl;
+
+  // AND correct config/env.js if it has ALREADY been loaded.
+  //
+  // WHY THIS LINE EXISTS — it is not belt-and-braces, it is the fix for a
+  // hole that let a write-and-delete suite reach production on 2026-09-05.
+  //
+  // config/env.js reads process.env ONCE, at require time, into a frozen-ish
+  // `env` object; services/db.js then connects with env.databaseUrl, never
+  // with process.env. So setting process.env above only works when nothing
+  // has loaded config/env.js yet — which depends entirely on the ORDER of
+  // requires at the top of the calling test file:
+  //
+  //   useTestDatabase(url); ... require('../services/x')   → redirected. fine.
+  //   require('../services/x'); ... useTestDatabase(url)   → PRODUCTION.
+  //
+  // The second ordering is the natural one to write — module requires go at
+  // the top of the file, and the TEST_DATABASE_URL block reads like setup
+  // that belongs lower down. websiteService.test.js was written that way, the
+  // guard above passed (the two URLs really were different databases), and
+  // the suite still ran its DELETEs and INSERTs against production. Nothing
+  // reported anything: the guard had done its job and the redirect had
+  // silently not happened.
+  //
+  // Mutating the already-loaded object makes the redirect true regardless of
+  // require order, so this can no longer depend on how a test file is laid
+  // out. Only mutated if the module is already in the cache — requiring it
+  // here would LOAD it, which is the side effect this is trying to avoid.
+  //
+  // Asserted by GOLDEN-004.
+  const envPath = require.resolve('../../config/env');
+  const loaded = require.cache[envPath]?.exports;
+  if (loaded?.env) loaded.env.databaseUrl = testUrl;
+
   return true;
+}
+
+/** Loopback hosts. A database here cannot be anybody's production. */
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+/**
+ * Classify a connection URL as a plausible test target, or not.
+ *
+ * PURE, and exported, so every branch is testable without a database — which
+ * matters for a guard whose failure mode is destructive.
+ *
+ * @returns {{ok:boolean, signal:string, summary:string}}
+ */
+function testTargetKind(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    // Fails closed, for the same reason databaseIdentity does: an unreadable
+    // URL is not evidence of safety.
+    return { ok: false, signal: 'unparseable', summary: 'unparseable connection URL' };
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  const database = parsed.pathname.replace(/^\//, '');
+  const user = decodeURIComponent(parsed.username || '');
+  const summary = `${host}/${database || '(no database)'}`;
+
+  if (LOOPBACK.has(host)) return { ok: true, signal: 'loopback', summary };
+  if (/test/i.test(database)) return { ok: true, signal: 'database-name', summary };
+  if (/test/i.test(user)) return { ok: true, signal: 'role-name', summary };
+
+  // The documented second-Supabase-project route. Typed deliberately, named
+  // so it cannot be mistaken for anything else, and read from the environment
+  // rather than inferred — because the whole point is that a human asserted
+  // it.
+  if (process.env.RXNAIJA_ALLOW_REMOTE_TEST_DB === 'true') {
+    return { ok: true, signal: 'explicit-override', summary };
+  }
+
+  return { ok: false, signal: 'none', summary };
+}
+
+/**
+ * Ask the database itself whether it is a test database.
+ *
+ * The third step of the safety model, and the only one that cannot be
+ * satisfied by a plausible-looking string: `npm run migrate:test` stamps a
+ * marker row into every database it migrates, and `npm run migrate` — the
+ * production runner — does not. So a database carrying the marker was
+ * deliberately prepared for testing by the tool that exists for that purpose.
+ *
+ * ASYNC, so it cannot live in useTestDatabase(), which is synchronous and
+ * called at module scope. Call it from a suite's before() hook when the suite
+ * is destructive enough to want the strongest available claim.
+ */
+async function assertIsTestDatabase(sql) {
+  const rows = await sql`
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'test_database_marker'
+  `;
+  if (rows.length === 0) {
+    throw new Error(refusal(
+      'The target database carries no test_database_marker table, so it has never been '
+      + 'prepared by `npm run migrate:test`.'
+    ));
+  }
 }
 
 /**
@@ -211,7 +336,21 @@ function refusal(what) {
     '  Changing the port or switching pooler mode does NOT separate them —',
     '  that is the same database by another name, and this check knows it.',
     '',
+    '  A target must ALSO look unmistakably like a test database. One of:',
+    '',
+    '    - a loopback host (localhost / 127.0.0.1), or',
+    '    - "test" in the database name or the role name, or',
+    '    - RXNAIJA_ALLOW_REMOTE_TEST_DB=true, set deliberately — this is the',
+    '      documented route for a second Supabase project, whose database is',
+    '      always called "postgres" and can never match the first two.',
+    '',
   ].join('\n');
 }
 
-module.exports = { useTestDatabase, databaseIdentity, declaredProductionUrl };
+module.exports = {
+  useTestDatabase,
+  databaseIdentity,
+  declaredProductionUrl,
+  testTargetKind,
+  assertIsTestDatabase,
+};
