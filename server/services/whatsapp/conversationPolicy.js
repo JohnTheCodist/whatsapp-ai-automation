@@ -30,10 +30,43 @@
  * returning next week lands in last week's thread, which is the state this
  * module exists to end.
  *
+ * WHO ACTUALLY SPLITS A THREAD — AND WHY IT IS NOT THIS FUNCTION
+ * The database holds a partial unique index:
+ *
+ *     idx_conversations_one_open ON conversations (customer_id)
+ *                                WHERE status = 'open'
+ *
+ * One open thread per patient, enforced. So "start a new conversation" is a
+ * legal answer only when the previous one is CLOSED, and the only writer that
+ * closes anything is sweepIdleConversations in worker.js. The sweep is the
+ * segmenter; this function only reports where a message lands.
+ *
+ * That division was not respected until 2026-09-06, and the failure was
+ * total. This function returned 'new' whenever the last message was over 24
+ * hours old — a branch reachable ONLY while the thread was still open, since
+ * a closed one returns 'previous_closed' several lines earlier. So every time
+ * it fired, inboundIngest inserted a second open conversation, Postgres
+ * rejected it, the entire ingest transaction rolled back, and the customer's
+ * message was filed as a failed inbound event and never answered.
+ *
+ * Measured in production: 16 consecutive dropped messages from one patient
+ * across three days, every one the same unique violation, while the dashboard
+ * reported WhatsApp connected and healthy. Nothing surfaced it.
+ *
+ * The patient it silences is the worst possible one. The sweep deliberately
+ * refuses to close a thread awaiting a pharmacist — you must not file away
+ * somebody with an unanswered clinical question. That refusal is right, and
+ * it is exactly what pins the thread open, which is what makes every later
+ * message from that patient unanswerable. The pharmacy's most urgent
+ * conversation was the one guaranteed to break, and it broke silently.
+ *
+ * Hence the invariant below: with a previous conversation present, the only
+ * route to 'new' is that it is closed.
+ *
  * Pure. Two timestamps and a status in, a decision out.
  */
 
-/** Idle time after which the next message starts a new conversation. */
+/** Idle time after which a quiet thread is considered stale. */
 const IDLE_HOURS = 24;
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -45,6 +78,10 @@ const HOUR_MS = 60 * 60 * 1000;
  * @param {Date} [args.now]
  * @param {number} [args.idleHours]
  * @returns {{action: 'reuse'|'new', conversationId: string|null, reason: string}}
+ *
+ * INVARIANT: never returns 'new' for a `latest` that is not closed. The
+ * database permits exactly one open thread per patient, so proposing a second
+ * is not a policy choice — it is a failed transaction and a lost message.
  */
 function resolveConversation({ latest, now = new Date(), idleHours = IDLE_HOURS }) {
   if (!latest) {
@@ -59,6 +96,13 @@ function resolveConversation({ latest, now = new Date(), idleHours = IDLE_HOURS 
     return { action: 'new', conversationId: null, reason: 'previous_closed' };
   }
 
+  // ---- Everything below here is an OPEN thread, and is therefore reused. ----
+  // The rest of this function decides only WHY, because the reason is worth
+  // having in the logs: 'idle_but_open' means the sweep has not retired this
+  // thread, which is either a worker that has fallen behind or a handoff
+  // nobody has answered. Both are real conditions worth being able to see.
+  // Neither is a reason to drop the customer's message.
+
   const last = latest.last_message_at ? new Date(latest.last_message_at) : null;
   if (!last || Number.isNaN(last.getTime())) {
     // No usable timestamp: reuse rather than fragment. A conversation with a
@@ -70,13 +114,16 @@ function resolveConversation({ latest, now = new Date(), idleHours = IDLE_HOURS 
   const idleMs = now.getTime() - last.getTime();
 
   // A clock skew that puts the last message in the future must not be read as
-  // "idle for negative hours" and certainly not as a reason to split.
+  // "idle for negative hours".
   if (idleMs < 0) {
     return { action: 'reuse', conversationId: latest.id, reason: 'active' };
   }
 
   if (idleMs >= idleHours * HOUR_MS) {
-    return { action: 'new', conversationId: null, reason: 'idle_expired' };
+    // Stale, but still open, so it is still this patient's thread. Their next
+    // message genuinely does start a new conversation — one sweep tick later,
+    // once this one is closed and 'previous_closed' applies.
+    return { action: 'reuse', conversationId: latest.id, reason: 'idle_but_open' };
   }
 
   return { action: 'reuse', conversationId: latest.id, reason: 'active' };
