@@ -24,7 +24,30 @@ services:
     branch: main
     buildCommand: npm install && npm run build
     startCommand: npm start
-    healthCheckPath: /api/health
+    # /api/live, NOT /api/health. The two are different questions and the
+    # distinction is load-bearing — server/index.js says so at length above
+    # the route, and this line contradicted it until 2026-09-06.
+    #
+    # /api/health is READINESS: it pings Postgres and answers 503 when the
+    # database is down. That is exactly right for a human or a monitor asking
+    # "is anything wrong".
+    #
+    # A platform health check is not that question. Render RESTARTS a service
+    # whose health check fails. Pointed at /api/health, a transient Postgres
+    # blip therefore kills this process — and this process holds every
+    # pharmacy's live Baileys WhatsApp socket. A bad minute for the database
+    # became a re-pair and a cold start for every pharmacy, and if the blip
+    # persisted, a restart loop. Nothing would have alerted: customers simply
+    # message a number that has stopped answering.
+    #
+    # /api/live answers "is this process running and serving" with no queries,
+    # no awaits and no dependencies. The app can hold its sockets and keep
+    # serving through a database outage, and recover on its own when Postgres
+    # returns — which is the behaviour we actually want and the one this line
+    # was preventing.
+    #
+    # GOLDEN-006 asserts the two stay in agreement.
+    healthCheckPath: /api/live
     envVars:
       - key: NODE_ENV
         value: production

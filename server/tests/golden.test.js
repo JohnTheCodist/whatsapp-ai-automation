@@ -274,3 +274,60 @@ test('GOLDEN-002c: an unreadable connection string is not treated as safe', () =
     assert.equal(databaseIdentity(junk), null, `${JSON.stringify(junk)} must not yield an identity`);
   }
 });
+
+// ===========================================================================
+// GOLDEN-006 — "Every pharmacy went offline because Postgres had a bad minute."
+//
+// Date:       2026-09-06 (found by reading, before it fired)
+// Symptom:    Anticipated, not observed. The mechanism was fully described in
+//             a comment in server/index.js and the deployment blueprint did
+//             the opposite of what that comment said, so the incident was
+//             waiting on a single transient database error.
+// Cause:      render.yaml set `healthCheckPath: /api/health`. That endpoint
+//             pings Postgres and answers 503 when it is unreachable, and
+//             Render RESTARTS a service whose health check fails. This process
+//             holds every pharmacy's live Baileys WhatsApp socket, so a
+//             database blip would have restarted it, forced a re-pair and a
+//             cold start, and — if the blip persisted — produced a restart
+//             loop. Nothing alerts on that: customers simply message a number
+//             that has stopped answering, which is the worst shape a failure
+//             takes in a messaging product.
+// Protection: the blueprint and the reasoning must agree. Asserted against
+//             the real render.yaml, so pointing the health check back at
+//             /api/health — which looks like the more thorough choice, and is
+//             exactly the wrong one — fails here.
+//
+// (004 and 005 land with the website builder branch; the numbering is unique
+// across both, which is what matters.)
+// ===========================================================================
+
+test('GOLDEN-006: the platform health check does not depend on the database', () => {
+  const fs = require('node:fs');
+  const pathMod = require('node:path');
+
+  const blueprint = fs.readFileSync(
+    pathMod.join(__dirname, '..', '..', 'render.yaml'), 'utf8',
+  );
+
+  // The configured value, read out of the file rather than restated here.
+  const configured = /^\s*healthCheckPath:\s*(\S+)\s*$/m.exec(blueprint);
+  assert.ok(configured, 'render.yaml must declare a healthCheckPath');
+  assert.equal(
+    configured[1], '/api/live',
+    'a health check that pings Postgres restarts this process — and every '
+    + "pharmacy's WhatsApp socket with it — whenever the database blips",
+  );
+
+  // And the endpoint it names must actually be the dependency-free one. A
+  // correct path pointing at a route that had grown a database call would be
+  // the same incident wearing the right label.
+  const server = fs.readFileSync(pathMod.join(__dirname, '..', 'index.js'), 'utf8');
+  const live = /app\.get\('\/api\/live',([\s\S]*?)\n\}\);/.exec(server);
+  assert.ok(live, 'server/index.js must still define /api/live');
+  for (const forbidden of ['await', 'ping(', 'getSql']) {
+    assert.ok(
+      !live[1].includes(forbidden),
+      `/api/live must not use "${forbidden}" — liveness cannot depend on the database`,
+    );
+  }
+});

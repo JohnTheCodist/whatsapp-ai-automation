@@ -225,6 +225,12 @@ failed       7
 Updated 2026-08-29 twice: the golden suite added 6 (1161/768 → 1167/774), then
 the reply-cap fix added 5 more (→ 1172/779), then the consultation-briefing
 fix added 6 (→ 1178/785), then billing phases 1–3 added 22 (→ 1200/807).
+
+Updated 2026-09-06: GOLDEN-006 added 1 (→ 1201/808). It needs no database.
+render.yaml was pointing the platform health check at /api/health, which
+pings Postgres — so a database blip would have restarted the process and
+dropped every pharmacy WhatsApp socket. server/index.js had argued against
+exactly that for months and the blueprint disagreed with it.
 `test-baseline.json` holds the machine-readable copy that `npm run test:ci`
 reads. **The two are updated in the same commit or not at all.**
 
@@ -293,9 +299,9 @@ After `npm test`, compare:
 
 | Observation | Meaning |
 |---|---|
-| 768 pass / 386 skip / 7 fail, same 7 names | No regression. Proceed. |
+| 808 pass / 386 skip / 7 fail, same 7 names | No regression. Proceed. |
 | Any failure NOT in the 7 above | **You broke something.** Fix the code, not the test. |
-| Fewer than 768 passing | Something stopped running. Find out what. |
+| Fewer than 808 passing | Something stopped running. Find out what. |
 | More than 386 skipped | A suite started skipping. That is a silent loss of coverage, not a pass. |
 | eslint errors > 0 | Blocking. Lint has caught a real production crash before. |
 
