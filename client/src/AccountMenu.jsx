@@ -18,10 +18,26 @@
  * Rendered nowhere when there is no session (DEV_AUTH_BYPASS): a Sign out
  * that signs nothing out is worse than its absence, so the menu keeps only
  * the entries that do something.
+ *
+ * WHY THE SWITCHER LIVES HERE
+ * One login may own up to five pharmacies (MAX_PHARMACIES_PER_USER), and
+ * until 2026-09-06 there was no way to move between them. Creating a second
+ * pharmacy pinned it as active in localStorage, and with nothing in the UI
+ * to change that, the first pharmacy — the one with the connected WhatsApp
+ * number, the customers and the orders — became unreachable. A one-way door,
+ * escapable only by clearing site data from a browser console.
+ *
+ * It belongs in this menu and not the rail because "which pharmacy am I
+ * looking at" is the question this chip already exists to answer. Somewhere
+ * else it would be a second answer to the same question, in a different
+ * corner.
+ *
+ * Hidden below two memberships. A control offering one choice is furniture.
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { IconChevronDown, IconSetup, IconSignOut } from './Icons.jsx';
+import { IconChevronDown, IconSetup, IconSignOut, IconCheckCircle } from './Icons.jsx';
+import { setActivePharmacyId } from './auth.js';
 
 /**
  * "Sterling Pharmacy" -> "SP". One pharmacy, one stable mark.
@@ -37,7 +53,14 @@ function initialsOf(name) {
   return (words[0][0] + words[words.length - 1][0]).toUpperCase();
 }
 
-export default function AccountMenu({ pharmacyName, email, onOpenSettings, onSignOut }) {
+export default function AccountMenu({
+  pharmacyName,
+  email,
+  memberships = [],
+  activePharmacyId = null,
+  onOpenSettings,
+  onSignOut,
+}) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
   const buttonRef = useRef(null);
@@ -71,6 +94,31 @@ export default function AccountMenu({ pharmacyName, email, onOpenSettings, onSig
   const name = pharmacyName || 'Your pharmacy';
 
   const item = 'flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition';
+
+  // Two or more, or it is not a choice.
+  const canSwitch = Array.isArray(memberships) && memberships.length > 1;
+
+  /**
+   * Change tenant by storing the id and RELOADING THE WHOLE APP.
+   *
+   * A soft switch — set the id, let React refetch — is the obvious
+   * implementation and the wrong one. Every panel in this dashboard holds
+   * its own independently fetched state: orders, the inbox, the catalogue,
+   * customers, the consultation queue. Swapping the tenant underneath them
+   * would leave each one showing the previous pharmacy's data until its own
+   * poll happened to come round, under a header already displaying the new
+   * pharmacy's name. That is not a loading state, it is one pharmacy's
+   * customers labelled as another's — in a product whose central promise is
+   * that those are never mixed.
+   *
+   * A reload discards all of it at once. It costs a second, and it makes the
+   * mixed state unreachable rather than merely brief.
+   */
+  const switchTo = (id) => {
+    if (!id || id === activePharmacyId) { setOpen(false); return; }
+    setActivePharmacyId(id);
+    window.location.reload();
+  };
 
   return (
     <div ref={wrapRef} className="relative">
@@ -119,6 +167,57 @@ export default function AccountMenu({ pharmacyName, email, onOpenSettings, onSig
               <p className="truncate text-[11px] text-[var(--ui-ink-faint)]">{email}</p>
             )}
           </div>
+
+          {canSwitch && (
+            <div className="border-b border-[var(--ui-line)] py-1">
+              <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--ui-ink-faint)]">
+                Switch pharmacy
+              </p>
+              {/* Scrolls rather than growing: five memberships is the cap, but
+                  a menu that can push its own Sign out below the fold is a
+                  menu that can hide the way out. */}
+              <div className="max-h-52 overflow-y-auto">
+                {memberships.map((m) => {
+                  const isActive = m.pharmacy_id === activePharmacyId;
+                  return (
+                    <button
+                      key={m.pharmacy_id}
+                      type="button"
+                      role="menuitem"
+                      aria-current={isActive ? 'true' : undefined}
+                      onClick={() => switchTo(m.pharmacy_id)}
+                      className={`${item} ${isActive
+                        ? 'bg-[var(--ui-accent-wash)] text-[var(--ui-accent-ink)]'
+                        : 'text-[var(--ui-ink-soft)] hover:bg-[var(--ui-sunk)] hover:text-[var(--ui-ink)]'}`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full
+                                    text-[10px] font-semibold ${isActive
+                          ? 'bg-[var(--ui-accent)] text-white'
+                          : 'bg-[var(--ui-sunk)] text-[var(--ui-ink-faint)]'}`}
+                      >
+                        {initialsOf(m.name)}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">{m.name || 'Unnamed pharmacy'}</span>
+                        {/* The role is the useful second line, not the id: it
+                            tells you what you will be able to do once you are
+                            in there. */}
+                        <span className="block text-[11px] capitalize text-[var(--ui-ink-faint)]">
+                          {m.role}
+                          {m.status && m.status !== 'active' ? ` · ${m.status}` : ''}
+                        </span>
+                      </span>
+                      {isActive && (
+                        <IconCheckCircle width={15} height={15} className="shrink-0" aria-hidden="true" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <button
             type="button"

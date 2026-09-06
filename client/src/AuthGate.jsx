@@ -47,6 +47,14 @@ export default function AuthGate() {
   // null = not looked yet · false = signed in with no pharmacy · object = has one
   const [pharmacy, setPharmacy] = useState(null);
 
+  // Every pharmacy this person belongs to, for the switcher in the account
+  // menu. It arrives on the SAME response as the pharmacy itself — the /me
+  // route has returned it since it was written, for exactly this — so the
+  // switcher costs no extra request. Empty until that fetch lands, and empty
+  // forever for the DEV_AUTH_BYPASS mount, which is right: the menu hides
+  // the switcher below two pharmacies.
+  const [memberships, setMemberships] = useState([]);
+
   useEffect(() => {
     if (!authConfigured) { setChecking(false); return undefined; }
 
@@ -120,7 +128,15 @@ export default function AuthGate() {
           if (r.ok) {
             const j = await r.json();
             const p = j.pharmacy || j;
-            if (p?.id) { setActivePharmacyId(p.id); setPharmacy(p); return; }
+            if (p?.id) {
+              setActivePharmacyId(p.id);
+              // Before setPharmacy, which is what unblocks the render: the
+              // switcher should never paint a frame showing one pharmacy
+              // while its own list is still empty.
+              setMemberships(Array.isArray(j.memberships) ? j.memberships : []);
+              setPharmacy(p);
+              return;
+            }
           }
           if (r.status === 403 || r.status === 404) { setPharmacy(false); return; }
           if (r.status !== 401) unauthorizedEveryTime = false;
@@ -233,6 +249,7 @@ export default function AuthGate() {
     <App
       onSignOut={handleSignOut}
       pharmacy={pharmacy}
+      memberships={memberships}
       email={session.user?.email || ''}
     />
   );

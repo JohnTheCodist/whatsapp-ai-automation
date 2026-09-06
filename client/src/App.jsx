@@ -190,7 +190,7 @@ function sectionFor(tab) {
   return PARENT_OF[tab] || SECTIONS.find((s) => s.id === tab) || SECTIONS[0];
 }
 
-export default function App({ onSignOut, pharmacy = null, email = '' }) {
+export default function App({ onSignOut, pharmacy = null, memberships = [], email = '' }) {
   const [tab, setTab] = useState(() => readTabFromUrl() || 'overview');
   // The website builder ships behind a server-side flag, and while it is off
   // its routes are not mounted at all. There is no config endpoint to ask, so
@@ -619,6 +619,12 @@ export default function App({ onSignOut, pharmacy = null, email = '' }) {
             <AccountMenu
               pharmacyName={pharmacyName}
               email={email}
+              memberships={memberships}
+              // The tenant the SERVER resolved, not what localStorage claims.
+              // They disagree exactly when a stored id has gone stale, and in
+              // that case the server is right and the stored value is what
+              // needs correcting.
+              activePharmacyId={pharmacy?.id || null}
               onOpenSettings={() => setTab(SETUP.id)}
               onSignOut={onSignOut}
             />
