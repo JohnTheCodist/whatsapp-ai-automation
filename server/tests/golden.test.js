@@ -413,6 +413,58 @@ test('GOLDEN-005b: the public website router is mounted before the SPA fallback'
   assert.ok(fallback >= 0, 'the SPA fallback must still exist');
   assert.ok(mount < fallback, 'the public router must be registered BEFORE the SPA fallback');
 });
+
+const EMPTY = '';
+const HOST_ROUTER_CALL = 'hostRouter(';
+const NOT_FOUND_CALL = 'notFound(';
+const DEFERRING_CALL = 'hostRouter(req,res,next)';
+const THE_GUARD_MUST_DELEGATE = 'the host guard must delegate to the public site router';
+const A_MISS_MUST_ANSWER = 'an unmatched path on a pharmacy hostname must answer 404, not defer to the dashboard';
+const DEFERRING_RETURNS_IT_TO_THE_FALLBACK = 'passing next() as the miss handler returns the request to the SPA fallback';
+test('GOLDEN-005c: a pharmacy hostname never falls through to the dashboard', () => {
+  // THE SAME BUG AS 005, REACHED BY THE OTHER SHAPE.
+  //
+  // 005 protects app.rxnaija.com/p/<address>. When pharmacy websites also
+  // became <address>.rxnaija.com, the request path stopped being /p/anything
+  // and became "/" — which the /p mount does not match, and which the SPA
+  // fallback answers with index.html at 200. Every pharmacy subdomain would
+  // have served the dashboard shell to its own customers and to Google.
+  //
+  // Two things have to hold, and the second is the one that rots. A guard
+  // that matches the host but calls next() when no route inside it matches
+  // hands the request straight back to the fallback, which is the original
+  // bug with an extra step. On a pharmacy host, a miss must ANSWER.
+  const fs = require('node:fs');
+  const pathMod = require('node:path');
+  const source = fs.readFileSync(pathMod.join(__dirname, '..', 'index.js'), 'utf8');
+
+  const guard = source.indexOf('addressFromHost(req.hostname)');
+  const fallback = source.indexOf('(?!api');
+
+  assert.ok(guard >= 0, 'server/index.js must route pharmacy hostnames to the public site');
+  assert.ok(fallback >= 0, 'the SPA fallback must still exist');
+  assert.ok(guard < fallback, 'the host guard must be registered BEFORE the SPA fallback');
+
+  // Plain string checks rather than regexes: every character here is a
+  // parenthesis or a comma, and escaping those into a pattern is how a
+  // guard test ends up asserting something subtly different from the thing
+  // it names.
+  const block = source.slice(guard, guard + 400);
+  const dense = block.replace(/s+/g, EMPTY);
+
+  assert.ok(
+    block.includes(HOST_ROUTER_CALL),
+    THE_GUARD_MUST_DELEGATE,
+  );
+  assert.ok(
+    block.includes(NOT_FOUND_CALL),
+    A_MISS_MUST_ANSWER,
+  );
+  assert.ok(
+    !dense.includes(DEFERRING_CALL),
+    DEFERRING_RETURNS_IT_TO_THE_FALLBACK,
+  );
+});
 // GOLDEN-006 — "Every pharmacy went offline because Postgres had a bad minute."
 //
 // Date:       2026-09-06 (found by reading, before it fired)

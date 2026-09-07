@@ -216,8 +216,8 @@ Command:  npm test
 
 eslint    0 errors, 44 warnings          (all no-unused-vars, in tests/helpers)
 
-tests     1395
-pass       946
+tests     1405
+pass       956
 skipped    442
 failed       7
 ```
@@ -320,6 +320,22 @@ first attempt failed — GOLDEN-006 matches the `/api/live` route as TEXT, and
 the forbidden word appeared in a comment I had just written inside it. The
 comment was reworded; the test was left alone. That is rule 2 working on the
 person who wrote the rule.
+
+**Pharmacy websites on their own hostname, 2026-09-06 → measured
+1405/956/442/7.** `resolveSiteKey` had preferred the host since it was
+written, but the router was mounted only at `/p`, so `<address>.rxnaija.com/`
+arrived with path `/`, matched nothing, and fell through to the SPA fallback —
+serving the dashboard shell, at 200, to a pharmacy's customers and to Google.
+Exactly the failure GOLDEN-005 exists to prevent, reached by the shape it did
+not cover. GOLDEN-005c closes it and was checked the only way worth checking:
+the bug was reintroduced, the test failed, the fix restored.
+
+The other 9 are `tlsAsk.test.js`. Certificates for pharmacy subdomains are
+issued on demand, and a wildcard DNS record means any hostname reaches the
+box — so without a gate a stranger can spend a weekly issuance limit that is
+counted against the entire registered domain. The gate is security-critical
+and its non-database half is exported specifically so it can be tested
+without Postgres. All 10 are database-free; the skipped ceiling did not move.
 
 `test-baseline.json` holds the machine-readable copy that `npm run test:ci`
 reads. **The two are updated in the same commit or not at all.**
@@ -470,10 +486,10 @@ After `npm test`, compare:
 
 | Observation | Meaning |
 |---|---|
-| **No test database:** 946 pass / 442 skip / 7 fail, categories A+B | No regression. Proceed. |
+| **No test database:** 956 pass / 442 skip / 7 fail, categories A+B | No regression. Proceed. |
 | **Test database configured:** ~1384 pass / 0 skip / 4 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. The figure is derived, not observed: the last measured configured run was 1381 on 2026-09-05, before three database-free tests were added. Re-measure and replace this with a real number rather than trusting the arithmetic. |
 | Any failure NOT among the 9 | **You broke something.** Fix the code, not the test. |
-| Fewer than 946 passing | Something stopped running. Find out what. |
+| Fewer than 956 passing | Something stopped running. Find out what. |
 | More than 442 skipped | A suite started skipping. That is a silent loss of coverage, not a pass — unless you added tests that skip, in which case say so and move the ceiling in the same commit. |
 | "writing pre-keys costs a constant number of round trips" fails | Known flaky against a local database, ~1 run in 4. Not in the baseline on purpose. Do not re-run until green — read the entry above and fix the yardstick. |
 

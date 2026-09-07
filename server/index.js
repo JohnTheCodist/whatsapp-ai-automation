@@ -17,6 +17,7 @@ const helmet = require('helmet');
 const { env, assertRequiredEnv, isChannelConfigured, isLlmConfigured } = require('./config/env');
 const { ping, warmPool, startKeepAlive, stopKeepAlive } = require('./services/db');
 const version = require('./config/version');
+const { addressFromHost } = require('./services/website/publicSite');
 const { requestId, notFound, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -335,7 +336,38 @@ if (env.websiteBuilderEnabled) {
 // blast radius nobody would expect from a flag named for the builder. With
 // the flag off nothing can reach 'published' anyway, so this serves nothing
 // until there is something to serve.
-app.use('/p', require('./routes/publicSite'));
+// Caddy asks this before issuing a certificate for a pharmacy subdomain.
+// Mounted before the host guard below so that Caddy's own call — which
+// arrives on localhost and therefore resolves to no pharmacy — reaches it.
+app.use('/api/internal', require('./routes/internal'));
+
+const publicSite = require('./routes/publicSite');
+
+// ---------- pharmacy websites on their own hostname ----------
+//
+// <address>.rxnaija.com serves the same page as /p/<address>, and this is
+// the mount that makes the first form work at all. The router below is
+// mounted at /p, so on a subdomain the request path is "/" and matches
+// nothing there — it would fall through to the SPA fallback and answer a
+// pharmacy's customers with the DASHBOARD SHELL, at 200. The same wrong-
+// document failure GOLDEN-005 exists to prevent, reached by the other
+// shape. GOLDEN-005c now covers this one.
+//
+// A HOST THAT RESOLVES TO A PHARMACY NEVER FALLS THROUGH. When the guard
+// matches but no route inside does, the answer is the public 404 — not
+// next(). Handing an unmatched path on a pharmacy host to the dashboard is
+// the exact bug this exists to close, and next() would reintroduce it
+// quietly the moment somebody added a path.
+//
+// addressFromHost returns null for app.rxnaija.com, for the bare domain,
+// for localhost, for any other domain, and for every RESERVED label — so
+// the dashboard, the marketing site and Caddy's own calls are untouched.
+app.use((req, res, next) => {
+  if (!addressFromHost(req.hostname)) return next();
+  return publicSite.hostRouter(req, res, () => publicSite.notFound(res));
+});
+
+app.use('/p', publicSite.router);
 
 {
   const path = require('node:path');

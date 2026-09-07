@@ -20,7 +20,7 @@ const express = require('express');
 const { asyncRoute } = require('../middleware/errorHandler');
 const {
   resolveSiteKey, getPublishedSite, getClickTarget, etagFor,
-  publicCsp, MAX_AGE_SECONDS, SHARED_MAX_AGE_SECONDS,
+  publicCsp, MAX_AGE_SECONDS, SHARED_MAX_AGE_SECONDS, addressFromHost,
 } = require('../services/website/publicSite');
 const analytics = require('../services/website/analytics');
 
@@ -42,7 +42,7 @@ function notFound(res) {
   res.send('There is no pharmacy website at this address.\n');
 }
 
-router.get('/:slug', asyncRoute(async (req, res) => {
+const pageHandler = asyncRoute(async (req, res) => {
   const address = resolveSiteKey(req);
   // A malformed address never reaches the database. Scanners send a great
   // deal of this.
@@ -75,7 +75,7 @@ router.get('/:slug', asyncRoute(async (req, res) => {
   analytics.record(site.pharmacy_id, 'view');
 
   res.type('text/html; charset=utf-8').send(html);
-}));
+});
 
 /**
  * GET /p/:slug/go/:kind — count a click, then send the visitor on.
@@ -98,7 +98,7 @@ router.get('/:slug', asyncRoute(async (req, res) => {
  * counted — and worse, a pharmacy that changed its WhatsApp number would have
  * customers pinned to the old one.
  */
-router.get('/:slug/go/:kind', asyncRoute(async (req, res) => {
+const goHandler = asyncRoute(async (req, res) => {
   const address = resolveSiteKey(req);
   if (!address) return notFound(res);
 
@@ -113,7 +113,7 @@ router.get('/:slug/go/:kind', asyncRoute(async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Referrer-Policy', 'no-referrer');
   return res.redirect(302, target.destination);
-}));
+});
 
 /**
  * robots.txt per pharmacy.
@@ -124,7 +124,7 @@ router.get('/:slug/go/:kind', asyncRoute(async (req, res) => {
  * could easily be tightened one day in a way that silently de-indexes every
  * pharmacy on the platform.
  */
-router.get('/:slug/robots.txt', asyncRoute(async (req, res) => {
+const robotsHandler = asyncRoute(async (req, res) => {
   const address = resolveSiteKey(req);
   if (!address) return notFound(res);
 
@@ -133,7 +133,38 @@ router.get('/:slug/robots.txt', asyncRoute(async (req, res) => {
 
   res.type('text/plain; charset=utf-8');
   res.setHeader('Cache-Control', `public, max-age=${SHARED_MAX_AGE_SECONDS}`);
-  res.send(`User-agent: *\nAllow: /p/${address}\n`);
-}));
+  // The path this page is REACHABLE at, which differs by shape. On a
+  // subdomain the page is the root, and emitting `Allow: /p/<address>`
+  // there would point a crawler at a path that 404s on that host — a
+  // robots.txt that de-indexes the very site it exists to open up.
+  const onHost = Boolean(addressFromHost(req.hostname));
+  res.send(`User-agent: *
+Allow: ${onHost ? '/' : `/p/${address}`}
+`);
+});
 
-module.exports = router;
+/**
+ * TWO SHAPES, ONE SET OF HANDLERS.
+ *
+ *   path:  app.rxnaija.com/p/<address>   mounted at /p
+ *   host:  <address>.rxnaija.com/        mounted at / when the host resolves
+ *
+ * The handlers are shared because resolveSiteKey already prefers the host
+ * over the path parameter, so the same code answers both without knowing
+ * which it was reached through. Only robots.txt cares, and it asks.
+ *
+ * Registering the same handler twice rather than redirecting one shape to
+ * the other is deliberate: a pharmacy that has printed the /p/ form on a
+ * flyer must keep working forever, and a redirect would cost every one of
+ * those visitors a round trip.
+ */
+router.get('/:slug', pageHandler);
+router.get('/:slug/go/:kind', goHandler);
+router.get('/:slug/robots.txt', robotsHandler);
+
+const hostRouter = express.Router();
+hostRouter.get('/', pageHandler);
+hostRouter.get('/go/:kind', goHandler);
+hostRouter.get('/robots.txt', robotsHandler);
+
+module.exports = { router, hostRouter, notFound };

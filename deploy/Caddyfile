@@ -57,6 +57,25 @@
 	servers {
 		protocols h1 h2
 	}
+
+	# ON-DEMAND CERTIFICATES, AND THE GATE IN FRONT OF THEM.
+	#
+	# Pharmacy websites live at <address>.rxnaija.com. A wildcard DNS record
+	# points every name under the domain at this box, so Caddy cannot know
+	# the hostnames in advance and issues each certificate on first request.
+	#
+	# That is also the danger. Without a gate, a stranger requesting
+	# whatever.rxnaija.com makes us ask Let's Encrypt for a certificate, and
+	# the weekly issuance limit is counted against the whole registered
+	# domain — so a few dozen junk hostnames would exhaust the budget real
+	# pharmacies need. `ask` is what stops that: Caddy calls the endpoint
+	# and only proceeds on a 200.
+	#
+	# The call goes to localhost and does NOT pass through the site blocks
+	# below, which is why they can safely 404 that path for everyone else.
+	on_demand_tls {
+		ask http://localhost:4000/api/internal/tls-ask
+	}
 }
 
 app.rxnaija.com {
@@ -103,6 +122,12 @@ app.rxnaija.com {
 		health_timeout 5s
 	}
 
+	# Caddy reaches /api/internal over localhost, never through this block.
+	# Anything arriving here asking for it came from the internet, and the
+	# answer it wants — whether a pharmacy address is published — is exactly
+	# what the public 404 refuses to disclose.
+	respond /api/internal/* 404
+
 	encode gzip zstd
 
 	header {
@@ -121,6 +146,57 @@ app.rxnaija.com {
 
 	log {
 		output file /var/log/caddy/rxnaija.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}
+
+# ---------------------------------------------------------------------
+# Every pharmacy website: <address>.rxnaija.com
+#
+# Requires a wildcard A record  *.rxnaija.com -> this host. Existing names
+# are unaffected: app has its own A record and www is a CNAME elsewhere,
+# and an explicit record always beats a wildcard.
+#
+# The app decides what is real. addressFromHost() strips the base domain,
+# rejects nested labels and refuses every RESERVED name — www, api, mail,
+# and the phishing-shaped set (secure, login, verify) — so this block being
+# a wildcard does not mean any hostname gets a page. It means any hostname
+# gets ASKED about.
+*.rxnaija.com {
+	tls {
+		# Gated by on_demand_tls.ask in the global block above. Removing that
+		# gate while leaving this line turns the wildcard DNS record into a
+		# way for anyone to burn our certificate quota.
+		on_demand
+	}
+
+	respond /api/internal/* 404
+
+	# No health_uri here on purpose. It is the same upstream as the block
+	# above, which already probes it every 30 seconds; a second probe of one
+	# process buys nothing and doubles the noise. If the app is down these
+	# pages 502 either way.
+	reverse_proxy localhost:4000
+
+	encode gzip zstd
+
+	header {
+		# The PAGE sets its own Content-Security-Policy — script-src 'none',
+		# which is what makes stored XSS unreachable on published sites. Caddy
+		# must not add or override one here, or that guarantee moves out of
+		# the code that reasons about it and into a proxy config.
+		#
+		# No includeSubDomains: a pharmacy address has no subdomains of its
+		# own, and asserting otherwise about names we do not control is a
+		# promise this file cannot keep.
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/rxnaija-sites.log {
 			roll_size 10MiB
 			roll_keep 5
 		}
