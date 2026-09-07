@@ -203,13 +203,15 @@ sync_caddy() {
   # So the last check asks the question a person would: can you still open
   # the dashboard over HTTPS?
   #
-  # --resolve pins the connection to this box, so it exercises THIS Caddy's
-  # certificate selection for that SNI rather than whatever DNS points at.
-  # A missing or unselectable certificate fails the handshake here, which is
-  # exactly the failure being guarded against.
+  # NO --resolve. It pinned this to 127.0.0.1 and that is exactly how the
+  # check passed while the dashboard was unreachable: over loopback Caddy
+  # served app.rxnaija.com perfectly, and from the public IP the identical
+  # request was refused. A check that passes when the site is down is worse
+  # than no check, because it launders a broken deploy as a good one. So this
+  # now resolves and connects the way a browser does.
   if [ -n "$DASHBOARD_HOST" ]; then
     sleep 2
-    if ! curl -fsS --max-time 15 --resolve "${DASHBOARD_HOST}:443:127.0.0.1" "https://${DASHBOARD_HOST}/api/live" >/dev/null 2>&1; then
+    if ! curl -fsS --max-time 15 "https://${DASHBOARD_HOST}/api/live" >/dev/null 2>&1; then
       say "ROLLING BACK — Caddy accepted the config but ${DASHBOARD_HOST} no longer serves HTTPS"
       caddy_restore "$backup" "$dst"
       if [ -n "$backup" ]; then rm -f "$backup"; fi
