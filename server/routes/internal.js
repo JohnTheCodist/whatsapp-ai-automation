@@ -46,6 +46,9 @@ const { addressFromHost, getPublishedSite } = require('../services/website/publi
 
 const router = express.Router();
 
+const TEXT = 'text/plain; charset=utf-8';
+const OK = 'ok\n';
+
 /** Caddy reads the status code and nothing else; the body is for humans curling it. */
 function deny(res) {
   return res.status(403).type('text/plain; charset=utf-8').send('no\n');
@@ -61,6 +64,30 @@ function deny(res) {
  *
  * @returns {string|null} the pharmacy address, or null to refuse outright
  */
+/**
+ * Hostnames this deployment serves itself, which are NOT pharmacy addresses.
+ *
+ * 2026-09-07, and this cost an outage. A wildcard site block matches every
+ * name under the domain — including app.rxnaija.com. Caddy therefore asked
+ * this endpoint before serving the DASHBOARD, and the answer was no, because
+ * `app` is in RESERVED. RESERVED exists to stop a pharmacy CLAIMING that name;
+ * it was never meant to say "do not serve it". Caddy aborted the handshake and
+ * the dashboard went dark, while pharmacy subdomains carried on working.
+ *
+ * The lesson is narrow and worth stating: refusing to issue a certificate is
+ * not the same act as refusing to route a request, and a list written for the
+ * second question gave a catastrophic answer to the first.
+ *
+ * Empty by default. A deployment that fronts nothing but pharmacy sites needs
+ * no entries; ours needs the dashboard.
+ */
+function ownHosts() {
+  return String(process.env.TLS_ASK_EXTRA_HOSTS || '')
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 function askableAddress(headers, domain) {
   // Arrived through the proxy, so it came from the internet rather than
   // from Caddy's own certificate machinery, whatever it claims to be.
@@ -73,7 +100,17 @@ function askableAddress(headers, domain) {
 }
 
 router.get('/tls-ask', asyncRoute(async (req, res) => {
-  const address = askableAddress(req.headers, req.query?.domain);
+  if (req.headers['x-forwarded-for']) return deny(res);
+
+  const domain = String(req.query?.domain || '').trim().toLowerCase();
+
+  // Our own hostnames first. They are not pharmacy addresses and will never
+  // be found in pharmacy_websites, so asking the database about them would
+  // answer no and take the dashboard offline — which is exactly what
+  // happened before this branch existed.
+  if (ownHosts().includes(domain)) return res.type(TEXT).send(OK);
+
+  const address = askableAddress(req.headers, domain);
   if (!address) return deny(res);
 
   const site = await getPublishedSite(address);
@@ -84,3 +121,4 @@ router.get('/tls-ask', asyncRoute(async (req, res) => {
 
 module.exports = router;
 module.exports.askableAddress = askableAddress;
+module.exports.ownHosts = ownHosts;

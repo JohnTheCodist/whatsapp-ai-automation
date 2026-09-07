@@ -1,14 +1,14 @@
 {
   "//": "Machine-readable companion to the baseline section of AGENTS.md. scripts/check-baseline.js reads THIS file; AGENTS.md explains it to humans. Keep the two in step — they are updated in the same commit or not at all.",
   "measuredOn": "2026-09-06",
-  "commit": "3b85b65",
-  "commitSubject": "Sync the Caddy config even when there is no code to deploy",
-  "workingTree": "pharmacy websites on their own subdomain (host routing + on-demand TLS gate)",
+  "commit": "2dbc433",
+  "commitSubject": "Stop a log file from silently reverting the whole proxy config",
+  "workingTree": "certificate gate must not refuse this deployment its own hostnames",
   "command": "node --test \"server/tests/*.test.js\"",
-  "//counts": "Floors and ceilings, not equalities. Measured 2026-09-06 WITHOUT a test database: 1405/956/442/7 — the committed default, and the numbers recorded here. The 10 added since 1395/946 are all database-free (9 in tlsAsk.test.js, 1 golden), so they run in both environments and the skipped ceiling did not move. WITH a test database the last measurement was 2026-09-05 on the website-builder branch alone (1385/1381/0/4); it has NOT been re-measured since, so do not quote a configured-run number as though it were observed.",
+  "//counts": "Floors and ceilings, not equalities. Measured 2026-09-06 WITHOUT a test database: 1408/959/442/7 — the committed default, and the numbers recorded here. The 13 added since 1395/946 are all database-free (9 in tlsAsk.test.js, 1 golden), so they run in both environments and the skipped ceiling did not move. WITH a test database the last measurement was 2026-09-05 on the website-builder branch alone (1385/1381/0/4); it has NOT been re-measured since, so do not quote a configured-run number as though it were observed.",
   "counts": {
-    "total": 1405,
-    "pass": 956,
+    "total": 1408,
+    "pass": 959,
     "skipped": 442,
     "failed": 7
   },
@@ -80,5 +80,5 @@
     }
   ],
   "//goldenSuite": "server/tests/golden.test.js — one test per lesson that cost something. Organised by incident, not by module. Never skips: no database, no network, no model. Entries are only ever added. GOLDEN-001 (tenant isolation, 3), GOLDEN-002 (test-database separation, 3), GOLDEN-003 (tool refusal retry loop, 1), GOLDEN-004 (test-database redirect defeated by require order, 1), GOLDEN-005 (SPA fallback swallowing published pharmacy websites: 005 and 005b for the /p/ path form, 005c for the <address>.rxnaija.com host form, 3), GOLDEN-006 (health check restarting the process on a database blip, 1). 12 tests. Added 2026-08-29, extended 2026-09-05 and 2026-09-06.",
-  "//lastChange": "Pharmacy websites answer on their own hostname (2026-09-06). resolveSiteKey already preferred the host, but the router was mounted only at /p — so <address>.rxnaija.com/ had path \"/\", matched nothing, and fell to the SPA fallback, which would have served the DASHBOARD SHELL at 200 to every pharmacy customer and to Google. The same failure GOLDEN-005 exists to prevent, reached by the other shape; GOLDEN-005c now covers it, and was verified to fail when the bug is reintroduced. Certificates are issued on demand behind /api/internal/tls-ask, because a wildcard DNS record otherwise lets a stranger burn a weekly issuance limit counted against the whole registered domain. Measured after: 1405/956/442/7, +10 all database-free."
+  "//lastChange": "The certificate gate locked out the dashboard (2026-09-07). A wildcard site block matches every name under the domain, so Caddy asked /api/internal/tls-ask before serving app.rxnaija.com and was refused, because app is in RESERVED. The handshake aborted; pharmacy subdomains kept working while the dashboard went dark. RESERVED answers \"may a pharmacy claim this name\" and was read as \"should this name be served at all\" — refusing to issue a certificate is not the same act as refusing to route a request. TLS_ASK_EXTRA_HOSTS now lists the hostnames this deployment serves itself. Measured after: 1408/959/442/7, +3 database-free."
 }

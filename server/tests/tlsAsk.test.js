@@ -83,3 +83,39 @@ test('missing headers do not throw', () => {
   assert.equal(askableAddress(null, 'sterling.rxnaija.com'), 'sterling');
   assert.equal(askableAddress(undefined, 'sterling.rxnaija.com'), 'sterling');
 });
+
+/**
+ * Our own hostnames.
+ *
+ * These tests exist because their absence caused an outage on 2026-09-07. A
+ * wildcard site block matches every name under the domain, so Caddy asked this
+ * endpoint before serving app.rxnaija.com — and got a refusal, because `app` is
+ * in RESERVED. The dashboard went dark while pharmacy subdomains kept working.
+ *
+ * RESERVED answers "may a pharmacy claim this name?". It was read as if it
+ * answered "should this name be served at all?". Those are different questions
+ * and only one of them can take the product offline.
+ */
+const { ownHosts } = require('../routes/internal');
+
+test('own hosts are empty unless configured', () => {
+  delete process.env.TLS_ASK_EXTRA_HOSTS;
+  assert.deepEqual(ownHosts(), []);
+});
+
+test('own hosts are parsed, trimmed and lower-cased', () => {
+  // Whatever shape the operator typed into .env.production. A hostname is
+  // case-insensitive and Caddy sends it lower-case, so a capitalised entry
+  // that silently never matched would reproduce the outage exactly.
+  process.env.TLS_ASK_EXTRA_HOSTS = ' App.RxNaija.com , admin.rxnaija.com ,,';
+  assert.deepEqual(ownHosts(), ['app.rxnaija.com', 'admin.rxnaija.com']);
+  delete process.env.TLS_ASK_EXTRA_HOSTS;
+});
+
+test('being an own host does not make it a pharmacy address', () => {
+  // The two answers stay separate. app.rxnaija.com may obtain a certificate;
+  // it must still never resolve to a pharmacy's website.
+  process.env.TLS_ASK_EXTRA_HOSTS = 'app.rxnaija.com';
+  assert.equal(askableAddress({}, 'app.rxnaija.com'), null);
+  delete process.env.TLS_ASK_EXTRA_HOSTS;
+});
