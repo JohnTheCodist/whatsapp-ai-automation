@@ -1,6 +1,18 @@
 /**
  * Endpoints Caddy calls. Not people, and not the dashboard.
  *
+ * CURRENTLY UNREFERENCED, and kept deliberately. deploy/Caddyfile no longer
+ * declares on-demand TLS: the wildcard site block it belonged to matched
+ * app.rxnaija.com and took the dashboard offline three times on 2026-09-07,
+ * so pharmacy hostnames are now written out explicitly by
+ * scripts/generate-caddy-sites.js and get ordinary certificates.
+ *
+ * Nothing calls this today. It stays because the reasoning below is the
+ * expensive part — what a certificate gate must refuse, and why — and that
+ * is worth more than the twenty lines it costs. If on-demand is ever
+ * reconsidered, this is what it needs. If it is not, delete the route, its
+ * mount in server/index.js and server/tests/tlsAsk.test.js together.
+ *
  * WHY THIS EXISTS
  * Pharmacy websites live at <address>.rxnaija.com, which needs a certificate
  * per subdomain. Caddy can issue those on demand, but a wildcard DNS record

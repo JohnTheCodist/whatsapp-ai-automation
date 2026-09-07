@@ -131,6 +131,59 @@ restart_and_verify() {
 # path above because that one knows WHY Caddy said no and can print it;
 # this one is reached when Caddy said yes and the site broke anyway, where
 # there is no error to quote — only a site that stopped answering.
+# Regenerate the per-pharmacy site blocks from the database.
+#
+# Runs as the app user with the production environment, exactly like the
+# migration step, because it reads the same database. It writes to a staging
+# path that user can actually write and root installs the result — /etc/caddy
+# is not writable by rxnaija and should not become so.
+#
+# A failure here is deliberately NOT fatal. The existing generated file keeps
+# serving every pharmacy already published; refusing to deploy the application
+# because a config file could not be regenerated would turn a cosmetic problem
+# into an outage.
+#
+# Exit codes from the script: 0 unchanged, 10 written, anything else failed.
+PHARMACY_SITES_CHANGED=0
+generate_pharmacy_sites() {
+  local script="$APP_DIR/scripts/generate-caddy-sites.js"
+  local staged="/tmp/rxnaija-pharmacy-sites.conf"
+  local out="/etc/caddy/pharmacy-sites.conf"
+
+  [ -f "$script" ] || return 0
+  command -v caddy >/dev/null 2>&1 || return 0
+
+  say "Regenerating pharmacy site blocks"
+  rm -f "$staged"
+
+  local rc=0
+  as_app '
+    set -o pipefail
+    cd '"$APP_DIR"'
+    set -a; . ./.env.production; set +a
+    node scripts/generate-caddy-sites.js '"$staged"'
+  ' || rc=$?
+
+  if [ "$rc" != "0" ] && [ "$rc" != "10" ]; then
+    say "Could not regenerate pharmacy sites — the ones already published stay as they are"
+    return 0
+  fi
+
+  if [ -f "$staged" ]; then
+    if [ ! -f "$out" ] || ! cmp -s "$staged" "$out"; then
+      sudo cp "$staged" "$out"
+      PHARMACY_SITES_CHANGED=1
+    fi
+    rm -f "$staged"
+  elif [ ! -f "$out" ]; then
+    # The import is a glob, so a missing file is survivable. An explicit empty
+    # one still reads better: "generated, nothing published" rather than
+    # "never ran".
+    echo "# no published pharmacy websites" | sudo tee "$out" >/dev/null
+    PHARMACY_SITES_CHANGED=1
+  fi
+}
+
 caddy_restore() {
   local backup="$1" dst="$2"
   # Prefer the last VERIFIED config over the merely previous one.
@@ -158,7 +211,15 @@ sync_caddy() {
   command -v caddy >/dev/null 2>&1 || return 0
   [ -f "$src" ] || return 0
 
-  if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
+  # Before comparing anything: the generated pharmacy blocks are part of the
+  # configuration Caddy will load, so they have to be current before we decide
+  # whether a reload is needed.
+  generate_pharmacy_sites
+
+  # Unchanged means BOTH files. A pharmacy publishing a website changes only
+  # the generated one, and skipping the reload then would leave the new site
+  # unreachable while every check reported success.
+  if [ -f "$dst" ] && cmp -s "$src" "$dst" && [ "$PHARMACY_SITES_CHANGED" = "0" ]; then
     say "Caddy config already current"
     return 0
   fi

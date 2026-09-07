@@ -216,8 +216,8 @@ Command:  npm test
 
 eslint    0 errors, 44 warnings          (all no-unused-vars, in tests/helpers)
 
-tests     1408
-pass       959
+tests     1416
+pass       967
 skipped    442
 failed       7
 ```
@@ -486,10 +486,10 @@ After `npm test`, compare:
 
 | Observation | Meaning |
 |---|---|
-| **No test database:** 959 pass / 442 skip / 7 fail, categories A+B | No regression. Proceed. |
+| **No test database:** 967 pass / 442 skip / 7 fail, categories A+B | No regression. Proceed. |
 | **Test database configured:** ~1384 pass / 0 skip / 4 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. The figure is derived, not observed: the last measured configured run was 1381 on 2026-09-05, before three database-free tests were added. Re-measure and replace this with a real number rather than trusting the arithmetic. |
 | Any failure NOT among the 9 | **You broke something.** Fix the code, not the test. |
-| Fewer than 959 passing | Something stopped running. Find out what. |
+| Fewer than 967 passing | Something stopped running. Find out what. |
 | More than 442 skipped | A suite started skipping. That is a silent loss of coverage, not a pass — unless you added tests that skip, in which case say so and move the ceiling in the same commit. |
 | "writing pre-keys costs a constant number of round trips" fails | Known flaky against a local database, ~1 run in 4. Not in the baseline on purpose. Do not re-run until green — read the entry above and fix the yardstick. |
 

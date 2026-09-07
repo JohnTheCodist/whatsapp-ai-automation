@@ -1,14 +1,14 @@
 {
   "//": "Machine-readable companion to the baseline section of AGENTS.md. scripts/check-baseline.js reads THIS file; AGENTS.md explains it to humans. Keep the two in step — they are updated in the same commit or not at all.",
   "measuredOn": "2026-09-06",
-  "commit": "2dbc433",
-  "commitSubject": "Stop a log file from silently reverting the whole proxy config",
-  "workingTree": "certificate gate must not refuse this deployment its own hostnames",
+  "commit": "d4dec4c",
+  "commitSubject": "Roll back to a config that worked, not merely to an older one",
+  "workingTree": "pharmacy subdomains via generated per-host Caddy blocks (no wildcard)",
   "command": "node --test \"server/tests/*.test.js\"",
-  "//counts": "Floors and ceilings, not equalities. Measured 2026-09-06 WITHOUT a test database: 1408/959/442/7 — the committed default, and the numbers recorded here. The 13 added since 1395/946 are all database-free (9 in tlsAsk.test.js, 1 golden), so they run in both environments and the skipped ceiling did not move. WITH a test database the last measurement was 2026-09-05 on the website-builder branch alone (1385/1381/0/4); it has NOT been re-measured since, so do not quote a configured-run number as though it were observed.",
+  "//counts": "Floors and ceilings, not equalities. Measured 2026-09-08 WITHOUT a test database: 1416/967/442/7 — the committed default. The 8 added since 1408/959 are caddySites.test.js, a pure function over strings, so they run in both environments and the skipped ceiling did not move. WITH a test database the last measurement was 2026-09-05 on the website-builder branch alone (1385/1381/0/4) and has NOT been re-measured since; do not quote a configured-run number as though it were observed.",
   "counts": {
-    "total": 1408,
-    "pass": 959,
+    "total": 1416,
+    "pass": 967,
     "skipped": 442,
     "failed": 7
   },
@@ -80,5 +80,5 @@
     }
   ],
   "//goldenSuite": "server/tests/golden.test.js — one test per lesson that cost something. Organised by incident, not by module. Never skips: no database, no network, no model. Entries are only ever added. GOLDEN-001 (tenant isolation, 3), GOLDEN-002 (test-database separation, 3), GOLDEN-003 (tool refusal retry loop, 1), GOLDEN-004 (test-database redirect defeated by require order, 1), GOLDEN-005 (SPA fallback swallowing published pharmacy websites: 005 and 005b for the /p/ path form, 005c for the <address>.rxnaija.com host form, 3), GOLDEN-006 (health check restarting the process on a database blip, 1). 12 tests. Added 2026-08-29, extended 2026-09-05 and 2026-09-06.",
-  "//lastChange": "The certificate gate locked out the dashboard (2026-09-07). A wildcard site block matches every name under the domain, so Caddy asked /api/internal/tls-ask before serving app.rxnaija.com and was refused, because app is in RESERVED. The handshake aborted; pharmacy subdomains kept working while the dashboard went dark. RESERVED answers \"may a pharmacy claim this name\" and was read as \"should this name be served at all\" — refusing to issue a certificate is not the same act as refusing to route a request. TLS_ASK_EXTRA_HOSTS now lists the hostnames this deployment serves itself. Measured after: 1408/959/442/7, +3 database-free."
+  "//lastChange": "Pharmacy subdomains, second attempt (2026-09-08). The first used *.rxnaija.com with on-demand TLS and took the dashboard offline three times: that wildcard matches app.rxnaija.com, so Caddy served the DASHBOARD through the on-demand policy instead of the certificate it had held for months, and answered every handshake with tlsv1 alert internal error. Pharmacy subdomains worked throughout, which is why it survived three deploys. Neither allowlisting the dashboard in the ask endpoint nor giving it an explicit TLS connection policy helped — the failure is in which policy Caddy selects, not what it permits. Replaced with scripts/generate-caddy-sites.js, which writes one explicit site block per published address: no wildcard exists to capture a sibling. The 8 new tests cover the one genuinely dangerous part — those hostnames come from a column pharmacy owners control and are written into a Caddy config, where a brace or a newline is not a bad hostname but a new site block."
 }
