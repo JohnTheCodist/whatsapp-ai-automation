@@ -216,8 +216,8 @@ Command:  npm test
 
 eslint    0 errors, 44 warnings          (all no-unused-vars, in tests/helpers)
 
-tests     1388
-pass       939
+tests     1395
+pass       946
 skipped    442
 failed       7
 ```
@@ -311,6 +311,15 @@ Three files conflicted, all additively: this one, `test-baseline.json`, and
 numeric order). The 7 failures are the same pre-existing names as before the
 merge, and the skipped ceiling did not move — everything added on main since
 the branch was cut is database-free.
+
+**Added the deployed commit to the health endpoints, 2026-09-06 → measured
+1395/946/442/7.** The whole difference is `server/tests/version.test.js`: 7
+database-free tests over `.git` HEAD parsing, so they run whether or not a
+test database is configured. Nothing else moved. Worth recording is how the
+first attempt failed — GOLDEN-006 matches the `/api/live` route as TEXT, and
+the forbidden word appeared in a comment I had just written inside it. The
+comment was reworded; the test was left alone. That is rule 2 working on the
+person who wrote the rule.
 
 `test-baseline.json` holds the machine-readable copy that `npm run test:ci`
 reads. **The two are updated in the same commit or not at all.**
@@ -461,10 +470,10 @@ After `npm test`, compare:
 
 | Observation | Meaning |
 |---|---|
-| **No test database:** 939 pass / 442 skip / 7 fail, categories A+B | No regression. Proceed. |
+| **No test database:** 946 pass / 442 skip / 7 fail, categories A+B | No regression. Proceed. |
 | **Test database configured:** ~1384 pass / 0 skip / 4 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. The figure is derived, not observed: the last measured configured run was 1381 on 2026-09-05, before three database-free tests were added. Re-measure and replace this with a real number rather than trusting the arithmetic. |
 | Any failure NOT among the 9 | **You broke something.** Fix the code, not the test. |
-| Fewer than 939 passing | Something stopped running. Find out what. |
+| Fewer than 946 passing | Something stopped running. Find out what. |
 | More than 442 skipped | A suite started skipping. That is a silent loss of coverage, not a pass — unless you added tests that skip, in which case say so and move the ceiling in the same commit. |
 | "writing pre-keys costs a constant number of round trips" fails | Known flaky against a local database, ~1 run in 4. Not in the baseline on purpose. Do not re-run until green — read the entry above and fix the yardstick. |
 

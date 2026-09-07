@@ -16,6 +16,7 @@ const helmet = require('helmet');
 
 const { env, assertRequiredEnv, isChannelConfigured, isLlmConfigured } = require('./config/env');
 const { ping, warmPool, startKeepAlive, stopKeepAlive } = require('./services/db');
+const version = require('./config/version');
 const { requestId, notFound, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -125,7 +126,15 @@ app.use('/api', express.json({ limit: '2mb' }));
  * on the database. No queries, no awaits, no dependencies.
  */
 app.get('/api/live', (req, res) => {
-  res.json({ status: 'ok', uptime: Math.round(process.uptime()) });
+  // commit is a constant resolved at boot: no query, nothing asynchronous,
+  // nothing that could make liveness depend on the database. GOLDEN-006 reads
+  // this route as text and rejects the forbidden words anywhere in it,
+  // comments included — which is why this one is phrased around them rather
+  // than naming them. It belongs here as well as on
+  // /api/health because this is the endpoint that still answers during a
+  // database outage, which is exactly when somebody needs to know whether the
+  // deploy they just ran is the code that is actually running.
+  res.json({ status: 'ok', uptime: Math.round(process.uptime()), commit: version.shortCommit });
 });
 
 app.get('/api/health', async (req, res) => {
@@ -139,6 +148,8 @@ app.get('/api/health', async (req, res) => {
   res.status(database === 'up' ? 200 : 503).json({
     status: database === 'up' ? 'ok' : 'degraded',
     uptime: Math.round(process.uptime()),
+    commit: version.shortCommit,
+    commitSource: version.source,
     dependencies: {
       database,
       channel: isChannelConfigured() ? 'configured' : 'not_configured',

@@ -1,14 +1,14 @@
 {
   "//": "Machine-readable companion to the baseline section of AGENTS.md. scripts/check-baseline.js reads THIS file; AGENTS.md explains it to humans. Keep the two in step — they are updated in the same commit or not at all.",
   "measuredOn": "2026-09-06",
-  "commit": "8729e7d",
-  "commitSubject": "Stop dropping the messages of the patient who most needs an answer",
-  "workingTree": "merging website-builder into main (65 new files, 185 tests)",
+  "commit": "9d3d7cb",
+  "commitSubject": "Give a second pharmacy a way back to the first",
+  "workingTree": "server/config/version.js + its 7 tests, and the privacy policy page (static, untested)",
   "command": "node --test \"server/tests/*.test.js\"",
-  "//counts": "Floors and ceilings, not equalities. Measured 2026-09-06 on the merge of website-builder into main, WITHOUT a test database: 1388/939/442/7 — the committed default, and the numbers recorded here. WITH a test database the last measurement was 2026-09-05 on the branch alone (1385/1381/0/4); it has NOT been re-measured since the merge, so do not quote a configured-run number as though it were observed. What is known is that the three tests added since (GOLDEN-006 and two in conversationPolicy) are all database-free, so they run in both environments.",
+  "//counts": "Floors and ceilings, not equalities. Measured 2026-09-06 WITHOUT a test database — the committed default: 1395/946/442/7. The previous line was 1388/939/442/7; the whole difference is server/tests/version.test.js, which is database-free and therefore runs in both environments. WITH a test database the last measurement was 2026-09-05 on the website-builder branch alone (1385/1381/0/4) and it has NOT been re-measured since; do not quote a configured-run number as though it were observed.",
   "counts": {
-    "total": 1388,
-    "pass": 939,
+    "total": 1395,
+    "pass": 946,
     "skipped": 442,
     "failed": 7
   },
@@ -80,5 +80,5 @@
     }
   ],
   "//goldenSuite": "server/tests/golden.test.js — one test per lesson that cost something. Organised by incident, not by module. Never skips: no database, no network, no model. Entries are only ever added. GOLDEN-001 (tenant isolation, 3), GOLDEN-002 (test-database separation, 3), GOLDEN-003 (tool refusal retry loop, 1), GOLDEN-004 (test-database redirect defeated by require order, 1), GOLDEN-005 (SPA fallback swallowing published pharmacy websites, 2), GOLDEN-006 (health check restarting the process on a database blip, 1). 11 tests. Added 2026-08-29, extended 2026-09-05 and 2026-09-06.",
-  "//lastChange": "Merged website-builder into main (2026-09-06). The branch brought 185 tests and 65 files; main had meanwhile added GOLDEN-006 and, in conversationPolicy, two tests covering a production incident in which every inbound WhatsApp message from one patient was dropped for three days by a unique-index deadlock. Three files conflicted and all three were additive: golden.test.js (004/005/005b from the branch, 006 from main — kept in numeric order), AGENTS.md and this file. Measured after merging, no test database: 1388/939/442/7, and the 7 are the same pre-existing names as before. The skipped ceiling did not move: everything added since the branch was cut is database-free."
+  "//lastChange": "Added server/config/version.js — the deployed commit SHA, now returned by /api/health and /api/live — with 7 tests over the .git HEAD parsing (2026-09-06). Only resolveHead is tested: the rest of the module is a try/catch around a file read that is allowed to fail, while resolveHead has branches and fails SILENTLY, reporting no commit at all in a way that reads like an older deploy. The packed-refs case is the one that matters, because a fresh clone on a deploy box often has no loose refs and a resolver that only reads .git/refs/heads/<branch> then works on every developer machine and returns null on every server. GOLDEN-006 caught the first attempt: the word it forbids inside /api/live appeared in a COMMENT I had written there, and the route is matched as text. The comment was reworded rather than the test loosened."
 }
