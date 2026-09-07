@@ -41,6 +41,15 @@ APP_USER="rxnaija"
 # deliberate opt-out rather than an accident.
 DASHBOARD_HOST="app.rxnaija.com"
 
+# The last Caddy config that was VERIFIED serving the dashboard.
+#
+# 2026-09-07: a failed deploy rolled back to whatever was in
+# /etc/caddy/Caddyfile beforehand — which was itself a broken config from
+# the previous deploy. The rollback ran, reported success, and left the
+# dashboard down. Restoring the previous file is only a fix when the
+# previous file worked, and nothing had ever checked that.
+CADDY_GOOD="/var/lib/caddy/last-known-good.Caddyfile"
+
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$1"; }
 
 cd "$APP_DIR"
@@ -124,6 +133,13 @@ restart_and_verify() {
 # there is no error to quote — only a site that stopped answering.
 caddy_restore() {
   local backup="$1" dst="$2"
+  # Prefer the last VERIFIED config over the merely previous one.
+  if [ -f "$CADDY_GOOD" ]; then
+    sudo cp "$CADDY_GOOD" "$dst"
+    sudo systemctl reload caddy || true
+    say "Restored the last Caddy config VERIFIED to serve the dashboard"
+    return 0
+  fi
   if [ -n "$backup" ]; then
     sudo cp "$backup" "$dst"
     sudo systemctl reload caddy || true
@@ -219,6 +235,10 @@ sync_caddy() {
       exit 1
     fi
   fi
+
+ # Verified serving. Remember it, so a future failure has something known
+  # good to fall back to rather than merely something older.
+  sudo cp "$dst" "$CADDY_GOOD"
 
   if [ -n "$backup" ]; then rm -f "$backup"; fi
   say "Caddy config installed and reloaded"
