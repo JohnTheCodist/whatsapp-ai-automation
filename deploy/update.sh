@@ -1,4 +1,28 @@
 #!/usr/bin/env bash
+
+# SELF-MODIFICATION GUARD — the brace below wraps this ENTIRE script, and it
+# is load-bearing rather than cosmetic.
+#
+# This script runs `git reset --hard origin/main` on the directory it lives
+# in, so it REWRITES ITSELF halfway through. Bash does not read a script once
+# and run it from memory; it reads incrementally and keeps a byte offset. If
+# the file changes size underneath a running shell, the next read returns
+# whatever now sits at that old offset — a fragment of a different line. The
+# result is not a clean failure. It is a deploy that executes garbage, on the
+# box holding every pharmacy's WhatsApp socket.
+#
+# This was survivable by accident until 2026-09-06: the file was about 7 KB,
+# under the ~8 KB bash reads in one go, so it happened to be fully buffered
+# before the reset landed. Adding sync_caddy pushed it to ~8.9 KB and over
+# that line.
+#
+# Wrapping everything in `{ ... }` makes it a single compound command, and a
+# compound command must be PARSED IN FULL before any of it executes. The
+# whole file is therefore read before the reset can touch it. `exit 0` before
+# the closing brace means nothing after it is ever reached either.
+#
+# Do not remove the braces to tidy the indentation.
+{
 #
 # Deploy the latest main. Run on the box:  bash /opt/rxnaija/deploy/update.sh
 #
@@ -211,3 +235,6 @@ sync_caddy() {
 }
 
 sync_caddy
+
+exit 0
+}
