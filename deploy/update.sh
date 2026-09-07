@@ -36,6 +36,11 @@ set -euo pipefail
 APP_DIR="/opt/rxnaija"
 APP_USER="rxnaija"
 
+# The hostname whose TLS must survive every proxy change. Empty disables the
+# post-reload check — right for a box that fronts no dashboard, and a
+# deliberate opt-out rather than an accident.
+DASHBOARD_HOST="app.rxnaija.com"
+
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$1"; }
 
 cd "$APP_DIR"
@@ -113,6 +118,21 @@ restart_and_verify() {
 # a syntax error fails this script rather than taking the site down. Only then
 # is it copied, and `reload` (not `restart`) swaps config without dropping
 # connections.
+# Put back the config that was working. Separate from the refused-reload
+# path above because that one knows WHY Caddy said no and can print it;
+# this one is reached when Caddy said yes and the site broke anyway, where
+# there is no error to quote — only a site that stopped answering.
+caddy_restore() {
+  local backup="$1" dst="$2"
+  if [ -n "$backup" ]; then
+    sudo cp "$backup" "$dst"
+    sudo systemctl reload caddy || true
+    say "Restored the previous /etc/caddy/Caddyfile — Caddy is serving what it was before"
+  else
+    say "There was no previous config to restore"
+  fi
+}
+
 sync_caddy() {
   local src="$APP_DIR/deploy/Caddyfile"
   local dst="/etc/caddy/Caddyfile"
@@ -174,6 +194,30 @@ sync_caddy() {
   # function — an empty backup is the normal case on a box with no previous
   # config, and the deploy would then fail after having fully succeeded. The
   # if form does not depend on what comes after it.
+  # A SUCCESSFUL RELOAD IS NOT A WORKING SITE. 2026-09-07: adding a
+  # *.rxnaija.com block reloaded cleanly, Caddy reported itself healthy, and
+  # the dashboard went dark — the wildcard captured app.rxnaija.com and Caddy
+  # stopped presenting a certificate for it. Every check this function had
+  # was green while the control panel every pharmacy uses was unreachable.
+  #
+  # So the last check asks the question a person would: can you still open
+  # the dashboard over HTTPS?
+  #
+  # --resolve pins the connection to this box, so it exercises THIS Caddy's
+  # certificate selection for that SNI rather than whatever DNS points at.
+  # A missing or unselectable certificate fails the handshake here, which is
+  # exactly the failure being guarded against.
+  if [ -n "$DASHBOARD_HOST" ]; then
+    sleep 2
+    if ! curl -fsS --max-time 15 --resolve "${DASHBOARD_HOST}:443:127.0.0.1" "https://${DASHBOARD_HOST}/api/live" >/dev/null 2>&1; then
+      say "ROLLING BACK — Caddy accepted the config but ${DASHBOARD_HOST} no longer serves HTTPS"
+      caddy_restore "$backup" "$dst"
+      if [ -n "$backup" ]; then rm -f "$backup"; fi
+      say "The app is deployed and running. Only the proxy config was reverted."
+      exit 1
+    fi
+  fi
+
   if [ -n "$backup" ]; then rm -f "$backup"; fi
   say "Caddy config installed and reloaded"
 }
