@@ -195,8 +195,26 @@ app.rxnaija.com {
 		-Server
 	}
 
+	# THE SAME FILE AS THE DASHBOARD BLOCK, AND NOT A NEW ONE.
+	#
+	# 2026-09-07: this named rxnaija-sites.log, and Caddy refused to load the
+	# WHOLE configuration rather than just that line:
+	#
+	#   open /var/log/caddy/rxnaija-sites.log: permission denied
+	#
+	# caddy can write the existing file, which root created at install and
+	# chowned, but it cannot CREATE a new one in that directory. So the least
+	# important line in this file silently reverted the server to its previous
+	# config, taking the wildcard block and on-demand TLS with it. Every
+	# pharmacy subdomain answered ERR_SSL_PROTOCOL_ERROR, and the cause was a
+	# file permission on a log.
+	#
+	# `caddy validate` does not catch this. It parses the configuration; it
+	# does not open the outputs. Reusing a file already proven writable removes
+	# the failure mode instead of documenting it. Separate files would be
+	# tidier, and a deploy that cannot fail on a chown is worth more.
 	log {
-		output file /var/log/caddy/rxnaija-sites.log {
+		output file /var/log/caddy/rxnaija.log {
 			roll_size 10MiB
 			roll_keep 5
 		}

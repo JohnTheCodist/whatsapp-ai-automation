@@ -134,8 +134,47 @@ sync_caddy() {
     exit 1
   fi
 
+  # VALIDATE IS NOT ENOUGH, AND 2026-09-07 proved it. `caddy validate` parses
+  # the configuration; it does not open the things the configuration points
+  # at. A log file the caddy user could not create passed validation and then
+  # failed the reload with HTTP 400 — so Caddy kept serving its previous
+  # config while /etc/caddy/Caddyfile on disk held the new one.
+  #
+  # That split state is the actual danger. It looks deployed, it is not, and
+  # the next thing to restart Caddy — a certificate renewal, a reboot — loads
+  # the broken file and the site does not come back at all. So a failed
+  # reload puts the old file back and reloads again, leaving the box in the
+  # state it was in before this function ran.
+  local backup=""
+  if [ -f "$dst" ]; then
+    backup="$(mktemp)"
+    sudo cp "$dst" "$backup"
+  fi
+
   sudo cp "$src" "$dst"
-  sudo systemctl reload caddy
+
+  if ! sudo systemctl reload caddy; then
+    printf '\n\033[1;31m==> Caddy REFUSED the new config. Rolling back.\033[0m\n'
+    if [ -n "$backup" ]; then
+      sudo cp "$backup" "$dst"
+      sudo systemctl reload caddy || true
+      printf '    /etc/caddy/Caddyfile restored; Caddy is serving what it was before.\n'
+    else
+      printf '    There was no previous config to restore.\n'
+    fi
+    printf '    The reason it refused:\n\n'
+    sudo journalctl -u caddy -n 20 --no-pager | grep -i error || true
+    printf '\n    The app is deployed and running; only the proxy config was rejected.\n'
+    exit 1
+  fi
+
+  # An if, not `[ -n ... ] && rm`. Checked rather than assumed: in THIS
+  # position the && form does not trip set -e, because a later command
+  # follows it. It would the moment it became the last statement in the
+  # function — an empty backup is the normal case on a box with no previous
+  # config, and the deploy would then fail after having fully succeeded. The
+  # if form does not depend on what comes after it.
+  if [ -n "$backup" ]; then rm -f "$backup"; fi
   say "Caddy config installed and reloaded"
 }
 
