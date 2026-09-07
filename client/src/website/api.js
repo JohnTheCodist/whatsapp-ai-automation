@@ -211,12 +211,22 @@ export const restoreRevision = (id) =>
 /**
  * The address a customer would type.
  *
- * Built from the browser's own origin rather than from a configured base URL,
- * because there is no configured base URL — the same build serves localhost,
- * the Render hostname and whatever custom domain arrives later, and it must
- * show the right one in all three.
+ * TWO SHAPES, AND THE BROWSER CANNOT TELL WHICH ONE IS LIVE.
+ *
+ *   <address>.rxnaija.com    once wildcard DNS and a certificate exist
+ *   app.rxnaija.com/p/<address>   always
+ *
+ * The dashboard is served from app.rxnaija.com in both cases, so deriving this
+ * from window.location silently yields the path form even when subdomains are
+ * configured. That is not a cosmetic error: this string is what a pharmacy
+ * prints on a flyer and puts in a shop window. Only the server knows, because
+ * only the server reads PUBLIC_SITE_DOMAIN — so it tells us.
+ *
+ * Falling back to the origin is correct rather than merely safe: with no
+ * wildcard DNS, the path form IS the real address.
  */
-export function publicUrl(address) {
+export function publicUrl(address, publicDomain = null) {
   if (!address) return null;
+  if (publicDomain) return `https://${address}.${publicDomain}`;
   return `${window.location.origin}/p/${address}`;
 }

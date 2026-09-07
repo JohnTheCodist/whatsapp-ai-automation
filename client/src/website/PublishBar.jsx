@@ -34,13 +34,13 @@ function Badge({ status }) {
   return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${styles}`}>{label}</span>;
 }
 
-export default function PublishBar({ site, onChanged }) {
+export default function PublishBar({ site, publicDomain = null, onChanged }) {
   const [address, setAddress] = useState(site.subdomain || '');
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const [note, setNote] = useState(null);
 
-  const url = api.publicUrl(site.subdomain);
+  const url = api.publicUrl(site.subdomain, publicDomain);
   const isPublished = site.status === 'published';
 
   async function run(kind, fn) {
@@ -86,10 +86,17 @@ export default function PublishBar({ site, onChanged }) {
               This is what customers will type. Choose carefully — it is meant to last, and
               you will be printing it.
             </span>
+            {/* The fixed part changes SIDES with the shape, which is the whole
+                reason this is not a single string. As a path the address comes
+                last (app.rxnaija.com/p/ikeja); as a subdomain it comes first
+                (ikeja.rxnaija.com). Showing the wrong one here is not a display
+                bug — it is a pharmacy printing an address that does not exist. */}
             <div className="mt-1.5 flex items-center gap-2">
-              <span className="shrink-0 font-mono text-sm text-slate-400">
-                {window.location.host}/p/
-              </span>
+              {!publicDomain && (
+                <span className="shrink-0 font-mono text-sm text-slate-400">
+                  {window.location.host}/p/
+                </span>
+              )}
               <input
                 className={inputClass}
                 value={address}
@@ -98,6 +105,11 @@ export default function PublishBar({ site, onChanged }) {
                 autoComplete="off"
                 spellCheck={false}
               />
+              {publicDomain && (
+                <span className="shrink-0 font-mono text-sm text-slate-400">
+                  .{publicDomain}
+                </span>
+              )}
             </div>
           </label>
           <button

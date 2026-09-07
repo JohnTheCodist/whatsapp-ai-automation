@@ -44,6 +44,10 @@ const Editor = lazy(() => import('./Editor.jsx'));
 
 export default function WebsitePanel({ onNavigate }) {
   const [site, setSite] = useState(undefined); // undefined = loading, null = none yet
+  // The domain pharmacy sites hang off, or null when only the path form is
+  // live. Comes from the server because the browser cannot tell — see
+  // api.publicUrl.
+  const [publicDomain, setPublicDomain] = useState(null);
   const [error, setError] = useState(null);
   // Bumped whenever something the preview renders has changed. See PreviewPane.
   const [nonce, setNonce] = useState(() => Date.now());
@@ -52,7 +56,13 @@ export default function WebsitePanel({ onNavigate }) {
   useEffect(() => {
     let live = true;
     api.getWebsite()
-      .then((res) => live && setSite(res.site))
+      .then((res) => {
+        if (!live) return;
+        // Before setSite, which is what unblocks the render: the publish bar
+        // must never paint a frame showing the wrong address shape.
+        setPublicDomain(res.publicDomain || null);
+        setSite(res.site);
+      })
       .catch((err) => live && setError(err.message));
     return () => { live = false; };
   }, []);
@@ -113,6 +123,7 @@ export default function WebsitePanel({ onNavigate }) {
         <div className="mb-5">
           <PublishBar
             site={site}
+            publicDomain={publicDomain}
             onChanged={(updated) => { setSite(updated); refreshPreview(); }}
           />
         </div>

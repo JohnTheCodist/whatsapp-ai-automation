@@ -268,7 +268,7 @@ is a database act; they moved the skipped ceiling 404 → 420.
 Website builder phase 5 (2026-09-06) added the advanced editor and **no
 server tests at all** — these counts are unchanged by it. Its 18 tests are
 client-side and run under `npm run test:ci`, which is worth knowing before
-concluding that a phase shipped untested: the client suite is now 27 tests and
+concluding that a phase shipped untested: the client suite is now 31 tests and
 is where the editor's correctness lives, because the editor is client code.
 The one that matters most asserts that `site_data` survives a round trip
 through the editor unchanged, against the server's real block manifest rather

@@ -29,6 +29,7 @@ const { listTemplates } = require('../services/website/templates');
 const { renderDocument } = require('../services/website/document');
 const { editorManifest } = require('../services/website/blocks/editorManifest');
 const { themeOptions } = require('../services/website/blocks/theme');
+const { baseDomain } = require('../services/website/publicSite');
 const { renderBlock } = require('../services/website/blocks');
 const { stylesheet } = require('../services/website/blocks/stylesheet');
 
@@ -89,7 +90,12 @@ function unwrap(result) {
  */
 router.get('/', requireAuth, asyncRoute(async (req, res) => {
   const site = await website.getWebsite(req.pharmacyId);
-  res.json({ site });
+  // The dashboard cannot work this out for itself. It is always served from
+  // app.rxnaija.com, so deriving the address from window.location produces the
+  // PATH form even when subdomains are live — and this is the screen that tells
+  // an owner they will be printing it. Null means subdomains are not
+  // configured, in which case the path form genuinely is the real address.
+  res.json({ site, publicDomain: baseDomain() || null });
 }));
 
 /**

@@ -81,3 +81,42 @@ test('the preview URL changes with the nonce, so the iframe actually reloads', (
   expect(api.previewUrl(1)).not.toBe(api.previewUrl(2));
   expect(api.previewUrl(7)).toContain('/api/website/preview.html');
 });
+
+/**
+ * publicUrl — the string a pharmacy prints.
+ *
+ * These tests exist because the failure is not a broken page, it is a flyer.
+ * The dashboard is served from app.rxnaija.com whether or not subdomains are
+ * live, so a version of this that guesses from window.location looks correct
+ * in every environment and is wrong in exactly one: the one where subdomains
+ * work. By then it is on paper.
+ */
+test('with no public domain, the address is a path on the dashboard origin', () => {
+  // The fallback is not a degraded mode. Without wildcard DNS the path form
+  // IS the address, and it keeps working forever afterwards.
+  globalThis.window = { location: { origin: 'https://app.rxnaija.com' } };
+  expect(api.publicUrl('ikeja-family-pharmacy'))
+    .toBe('https://app.rxnaija.com/p/ikeja-family-pharmacy');
+});
+
+test('with a public domain, the address becomes the subdomain', () => {
+  globalThis.window = { location: { origin: 'https://app.rxnaija.com' } };
+  expect(api.publicUrl('ikeja-family-pharmacy', 'rxnaija.com'))
+    .toBe('https://ikeja-family-pharmacy.rxnaija.com');
+});
+
+test('the subdomain form does not consult the browser at all', () => {
+  // Proves the origin is not silently mixed in. If this ever throws, something
+  // reintroduced a window.location read on the path that must not have one.
+  globalThis.window = undefined;
+  expect(api.publicUrl('naspaa', 'rxnaija.com')).toBe('https://naspaa.rxnaija.com');
+});
+
+test('no address means no URL, in either shape', () => {
+  // The publish bar renders this before an address is chosen.
+  globalThis.window = { location: { origin: 'https://app.rxnaija.com' } };
+  for (const empty of ['', null, undefined]) {
+    expect(api.publicUrl(empty)).toBe(null);
+    expect(api.publicUrl(empty, 'rxnaija.com')).toBe(null);
+  }
+});
