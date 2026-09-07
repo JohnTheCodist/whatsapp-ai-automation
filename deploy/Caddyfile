@@ -79,6 +79,31 @@
 }
 
 app.rxnaija.com {
+	# AN EXPLICIT TLS POLICY, AND ITS ONLY JOB IS TO EXIST.
+	#
+	# *.rxnaija.com matches app.rxnaija.com. When that wildcard block below
+	# declares tls { on_demand }, Caddy builds ONE connection policy from it
+	# and this hostname falls under it — so serving the dashboard started
+	# depending on on-demand issuance instead of the certificate Caddy had
+	# already held for months.
+	#
+	# 2026-09-07, measured from the box through its own public IP:
+	#   tlsv1 alert internal error
+	# Caddy could not produce a certificate for the handshake and said so.
+	# naspaa.rxnaija.com worked throughout, because on-demand is right FOR a
+	# pharmacy subdomain and wrong for this one.
+	#
+	# Allowing app.rxnaija.com through the ask endpoint did not fix it: the
+	# problem is which policy is chosen, not what that policy permits.
+	#
+	# Naming any tls setting gives this site its own connection policy, which
+	# the wildcard cannot then claim. The values are Caddy defaults on
+	# purpose — nothing here is tuning TLS, and changing issuance was avoided
+	# deliberately so the certificate already in storage keeps being used.
+	tls {
+		protocols tls1.2 tls1.3
+	}
+
 	# Everything is one upstream: the Node process serves both /api and the
 	# built dashboard (see the static block in server/index.js). No separate
 	# root or file_server here — routing already happens inside the app, and
