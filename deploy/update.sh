@@ -162,3 +162,52 @@ as_app '
 '
 
 restart_and_verify
+
+# ---------------------------------------------------------------------
+# Caddy config, synced from the repo.
+#
+# WHY THIS IS HERE INSTEAD OF BEING A SECOND COMMAND SOMEBODY REMEMBERS
+# deploy/Caddyfile has been version-controlled all along, but nothing ever
+# applied it. Installing it was a separate `sudo cp && systemctl reload caddy`
+# that a human had to run after the deploy, and on 2026-09-06 that step was
+# missed twice running: once for the health-probe fix, once for the HTTP/3
+# fix. Both times git said the fix had shipped, the repo was correct, the box
+# was not, and the dashboard stayed broken — with the second one presenting as
+# ERR_QUIC_PROTOCOL_ERROR, which looks nothing like "you forgot to copy a
+# file".
+#
+# A config that lives in the repo but is applied by hand is not deployed. It
+# is a suggestion.
+#
+# VALIDATED BEFORE IT IS INSTALLED, which is what makes automating this safe:
+# `caddy validate` parses the NEW file while the OLD one is still serving, so
+# a syntax error fails this script rather than taking the site down. Only then
+# is it copied, and `reload` (not `restart`) swaps config without dropping
+# connections.
+sync_caddy() {
+  local src="$APP_DIR/deploy/Caddyfile"
+  local dst="/etc/caddy/Caddyfile"
+
+  # Not every environment fronts this with Caddy — a local box, or a platform
+  # that terminates TLS itself. Absent is not a failure.
+  command -v caddy >/dev/null 2>&1 || return 0
+  [ -f "$src" ] || return 0
+
+  if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
+    say "Caddy config already current"
+    return 0
+  fi
+
+  say "Caddy config differs — validating before installing"
+  if ! sudo caddy validate --config "$src" --adapter caddyfile >/dev/null 2>&1; then
+    printf '\n\033[1;31m==> deploy/Caddyfile is INVALID. The live config was left untouched.\033[0m\n'
+    sudo caddy validate --config "$src" --adapter caddyfile || true
+    exit 1
+  fi
+
+  sudo cp "$src" "$dst"
+  sudo systemctl reload caddy
+  say "Caddy config installed and reloaded"
+}
+
+sync_caddy
