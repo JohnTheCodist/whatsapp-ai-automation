@@ -81,6 +81,16 @@ export const renderBlocks = (siteData) =>
 export const createWebsite = (templateId) =>
   call('', { method: 'POST', body: JSON.stringify({ template_id: templateId }) });
 
+/**
+ * Switch an existing website to a different template.
+ *
+ * Draft-only, like saveSiteData — nothing about the public site changes
+ * until the owner publishes. Theme and content (health-guide choices, etc.)
+ * are untouched server-side; only the page structure changes.
+ */
+export const switchTemplate = (templateId) =>
+  call('/template', { method: 'PUT', body: JSON.stringify({ template_id: templateId }) });
+
 export const saveSiteData = (siteData) =>
   call('/site', { method: 'PUT', body: JSON.stringify({ site_data: siteData }) });
 
@@ -157,8 +167,16 @@ export async function savePublicWhatsappNumber(number) {
   return payload;
 }
 
-/** Cache-busted so the iframe re-fetches after every save. */
-export const previewUrl = (nonce) => `/api/website/preview.html?v=${nonce}`;
+/**
+ * Cache-busted so the iframe re-fetches after every save.
+ *
+ * `templateId` is optional: pass it to preview a candidate template's
+ * structure (see TemplatePicker's "View preview") without changing the
+ * stored draft — the server renders that template's seed for this one
+ * response only. Omit it for the real draft, which is every other caller.
+ */
+export const previewUrl = (nonce, templateId = null) =>
+  `/api/website/preview.html?v=${nonce}${templateId ? `&template=${encodeURIComponent(templateId)}` : ''}`;
 
 // ---------------------------------------------------------------------
 // Images

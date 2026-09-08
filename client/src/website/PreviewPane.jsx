@@ -58,8 +58,13 @@ export default function PreviewPane({ nonce }) {
           key={`${device}-${nonce}`}
           title="Your website preview"
           src={api.previewUrl(nonce)}
-          className="h-full rounded-lg border border-slate-200 bg-white shadow-sm"
-          style={{ width: active.width ? `${active.width}px` : '100%', minHeight: '640px' }}
+          // Height climbs with the screen rather than being fixed. A single
+          // tall value makes this the focal point on a desktop — which is the
+          // point — but on a 812px-high phone the same number is taller than
+          // the whole viewport, so the page becomes one long empty scroll
+          // before anything else is reachable. Found on a 375px screen.
+          className="h-[60vh] min-h-[380px] rounded-lg border border-slate-200 bg-white shadow-sm sm:h-[620px] sm:min-h-0 xl:h-[820px]"
+          style={{ width: active.width ? `${active.width}px` : '100%' }}
           // The preview renders the pharmacy's own content through our own
           // renderer, and the page contains no JavaScript at all — but the
           // sandbox costs nothing and means a future block that somehow

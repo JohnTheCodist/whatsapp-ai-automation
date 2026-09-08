@@ -25,7 +25,7 @@ const website = require('../services/website/websiteService');
 const publish = require('../services/website/publishService');
 const assets = require('../services/website/assetService');
 const analytics = require('../services/website/analytics');
-const { listTemplates } = require('../services/website/templates');
+const { listTemplates, getTemplate, cloneSeed } = require('../services/website/templates');
 const { publishableArticles } = require('../services/website/health');
 const { renderDocument } = require('../services/website/document');
 const { editorManifest } = require('../services/website/blocks/editorManifest');
@@ -164,6 +164,21 @@ router.post('/', requireAuth, requireRole('owner', 'pharmacist'), asyncRoute(asy
  */
 router.put('/site', requireAuth, requireRole('owner', 'pharmacist'), asyncRoute(async (req, res) => {
   const result = unwrap(await website.saveSiteData(req.pharmacyId, req.body?.site_data));
+  res.json({ site: result.site });
+}));
+
+/**
+ * PUT /api/website/template — switch this pharmacy's website to another
+ * existing template.
+ *
+ * Same role as PUT /site: a reversible draft change a pharmacist may make,
+ * not an owner-only permanent decision like the address or publishing. See
+ * websiteService.switchTemplate for what is and is not touched — theme and
+ * content survive, only site_data and template_id/version change, and none
+ * of it is visible on the public site until the owner publishes.
+ */
+router.put('/template', requireAuth, requireRole('owner', 'pharmacist'), asyncRoute(async (req, res) => {
+  const result = unwrap(await website.switchTemplate(req.pharmacyId, req.body?.template_id));
   res.json({ site: result.site });
 }));
 
@@ -376,9 +391,22 @@ router.get('/preview.html', requireAuth, asyncRoute(async (req, res) => {
 
   const ctx = await publish.renderContextFor(req.pharmacyId);
 
+  // An optional candidate template lets an owner preview a different design
+  // before switching to it — see PUT /template and TemplatePicker's "View
+  // preview". This never writes to the database: it renders the CANDIDATE'S
+  // seed in place of the stored draft, for this one response only. An
+  // absent or unrecognised id falls back to the real draft, so a stale or
+  // mistyped query string degrades to the normal preview rather than erroring.
+  const candidate = typeof req.query?.template === 'string' ? getTemplate(req.query.template) : null;
+
   const html = renderDocument({
     ...ctx,
-    site: site.site_data,
+    site: candidate ? cloneSeed(candidate.id) : site.site_data,
+    // Always the pharmacy's OWN theme, never the candidate template's
+    // suggested palette. switchTemplate leaves theme untouched, so this is
+    // the only rendering that matches what committing would actually
+    // produce — showing the candidate in a colour scheme it will not keep
+    // would be a preview that lies about the result.
     theme: site.theme,
     // The asset map and the year come from renderContextFor above. They used
     // to be overridden here with an empty Map, which — spread AFTER ...ctx —

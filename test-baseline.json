@@ -5,11 +5,11 @@
   "commitSubject": "Let a pharmacist choose what is on their website, without mentioning SEO",
   "workingTree": "photographs on the generated About and Location pages",
   "command": "node --test \"server/tests/*.test.js\"",
-  "//counts": "Floors and ceilings, not equalities. Measured 2026-09-08 WITHOUT a test database: 1482/1033/442/7 — the committed default. The 7 added since 1475/1026 are the photograph tests in websiteDocument.test.js, all database-free, so the skipped ceiling did not move.",
+  "//counts": "Floors and ceilings, not equalities. Measured 2026-09-08 WITHOUT a test database: 1485/1033/445/7 — the committed default. The 3 added since 1482/1033/442 are switchTemplate's tests in websiteService.test.js. They are the first addition in a while to move the SKIPPED ceiling (442 -> 445), and that is deliberate rather than an oversight: what they pin is which COLUMNS an UPDATE leaves alone (theme, content, published_data), which has no database-free form. See the AGENTS.md entry of the same date.",
   "counts": {
-    "total": 1482,
+    "total": 1485,
     "pass": 1033,
-    "skipped": 442,
+    "skipped": 445,
     "failed": 7
   },
   "//skipReason": "442 tests skip when TEST_DATABASE_URL is unset, which is the committed default (server/.env is gitignored). A skipped suite proves NOTHING. Configuring a test database turns all 442 back on: 1381 passing, 0 skipped, 4 failing. The website builder keeps as much as possible out of that gate — the block contract, the theme, the renderer, the web-address rules, image identification, the subdomain host resolver and the tracked-link rules are all database-free and always run.",

@@ -417,6 +417,74 @@ test('content and theme merge independently, so two guided steps cannot undo eac
   assert.deepEqual(site.theme, { palette: 'green' });
 });
 
+// ---------------------------------------------------------------------
+// Switching template on an EXISTING site.
+//
+// The operation "Change design" performs. It is deliberately not
+// createWebsite: that refuses once a site exists, for a good reason (see the
+// second-create test above), and reusing it would mean either weakening that
+// guard or deleting and recreating a row that other tables reference.
+// ---------------------------------------------------------------------
+
+test('switching to an unknown template changes nothing', { skip: SKIP && skipReason }, async () => {
+  const before = await websiteService.getWebsite(ctx.pharmacy.id);
+  const r = await websiteService.switchTemplate(ctx.pharmacy.id, 'does-not-exist');
+
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'UNKNOWN_TEMPLATE');
+  const after = await websiteService.getWebsite(ctx.pharmacy.id);
+  assert.equal(after.template_id, before.template_id);
+  assert.deepEqual(after.site_data, before.site_data);
+});
+
+/**
+ * THE TEMPLATE-SWITCH SAFETY INVARIANT.
+ *
+ * Changing design must change the DESIGN — the block composition — and
+ * nothing an owner typed or chose. theme and content live in their own
+ * columns precisely so this is expressible: a switch rewrites site_data and
+ * leaves both alone. If a future change makes switchTemplate write to either,
+ * this test is what says so, and the failure it prevents is a pharmacy losing
+ * its colours and its health-guide choices for pressing "Use this design".
+ */
+test('switching template replaces the structure and keeps the pharmacy’s own settings', { skip: SKIP && skipReason }, async () => {
+  const before = await websiteService.getWebsite(ctx.pharmacy.id);
+  assert.equal(before.template_id, 'professional', 'precondition for this test');
+
+  const r = await websiteService.switchTemplate(ctx.pharmacy.id, 'modern');
+  assert.equal(r.ok, true);
+
+  const modern = templates.getTemplate('modern');
+  assert.equal(r.site.template_id, 'modern');
+  assert.equal(r.site.template_version, modern.version);
+  assert.deepEqual(r.site.site_data, modern.seed, 'the new design supplies the whole structure');
+
+  // The half that matters: nothing the owner set went with it.
+  assert.deepEqual(r.site.theme, before.theme, 'theme must survive a design change');
+  assert.deepEqual(r.site.content, before.content, 'guided answers and health choices must survive');
+  assert.equal(r.site.subdomain, before.subdomain, 'the web address is not part of a design');
+});
+
+test('switching template does not publish, and does not touch what is published', { skip: SKIP && skipReason }, async () => {
+  // The whole draft/published separation in one assertion: an owner comparing
+  // designs cannot accidentally replace the page their customers are looking
+  // at. Publishing stays a separate, deliberate click.
+  const before = await db`
+    select published_data, published_html, published_at, status
+    from pharmacy_websites where pharmacy_id = ${ctx.pharmacy.id}
+  `;
+
+  const r = await websiteService.switchTemplate(ctx.pharmacy.id, 'premium');
+  assert.equal(r.ok, true);
+  assert.equal(r.site.status, before[0].status, 'a design change must not alter publication status');
+
+  const after = await db`
+    select published_data, published_html, published_at, status
+    from pharmacy_websites where pharmacy_id = ${ctx.pharmacy.id}
+  `;
+  assert.deepEqual(after[0], before[0], 'switching designs must not alter anything published');
+});
+
 test('an invalid draft is rejected without overwriting the stored one', { skip: SKIP && skipReason }, async () => {
   const before = await websiteService.getWebsite(ctx.pharmacy.id);
   const r = await websiteService.saveSiteData(ctx.pharmacy.id, {

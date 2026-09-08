@@ -216,9 +216,9 @@ Command:  npm test
 
 eslint    0 errors, 44 warnings          (all no-unused-vars, in tests/helpers)
 
-tests     1482
+tests     1485
 pass      1033
-skipped    442
+skipped    445
 failed       7
 ```
 
@@ -311,6 +311,18 @@ Three files conflicted, all additively: this one, `test-baseline.json`, and
 numeric order). The 7 failures are the same pre-existing names as before the
 merge, and the skipped ceiling did not move — everything added on main since
 the branch was cut is database-free.
+
+**Changing design on an existing website, 2026-09-08 → measured 1485/1033/445/7.**
+`websiteService.switchTemplate` is the one operation the Website redesign
+needed that did not exist: `createWebsite` refuses once a site exists, by
+design, so switching had to be its own function rather than a weakened guard.
+Its 3 tests raise the SKIPPED ceiling from 442 to 445, which is the one
+direction this baseline treats as a blocker — declared here rather than
+worked around, per "unless you added tests that skip" below. They are gated
+because the behaviour worth pinning is what the UPDATE does and does not
+touch: template_id and site_data change; `theme`, `content` and everything
+published stay exactly as they were. That cannot be asserted without a
+database. Pass, fail and the 7 known failures are all unchanged.
 
 **Photographs on the generated pages, 2026-09-08 → measured 1482/1033/442/7.**
 `pharmacy_assets` already carried `kind in (logo, hero, gallery, service)` and

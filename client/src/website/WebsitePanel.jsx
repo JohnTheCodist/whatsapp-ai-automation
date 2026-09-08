@@ -1,31 +1,42 @@
 /**
  * The Website section.
  *
- * Two states, and which one you are in is decided by whether a website record
- * exists — not by a wizard step stored somewhere that could disagree with the
- * database:
+ * WHAT THIS SCREEN SAYS, IN ONE LINE: your website is already built — here
+ * it is, and here is how to change how it looks. Not "here is a builder".
+ * The pharmacy gave us their details during onboarding; the site exists as a
+ * consequence of that, and everything on this page is either a view of it or
+ * a small, bounded choice about it.
  *
- *   no site  →  choose a design
- *   a site   →  confirm details, choose how it looks, watch the preview
+ * WHICH STATE YOU ARE IN IS DERIVED, NEVER STORED. A "which step am I on"
+ * value has to be persisted or it resets on reload, and once persisted it can
+ * drift from reality — an owner who has clearly already chosen a template
+ * being shown the picker again, or worse, being offered it after they have a
+ * page. So:
  *
- * WHY THE STEP IS NOT STATE. A "which step am I on" value has to be persisted
- * or it resets on reload, and once persisted it can drift from reality — an
- * owner who has clearly already chosen a template being shown the picker
- * again, or worse, being offered it after they have a page. Deriving it from
- * the record means reload, refresh and returning tomorrow all land in the
- * right place with nothing to keep in step.
+ *   no site       →  choose a design            (TemplatePicker, create mode)
+ *   changing      →  compare and switch designs (TemplatePicker, switch mode)
+ *   editing       →  the advanced editor        (lazy GrapesJS)
+ *   otherwise     →  the website, top to bottom
  *
- * THE ORDER OF THIS SCREEN IS THE ORDER OF AN OWNER'S QUESTIONS. Publishing
- * first — "is it live, and where?" — then what it did, then the advanced
- * editor, then the details form. The form is last despite being the largest
- * thing here: it is filled in once and confirmed occasionally, while the two
- * panels above it are what somebody comes back to check.
+ * THE ORDER OF THE MAIN VIEW IS THE ORDER OF AN OWNER'S QUESTIONS.
+ * Is it live and where (status) → what does it look like (preview) → what
+ * design is that (current design) → did it do anything (performance) → what
+ * is on it (content) → how does it look (design) → the address and the
+ * publish button (settings). The two things somebody comes back to check are
+ * at the top; the things they set once are at the bottom.
+ *
+ * PUBLISHING IS NOT REIMPLEMENTED HERE. PublishBar owns the address form and
+ * the publish/unpublish calls exactly as it always has — this file only
+ * decides where on the page it sits.
  */
 
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { Panel } from '../DashboardKit.jsx';
 import TemplatePicker from './TemplatePicker.jsx';
-import GuidedSetup from './GuidedSetup.jsx';
+import WebsiteStatus from './WebsiteStatus.jsx';
+import CurrentDesign from './CurrentDesign.jsx';
+import WebsiteContent from './WebsiteContent.jsx';
+import DesignSettings from './DesignSettings.jsx';
 import PreviewPane from './PreviewPane.jsx';
 import PublishBar from './PublishBar.jsx';
 import AnalyticsPanel from './AnalyticsPanel.jsx';
@@ -36,11 +47,19 @@ import * as api from './api.js';
  *
  * GrapesJS is ~1.15 MB plus a 60 kB stylesheet — larger than the entire
  * dashboard. `lazy` means it is fetched only when a pharmacy actually opens
- * "Customise design", which most never will: the guided form publishes a
- * complete site without it. Importing Editor.jsx normally would put all of
- * that into the initial download for every user of every section of the app.
+ * "Customise design", which most never will: choosing a design and confirming
+ * their details publishes a complete site without it. Importing Editor.jsx
+ * normally would put all of that into the initial download for every user of
+ * every section of the app.
  */
 const Editor = lazy(() => import('./Editor.jsx'));
+
+/** A section label above a card, so the page reads as a sequence of answers. */
+function SectionLabel({ children }) {
+  return (
+    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{children}</p>
+  );
+}
 
 export default function WebsitePanel({ onNavigate }) {
   const [site, setSite] = useState(undefined); // undefined = loading, null = none yet
@@ -52,6 +71,7 @@ export default function WebsitePanel({ onNavigate }) {
   // Bumped whenever something the preview renders has changed. See PreviewPane.
   const [nonce, setNonce] = useState(() => Date.now());
   const [editing, setEditing] = useState(false);
+  const [changingDesign, setChangingDesign] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -106,39 +126,66 @@ export default function WebsitePanel({ onNavigate }) {
     );
   }
 
+  // Comparing designs takes the whole canvas too, and for the same reason:
+  // the thing being compared is a full-width rendering of the real site.
+  // Switching updates the DRAFT only — nothing here publishes.
+  if (changingDesign) {
+    return (
+      <TemplatePicker
+        mode="switch"
+        activeTemplateId={site.template_id}
+        onChosen={(updated) => { setSite(updated); refreshPreview(); setChangingDesign(false); }}
+        onCancel={() => setChangingDesign(false)}
+      />
+    );
+  }
+
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+    <div className="mx-auto flex max-w-5xl flex-col gap-7">
       <div>
-        <div className="mb-5 max-w-2xl">
-          <h2 className="font-display text-2xl font-semibold text-slate-900">
-            Your pharmacy website
-          </h2>
-          <p className="mt-1 text-slate-600">
-            Built from the <strong>{site.template_id}</strong> design. Check your details
-            below — everything you see in the preview comes from your pharmacy profile,
-            so it stays correct on its own.
-          </p>
-        </div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Website</p>
+        <h2 className="font-display text-2xl font-semibold text-slate-900">
+          Your pharmacy on the web
+        </h2>
+      </div>
 
-        <div className="mb-5">
-          <PublishBar
-            site={site}
-            publicDomain={publicDomain}
-            onChanged={(updated) => { setSite(updated); refreshPreview(); }}
-          />
-        </div>
+      <WebsiteStatus
+        site={site}
+        publicDomain={publicDomain}
+        onChangeDesign={() => setChangingDesign(true)}
+      />
 
-        {site.status === 'published' && (
-          <div className="mb-5">
-            <AnalyticsPanel site={site} />
-          </div>
-        )}
+      {/* The focal point. Everything below is a way of changing something you
+          can see here. */}
+      <PreviewPane nonce={nonce} />
+
+      <CurrentDesign
+        templateId={site.template_id}
+        onChangeDesign={() => setChangingDesign(true)}
+      />
+
+      {/* AnalyticsPanel returns null unless the site is published — a panel of
+          zeroes above an unpublished site reads as a broken feature rather
+          than an empty one. The label is inside the same condition so it does
+          not sit above nothing. */}
+      {site.status === 'published' && (
+        <div>
+          <SectionLabel>Website performance</SectionLabel>
+          <AnalyticsPanel site={site} />
+        </div>
+      )}
+
+      <WebsiteContent site={site} onSaved={refreshPreview} onNavigate={onNavigate} />
+
+      <div className="flex flex-col gap-4">
+        <DesignSettings theme={site.theme} onThemeChange={refreshPreview} />
 
         {/* The advanced layer, and it reads like one. Most pharmacies publish
             a complete site without ever pressing this, which is why it sits
-            below publishing rather than above it — the guided form is the
-            product, and this is for the minority who want to rearrange. */}
-        <div className="mb-5 flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4">
+            below the approved choices rather than above them — choosing a
+            design is the product, and this is for the minority who want to
+            rearrange. */}
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4">
           <div>
             <p className="text-sm font-semibold text-slate-900">Customise the design</p>
             <p className="mt-0.5 text-sm text-slate-600">
@@ -153,19 +200,15 @@ export default function WebsitePanel({ onNavigate }) {
             Open editor
           </button>
         </div>
-
-        <GuidedSetup
-          site={site}
-          onSaved={refreshPreview}
-          onThemeChange={refreshPreview}
-          onNavigate={onNavigate}
-        />
       </div>
 
-      {/* Sticky on wide screens so the preview stays beside the field being
-          edited rather than scrolling away from it. */}
-      <div className="xl:sticky xl:top-4 xl:h-[calc(100vh-6rem)]">
-        <PreviewPane nonce={nonce} />
+      <div>
+        <SectionLabel>Website settings</SectionLabel>
+        <PublishBar
+          site={site}
+          publicDomain={publicDomain}
+          onChanged={(updated) => { setSite(updated); refreshPreview(); }}
+        />
       </div>
     </div>
   );

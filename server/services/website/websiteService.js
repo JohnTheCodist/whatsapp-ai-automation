@@ -277,6 +277,51 @@ async function saveSiteData(pharmacyId, siteData) {
 }
 
 /**
+ * Switch this pharmacy's website to a different template.
+ *
+ * REPLACES site_data WITH THE NEW TEMPLATE'S SEED, and nothing else. That is
+ * deliberately the same clone-and-store step createWebsite performs — a
+ * template seed carries no pharmacy data (see templates.js's header), only
+ * structure and editorial defaults, so replacing site_data cannot lose a
+ * fact about the pharmacy. `theme` and `content` are separate columns and are
+ * left completely untouched: they are the owner's own settings (colour/font/
+ * corners, health-guide choices), not part of what a template supplies, and
+ * switching designs must not silently change them.
+ *
+ * Also leaves published_data / published_html / status / subdomain alone —
+ * the same draft-only guarantee saveSiteData has. A design change is not
+ * live until the owner publishes it.
+ *
+ * @returns {{ok:true, site:object} | {ok:false, code:string, error:string}}
+ */
+async function switchTemplate(pharmacyId, templateId) {
+  assertPharmacyId(pharmacyId);
+
+  const template = getTemplate(templateId);
+  if (!template) {
+    return {
+      ok: false,
+      code: 'UNKNOWN_TEMPLATE',
+      error: `No such template: ${JSON.stringify(templateId)}`,
+    };
+  }
+
+  const seed = cloneSeed(template.id);
+  const db = getSql();
+  const [row] = await db`
+    update pharmacy_websites
+       set template_id = ${template.id},
+           template_version = ${template.version},
+           site_data = ${db.json(seed)},
+           updated_at = now()
+     where pharmacy_id = ${pharmacyId}
+    returning ${db.unsafe(SITE_COLUMNS)}
+  `;
+  if (!row) return { ok: false, code: 'NO_WEBSITE', error: 'No website for this pharmacy' };
+  return { ok: true, site: row };
+}
+
+/**
  * Merge guided-step answers and theme. Same draft-only guarantee as above.
  *
  * Builds a patch object and lets the driver write the SET clause, following
@@ -315,6 +360,7 @@ module.exports = {
   getWebsite,
   createWebsite,
   saveSiteData,
+  switchTemplate,
   saveContent,
   // pure, exported for tests
   normalizeSiteData,

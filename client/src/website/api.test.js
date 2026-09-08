@@ -82,6 +82,16 @@ test('the preview URL changes with the nonce, so the iframe actually reloads', (
   expect(api.previewUrl(7)).toContain('/api/website/preview.html');
 });
 
+test('a candidate template is asked for by name, and only when one is given', () => {
+  // "View preview" on another design renders that template's seed against
+  // this pharmacy's real data. Omitting the argument must produce exactly the
+  // URL it always did — every other caller previews the actual draft, and a
+  // stray `&template=` would have them all previewing something else.
+  expect(api.previewUrl(1)).not.toContain('template=');
+  expect(api.previewUrl(1, null)).not.toContain('template=');
+  expect(api.previewUrl(1, 'modern')).toContain('&template=modern');
+});
+
 /**
  * publicUrl — the string a pharmacy prints.
  *
