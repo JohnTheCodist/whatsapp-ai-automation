@@ -461,6 +461,42 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
 .rx-card-go{flex:0 0 auto;color:var(--rx-muted);transition:transform var(--rx-dur) var(--rx-ease),color var(--rx-dur) var(--rx-ease)}
 .rx-card:hover .rx-card-go{transform:translateX(3px);color:var(--rx-primary)}
 
+/* ---- the generated pages ----
+   A dozen short sections rather than the home page's five large ones, so the
+   section rhythm steps down: the home page's 6rem between blocks is its
+   composition, and the same gap here put a screen and a half of empty paper
+   between an address and a list of opening hours. */
+.rx-page .rx-block{padding-block:var(--rx-lg)}
+/* Consecutive sections share one gap rather than stacking two paddings. */
+.rx-page .rx-block + .rx-block{padding-top:0}
+.rx-page .rx-block:has(>.rx-split){padding-block:var(--rx-lg)}
+
+/* ---- split ---- the diptych this design is built on: two things that
+   answer one question, side by side rather than a screen apart. */
+.rx-split{display:grid;gap:var(--rx-lg)}
+.rx-split>*{min-width:0}
+.rx-split h2{margin-top:0}
+
+/* ---- chips ---- a short list of cross-links with a shape and a tap target.
+   A bulleted column of underlined links reads as a directory index; these are
+   four services, and they should look like part of the page. */
+.rx-chips{display:flex;flex-wrap:wrap;gap:var(--rx-xs);margin-top:var(--rx-md)}
+.rx-chip{
+  display:inline-flex;align-items:center;min-height:44px;
+  padding:.55rem 1rem;
+  border:1px solid var(--rx-line);
+  border-radius:999px;
+  background:var(--rx-surface);
+  color:var(--rx-ink);
+  font-size:var(--rx-size-sm);
+  font-weight:500;
+  text-decoration:none;
+  transition:border-color var(--rx-dur) var(--rx-ease),
+             background-color var(--rx-dur) var(--rx-ease),
+             color var(--rx-dur) var(--rx-ease);
+}
+.rx-chip:hover{border-color:var(--rx-primary);background:var(--rx-tint);color:var(--rx-primary)}
+
 /* ---- panels ---- a bounded answer, for FAQs and anything read one at a time. */
 .rx-panels{display:grid;gap:var(--rx-sm);margin-top:var(--rx-md)}
 .rx-panel{padding:var(--rx-md);border:1px solid var(--rx-line);border-radius:var(--rx-radius);background:var(--rx-surface)}
@@ -619,12 +655,64 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
   .rx-grid-2{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--rx-md);border-top:0}
   .rx-grid-2 .rx-review{border-bottom:0}
   .rx-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rx-split{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--rx-xl)}
 }
 @media (min-width:1024px){
   /* Services become two columns of ruled rows — still a list, still hairlines,
      never a card wall. */
   .rx-grid-3{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:var(--rx-xl)}
   .rx-grid-3 .rx-service:nth-last-child(-n+2){border-bottom:0}
+}
+
+/* ---- the floating WhatsApp button ----
+   The one control that follows the reader down every page, including the
+   generated ones. Clear of the safe-area inset on a phone with a home bar,
+   where bottom:1rem alone puts it under the gesture strip. */
+.rx-fab{
+  position:fixed;
+  z-index:50;
+  right:max(var(--rx-md), env(safe-area-inset-right));
+  bottom:calc(var(--rx-md) + env(safe-area-inset-bottom));
+  display:inline-flex;
+  align-items:center;
+  gap:.6rem;
+  min-height:56px;
+  padding:0 1.15rem;
+  border-radius:999px;
+  background:var(--rx-primary);
+  color:var(--rx-on-primary);
+  font-family:var(--rx-display);
+  font-weight:600;
+  font-size:var(--rx-size-sm);
+  text-decoration:none;
+  box-shadow:0 6px 20px -4px color-mix(in oklab, var(--rx-ink) 42%, transparent);
+  transition:transform var(--rx-dur) var(--rx-ease),box-shadow var(--rx-dur) var(--rx-ease);
+}
+.rx-fab:hover{transform:translateY(-2px);box-shadow:0 12px 28px -4px color-mix(in oklab, var(--rx-ink) 52%, transparent)}
+.rx-fab:active{transform:translateY(0)}
+.rx-fab-glyph{flex:0 0 auto}
+
+/* A ring that pulses twice, a moment after the page settles — enough to be
+   noticed by somebody who has finished reading, not a beacon that blinks for
+   the whole visit. On a pseudo-element, so it can never affect layout. */
+.rx-fab::before{
+  content:"";position:absolute;inset:0;border-radius:inherit;
+  border:2px solid var(--rx-primary);opacity:0;pointer-events:none;
+  animation:rx-fab-ring 2.4s var(--rx-ease) 1.4s 2;
+}
+@keyframes rx-fab-ring{
+  0%{opacity:.5;transform:scale(1)}
+  70%,100%{opacity:0;transform:scale(1.35)}
+}
+
+/* The label is a desktop affordance: on a phone the button sits over what
+   somebody is reading, and a disc covers less of it than a pill. */
+.rx-fab-label{display:none}
+@media (min-width:640px){.rx-fab-label{display:inline}}
+@media (max-width:639px){
+  .rx-fab{padding:0;width:56px;justify-content:center}
+  /* So the last line of the footer is never trapped under the button. */
+  body:has(.rx-fab){padding-bottom:calc(56px + var(--rx-md))}
 }
 
 /* ---- motion ----
@@ -641,6 +729,20 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
     /* The header is sticky and the hero is the first thing seen — neither
        should animate in. */
     .rx-pharmacy-header,.rx-pharmacy-hero{animation:none}
+
+    /* One step finer inside the sections that are a set of things rather than
+       one thing. The stagger is positional, not timed: each card animates
+       against its own position in the scroll, so they arrive in order without
+       a delay chain that would still be running if the reader scrolled fast. */
+    .rx-cards>*,.rx-photo-grid>*,.rx-chips>*{
+      animation:rx-rise linear both;
+      animation-timeline:view();
+      animation-range:entry 0% entry 35%;
+    }
+    /* The children animate; the section around them must not, or the two
+       compound into a double fade. */
+    .rx-page .rx-block:has(>.rx-cards),
+    .rx-block:has(>.rx-photo-grid){animation:none}
   }
   .rx-photo,.rx-hero-media img,.rx-split-media img{
     transition:transform 420ms var(--rx-ease);
@@ -673,5 +775,6 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
 </head>
 <body>
 <header class="rx-block rx-pharmacy-header"><div class="rx-header-inner"><a class="rx-brand rx-brand-name" href="/">Ikeja Family Pharmacy</a><nav class="rx-nav" aria-label="Main"><a href="/about/">About</a><a href="/services/">Services</a><a href="/location/">Location</a><a href="/contact/">Contact</a></nav><a class="rx-btn rx-btn-wa rx-header-cta" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Chat on WhatsApp</a><details class="rx-menu"><summary aria-label="Menu"><span class="rx-menu-bars" aria-hidden="true"></span>Menu</summary><div class="rx-menu-panel"><a href="/about/">About</a><a href="/services/">Services</a><a href="/location/">Location</a><a href="/contact/">Contact</a><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Chat on WhatsApp</a></div></details></div></header><section class="rx-block rx-pharmacy-hero"><div class="rx-hero-inner rx-hero--type"><div class="rx-hero-copy"><span class="rx-eyebrow">Pharmacy in Ikeja, Lagos</span><h1>Expert pharmacy care, close to home</h1><p class="rx-lede">Qualified pharmacists you can talk to, and the medicines you need without the wait.</p><div class="rx-cta-row"><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678?text=Hello%2C%20I%20have%20a%20question%20about%20my%20medication." rel="noopener noreferrer" target="_blank">Speak to our team</a><a class="rx-btn rx-btn-ghost" href="https://maps.google.com/?q=ikeja" rel="noopener noreferrer" target="_blank">Get directions</a></div></div></div></section><section class="rx-block rx-pharmacy-about"><div class="rx-prose"><h2>Our pharmacy</h2><p>A community pharmacy serving Allen Avenue since 2011. Our pharmacists dispense prescriptions, check blood pressure, and answer questions about medicines.</p></div></section><section class="rx-block rx-pharmacy-pharmacistCta"><div class="rx-narrow"><h2>Not sure what you need?</h2><p>Our pharmacists answer questions every day. Ask us before you buy — there is no charge for advice.</p><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678?text=Hello%2C%20please%20may%20I%20speak%20to%20a%20pharmacist%3F" rel="noopener noreferrer" target="_blank">Ask a pharmacist</a></div></section><section class="rx-block rx-pharmacy-services"><div class="rx-head"><h2>Services</h2></div><ul class="rx-grid rx-grid-3"><li class="rx-service"><span class="rx-service-mark"><svg class="rx-svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g transform="rotate(-45 12 12)"><rect x="2.5" y="8.5" width="19" height="7" rx="3.5"/><path d="M12 8.5v7"/></g></svg></span><div class="rx-service-body"><h3>Prescription Refills</h3></div></li><li class="rx-service"><span class="rx-service-mark"><svg class="rx-svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 20.4 4.9 13.3a4.6 4.6 0 0 1 6.5-6.5l.6.6.6-.6a4.6 4.6 0 0 1 6.5 6.5Z"/><path d="M5.5 12.4h3l1.4-2.6 2.2 5 1.6-3.3 1.1 1h3.7"/></svg></span><div class="rx-service-body"><h3>Blood Pressure Checks</h3></div></li><li class="rx-service"><span class="rx-service-mark"><svg class="rx-svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.6c0 0 6 6.3 6 10.1a6 6 0 0 1-12 0c0-3.8 6-10.1 6-10.1Z"/></svg></span><div class="rx-service-body"><h3>Blood Glucose Testing</h3></div></li><li class="rx-service"><span class="rx-service-mark"><svg class="rx-svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 14.4A2.6 2.6 0 0 1 17.4 17H9.2L4.5 20.2V6.6A2.6 2.6 0 0 1 7.1 4h10.3A2.6 2.6 0 0 1 20 6.6Z"/><path d="M12.2 8.2v5M9.7 10.7h5"/></svg></span><div class="rx-service-body"><h3>Medication Counselling</h3></div></li></ul></section><section class="rx-block rx-pharmacy-openingHours"><div class="rx-split rx-split--top"><div class="rx-split-copy"><h2>Opening hours</h2></div><dl class="rx-hours"><div class="rx-hours-row"><dt>Monday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Tuesday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Wednesday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Thursday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Friday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Saturday</dt><dd>9:00 am – 6:00 pm</dd></div><div class="rx-hours-row"><dt>Sunday</dt><dd>Closed</dd></div></dl></div></section><section class="rx-block rx-pharmacy-location"><div class="rx-split-copy"><h2>Visit us</h2><address class="rx-address"><p>12 Allen Avenue, Ikeja, Lagos</p><p class="rx-landmark">Near the Computer Village bus stop</p></address><a class="rx-btn rx-btn-ghost" href="https://maps.google.com/?q=ikeja" rel="noopener noreferrer" target="_blank">Get directions</a></div></section><section class="rx-block rx-pharmacy-contact"><h2>Get in touch</h2><ul class="rx-contact"><li><span class="rx-label">Phone</span> <a href="tel:08012345678">08012345678</a></li><li><span class="rx-label">WhatsApp</span> <a href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Message us</a></li><li><span class="rx-label">Address</span> 12 Allen Avenue</li></ul></section><footer class="rx-block rx-pharmacy-footer"><div class="rx-footer-inner"><p class="rx-footer-name">Ikeja Family Pharmacy</p><p class="rx-footer-address">12 Allen Avenue, Ikeja, Lagos</p><ul class="rx-footer-contact"><li><a href="tel:08012345678">08012345678</a></li><li><a href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">WhatsApp</a></li></ul><nav aria-label="Footer"><ul class="rx-footer-nav"><li><a href="/about/">About</a></li><li><a href="/services/">Services</a></li><li><a href="/location/">Location</a></li><li><a href="/contact/">Contact</a></li></ul></nav><p class="rx-footer-legal">© 2026 Ikeja Family Pharmacy</p></div></footer>
+<a class="rx-fab" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank" aria-label="Chat with us on WhatsApp"><svg class="rx-fab-glyph" viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true" focusable="false"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2Zm0 18.15h-.01a8.2 8.2 0 0 1-4.19-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.25-8.24 2.2 0 4.27.86 5.83 2.42a8.2 8.2 0 0 1 2.41 5.83c0 4.54-3.7 8.23-8.24 8.23Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.24-.64.8-.78.97-.14.16-.29.18-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.13-.15.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.4-.42-.56-.43h-.47c-.17 0-.43.06-.66.31-.23.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28Z"/></svg><span class="rx-fab-label">Chat with us</span></a>
 </body>
 </html>

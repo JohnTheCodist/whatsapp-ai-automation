@@ -495,6 +495,42 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
 .rx-card-go{flex:0 0 auto;color:var(--rx-muted);transition:transform var(--rx-dur) var(--rx-ease),color var(--rx-dur) var(--rx-ease)}
 .rx-card:hover .rx-card-go{transform:translateX(3px);color:var(--rx-primary)}
 
+/* ---- the generated pages ----
+   A dozen short sections rather than the home page's five large ones, so the
+   section rhythm steps down: the home page's 6rem between blocks is its
+   composition, and the same gap here put a screen and a half of empty paper
+   between an address and a list of opening hours. */
+.rx-page .rx-block{padding-block:var(--rx-lg)}
+/* Consecutive sections share one gap rather than stacking two paddings. */
+.rx-page .rx-block + .rx-block{padding-top:0}
+.rx-page .rx-block:has(>.rx-split){padding-block:var(--rx-lg)}
+
+/* ---- split ---- the diptych this design is built on: two things that
+   answer one question, side by side rather than a screen apart. */
+.rx-split{display:grid;gap:var(--rx-lg)}
+.rx-split>*{min-width:0}
+.rx-split h2{margin-top:0}
+
+/* ---- chips ---- a short list of cross-links with a shape and a tap target.
+   A bulleted column of underlined links reads as a directory index; these are
+   four services, and they should look like part of the page. */
+.rx-chips{display:flex;flex-wrap:wrap;gap:var(--rx-xs);margin-top:var(--rx-md)}
+.rx-chip{
+  display:inline-flex;align-items:center;min-height:44px;
+  padding:.55rem 1rem;
+  border:1px solid var(--rx-line);
+  border-radius:999px;
+  background:var(--rx-surface);
+  color:var(--rx-ink);
+  font-size:var(--rx-size-sm);
+  font-weight:500;
+  text-decoration:none;
+  transition:border-color var(--rx-dur) var(--rx-ease),
+             background-color var(--rx-dur) var(--rx-ease),
+             color var(--rx-dur) var(--rx-ease);
+}
+.rx-chip:hover{border-color:var(--rx-primary);background:var(--rx-tint);color:var(--rx-primary)}
+
 /* ---- panels ---- a bounded answer, for FAQs and anything read one at a time. */
 .rx-panels{display:grid;gap:var(--rx-sm);margin-top:var(--rx-md)}
 .rx-panel{padding:var(--rx-md);border:1px solid var(--rx-line);border-radius:var(--rx-radius);background:var(--rx-surface)}
@@ -653,12 +689,64 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
   .rx-grid-2{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--rx-md);border-top:0}
   .rx-grid-2 .rx-review{border-bottom:0}
   .rx-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rx-split{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--rx-xl)}
 }
 @media (min-width:1024px){
   /* Services become two columns of ruled rows — still a list, still hairlines,
      never a card wall. */
   .rx-grid-3{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:var(--rx-xl)}
   .rx-grid-3 .rx-service:nth-last-child(-n+2){border-bottom:0}
+}
+
+/* ---- the floating WhatsApp button ----
+   The one control that follows the reader down every page, including the
+   generated ones. Clear of the safe-area inset on a phone with a home bar,
+   where bottom:1rem alone puts it under the gesture strip. */
+.rx-fab{
+  position:fixed;
+  z-index:50;
+  right:max(var(--rx-md), env(safe-area-inset-right));
+  bottom:calc(var(--rx-md) + env(safe-area-inset-bottom));
+  display:inline-flex;
+  align-items:center;
+  gap:.6rem;
+  min-height:56px;
+  padding:0 1.15rem;
+  border-radius:999px;
+  background:var(--rx-primary);
+  color:var(--rx-on-primary);
+  font-family:var(--rx-display);
+  font-weight:600;
+  font-size:var(--rx-size-sm);
+  text-decoration:none;
+  box-shadow:0 6px 20px -4px color-mix(in oklab, var(--rx-ink) 42%, transparent);
+  transition:transform var(--rx-dur) var(--rx-ease),box-shadow var(--rx-dur) var(--rx-ease);
+}
+.rx-fab:hover{transform:translateY(-2px);box-shadow:0 12px 28px -4px color-mix(in oklab, var(--rx-ink) 52%, transparent)}
+.rx-fab:active{transform:translateY(0)}
+.rx-fab-glyph{flex:0 0 auto}
+
+/* A ring that pulses twice, a moment after the page settles — enough to be
+   noticed by somebody who has finished reading, not a beacon that blinks for
+   the whole visit. On a pseudo-element, so it can never affect layout. */
+.rx-fab::before{
+  content:"";position:absolute;inset:0;border-radius:inherit;
+  border:2px solid var(--rx-primary);opacity:0;pointer-events:none;
+  animation:rx-fab-ring 2.4s var(--rx-ease) 1.4s 2;
+}
+@keyframes rx-fab-ring{
+  0%{opacity:.5;transform:scale(1)}
+  70%,100%{opacity:0;transform:scale(1.35)}
+}
+
+/* The label is a desktop affordance: on a phone the button sits over what
+   somebody is reading, and a disc covers less of it than a pill. */
+.rx-fab-label{display:none}
+@media (min-width:640px){.rx-fab-label{display:inline}}
+@media (max-width:639px){
+  .rx-fab{padding:0;width:56px;justify-content:center}
+  /* So the last line of the footer is never trapped under the button. */
+  body:has(.rx-fab){padding-bottom:calc(56px + var(--rx-md))}
 }
 
 /* ---- motion ----
@@ -675,6 +763,20 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
     /* The header is sticky and the hero is the first thing seen — neither
        should animate in. */
     .rx-pharmacy-header,.rx-pharmacy-hero{animation:none}
+
+    /* One step finer inside the sections that are a set of things rather than
+       one thing. The stagger is positional, not timed: each card animates
+       against its own position in the scroll, so they arrive in order without
+       a delay chain that would still be running if the reader scrolled fast. */
+    .rx-cards>*,.rx-photo-grid>*,.rx-chips>*{
+      animation:rx-rise linear both;
+      animation-timeline:view();
+      animation-range:entry 0% entry 35%;
+    }
+    /* The children animate; the section around them must not, or the two
+       compound into a double fade. */
+    .rx-page .rx-block:has(>.rx-cards),
+    .rx-block:has(>.rx-photo-grid){animation:none}
   }
   .rx-photo,.rx-hero-media img,.rx-split-media img{
     transition:transform 420ms var(--rx-ease);

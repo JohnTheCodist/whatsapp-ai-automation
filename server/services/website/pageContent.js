@@ -152,11 +152,64 @@ function ctaRow(ctx, message) {
   if (ctx.profile?.phone) {
     parts.push(`<a class="rx-btn rx-btn-outline" href="${esc(telHref(ctx.profile.phone, ctx))}">Call ${esc(ctx.profile.phone)}</a>`);
   }
-  return parts.length ? `<div class="rx-cta-row">${parts.join('')}</div>` : '';
+  // WRAPPED IN A SECTION, and that is a fix rather than a flourish. This
+  // returned a bare <div> that every caller pushed straight into the page's
+  // top level, so it inherited neither the shell's max-width nor the gutter:
+  // the "Call …" button rendered flush against the left edge of the viewport,
+  // clipped, below content that was correctly inset. Every generated page had
+  // it, on the one control the page exists to be tapped.
+  return parts.length
+    ? `<section class="rx-block rx-narrow"><div class="rx-cta-row">${parts.join('')}</div></section>`
+    : '';
+}
+
+/**
+ * Address and opening hours, side by side.
+ *
+ * They are the two halves of one question — where is it, and when can I go —
+ * and somebody deciding whether to set off now needs both in one glance.
+ * Stacked, they were a full section apart with nothing between them, and on a
+ * desktop each occupied a 44rem column with the other half of the page empty.
+ * Falls back to whichever one exists: a pharmacy with no hours set still gets
+ * a sensible single column rather than an empty box beside its address.
+ */
+function visitSplit(ctx, profile, { addressHeading = 'Where to find us', hoursHeading = 'Opening hours' } = {}) {
+  const address = addressSection(ctx, addressHeading, { wrap: false });
+  const hours = hoursSection(profile, hoursHeading, { wrap: false });
+  if (!address && !hours) return '';
+  if (!address || !hours) {
+    return `<section class="rx-block rx-narrow">${address || hours}</section>`;
+  }
+  return `<section class="rx-block"><div class="rx-split">`
+    + `<div>${address}</div><div>${hours}</div></div></section>`;
+}
+
+/**
+ * A row of cross-links as chips.
+ *
+ * Replaces a bare <ul> of underlined links. A bulleted list of blue links at
+ * the foot of a page reads as a directory index rather than as part of a
+ * designed page, and these lists are short — four services, three articles.
+ * Chips give them a shape and a tap target without pretending each one is a
+ * card with something to say.
+ */
+function chipList(heading, items) {
+  if (!items?.length) return '';
+  const chips = items.map((i) =>
+    `<a class="rx-chip" href="${esc(i.path)}">${esc(i.label || i.nav)}</a>`).join('');
+  return `<section class="rx-block rx-narrow"><h2>${esc(heading)}</h2>`
+    + `<div class="rx-chips">${chips}</div></section>`;
 }
 
 /** Opening hours as a description list. Omitted entirely when unset. */
-function hoursSection(profile, heading = 'Opening hours') {
+/**
+ * `wrap:false` returns the contents WITHOUT the surrounding section, so the
+ * same builder can be dropped into a layout — the location page puts the
+ * address and the hours in one two-column split, and a nested <section
+ * class="rx-block"> inside another would bring its own page padding and
+ * shell width with it.
+ */
+function hoursSection(profile, heading = 'Opening hours', { wrap = true } = {}) {
   const hours = Array.isArray(profile?.opening_hours) ? profile.opening_hours : [];
   if (!hours.length) return '';
   const byDay = new Map(hours.map((h) => [h.day, h]));
@@ -167,11 +220,12 @@ function hoursSection(profile, heading = 'Opening hours') {
     return `<div class="rx-hours-row"><span>${label}</span><span>${when}</span></div>`;
   }).filter(Boolean).join('');
   if (!rows) return '';
-  return `<section class="rx-block rx-narrow"><h2>${esc(heading)}</h2><div class="rx-hours">${rows}</div></section>`;
+  const inner = `<h2>${esc(heading)}</h2><div class="rx-hours">${rows}</div>`;
+  return wrap ? `<section class="rx-block rx-narrow">${inner}</section>` : inner;
 }
 
 /** Address block with a maps link when one is set. */
-function addressSection(ctx, heading = 'Where to find us') {
+function addressSection(ctx, heading = 'Where to find us', { wrap = true } = {}) {
   const line = addressLine(ctx.profile);
   if (!line) return '';
   const map = ctx.profile?.maps_url
@@ -179,8 +233,9 @@ function addressSection(ctx, heading = 'Where to find us') {
     : '';
   const landmark = ctx.profile?.landmark
     ? `<p class="rx-landmark">${esc(ctx.profile.landmark)}</p>` : '';
-  return `<section class="rx-block rx-narrow"><h2>${esc(heading)}</h2>`
-    + `<address class="rx-address">${esc(line)}</address>${landmark}${map}</section>`;
+  const inner = `<h2>${esc(heading)}</h2>`
+    + `<address class="rx-address">${esc(line)}</address>${landmark}${map}`;
+  return wrap ? `<section class="rx-block rx-narrow">${inner}</section>` : inner;
 }
 
 /** FAQ list. Plain headings and paragraphs — no JavaScript accordions. */
@@ -397,8 +452,7 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
     // it is above the fold, and lazy-loading the thing a visitor came to look
     // at makes the page feel slower than it is.
     parts.push(photoSection(ctx, { kinds: ['hero', 'gallery'], limit: 4, eager: true }));
-    parts.push(addressSection(ctx));
-    parts.push(hoursSection(p));
+    parts.push(visitSplit(ctx, p));
     parts.push(ctaRow(ctx, `Hello ${name}`));
   } else if (page.kind === 'services') {
     open(area ? `What we can help with at our pharmacy in ${area}.` : 'What we can help with.');
@@ -417,16 +471,12 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
       parts.push(`<section class="rx-block rx-narrow"><h2>What this involves</h2><p>${esc(copy.involves)}</p>`
         + `<h2>What to expect</h2><p>${esc(copy.expect)}</p></section>`);
     }
-    parts.push(hoursSection(p, 'When you can come in'));
-    parts.push(addressSection(ctx));
+    parts.push(visitSplit(ctx, p, { hoursHeading: 'When you can come in' }));
     parts.push(ctaRow(ctx, `Hello ${name}, I would like to ask about ${page.label}`));
     if (copy) parts.push(faqSection(copy.faqs));
     // Contextual internal links, not a link farm.
     const others = allPages.filter((x) => x.kind === 'service' && x.path !== page.path).slice(0, 4);
-    if (others.length) {
-      parts.push(`<section class="rx-block rx-narrow"><h2>Other services</h2>`
-        + `<ul>${others.map((o) => `<li><a href="${esc(o.path)}">${esc(o.label)}</a></li>`).join('')}</ul></section>`);
-    }
+    parts.push(chipList('Other services', others));
   } else if (page.kind === 'location') {
     open(area ? `${name} is a community pharmacy in ${area}.` : `How to find ${name}.`);
     // Somebody about to travel wants to recognise the shopfront when they get
@@ -435,19 +485,18 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
     parts.push(photoSection(ctx, {
       kinds: ['gallery', 'hero'], limit: 6, heading: 'What to look for', eager: true,
     }));
-    parts.push(addressSection(ctx, 'Our address'));
-    parts.push(hoursSection(p));
-    const services = allPages.filter((x) => x.kind === 'service');
-    if (services.length) {
-      parts.push(`<section class="rx-block rx-narrow"><h2>What we offer here</h2>`
-        + `<ul>${services.map((s) => `<li><a href="${esc(s.path)}">${esc(s.label)}</a></li>`).join('')}</ul></section>`);
-    }
+    // ADDRESS AND HOURS SIDE BY SIDE, not stacked. They answer the two halves
+    // of one question — where is it, and when can I go — and a visitor
+    // deciding whether to set off now needs both in one glance. Stacked, the
+    // hours sat a full section below the address with nothing between them,
+    // which is what made this page read as a list of fragments.
+    parts.push(visitSplit(ctx, p, { addressHeading: 'Our address' }));
+    parts.push(chipList('What we offer here', allPages.filter((x) => x.kind === 'service')));
     parts.push(ctaRow(ctx, `Hello ${name}, I would like directions`));
   } else if (page.kind === 'contact') {
     open(`How to reach ${name}.`);
     parts.push(ctaRow(ctx, `Hello ${name}`));
-    parts.push(addressSection(ctx));
-    parts.push(hoursSection(p));
+    parts.push(visitSplit(ctx, p));
   } else if (page.kind === 'healthIndex') {
     open('General health information, written for our customers.');
     const articles = allPages.filter((x) => x.kind === 'health');
@@ -493,7 +542,16 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
   }
 
   parts.push(footer(ctx, year, allPages));
-  return parts.filter(Boolean).join('\n');
+
+  // A TIGHTER RHYTHM THAN THE HOME PAGE, and the wrapper is how the stylesheet
+  // knows which it is looking at. The home page is five or six large blocks,
+  // where a 6rem gap between sections is the composition. These pages are a
+  // dozen short ones — a heading, an address, a list of hours — and the same
+  // gap put a screen and a half of empty paper between two lines of text.
+  // Same tokens, one step down.
+  const [head, ...rest] = parts.filter(Boolean);
+  const body = rest.slice(0, -1).join('\n');
+  return [head, `<div class="rx-page">${body}</div>`, rest[rest.length - 1]].join('\n');
 }
 
 module.exports = {
