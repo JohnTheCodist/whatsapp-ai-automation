@@ -1,14 +1,14 @@
 {
   "//": "Machine-readable companion to the baseline section of AGENTS.md. scripts/check-baseline.js reads THIS file; AGENTS.md explains it to humans. Keep the two in step — they are updated in the same commit or not at all.",
   "measuredOn": "2026-09-06",
-  "commit": "d4dec4c",
-  "commitSubject": "Roll back to a config that worked, not merely to an older one",
-  "workingTree": "pharmacy subdomains via generated per-host Caddy blocks (no wildcard)",
+  "commit": "b862346",
+  "commitSubject": "Create the image store on first use instead of failing on it",
+  "workingTree": "SEO foundation for generated pharmacy websites (page model)",
   "command": "node --test \"server/tests/*.test.js\"",
-  "//counts": "Floors and ceilings, not equalities. Measured 2026-09-08 WITHOUT a test database: 1416/967/442/7 — the committed default. The 8 added since 1408/959 are caddySites.test.js, a pure function over strings, so they run in both environments and the skipped ceiling did not move. WITH a test database the last measurement was 2026-09-05 on the website-builder branch alone (1385/1381/0/4) and has NOT been re-measured since; do not quote a configured-run number as though it were observed.",
+  "//counts": "Floors and ceilings, not equalities. Measured 2026-09-08 WITHOUT a test database: 1436/987/442/7. The 20 added since 1416/967 are websitePages.test.js, a pure function over a pharmacy row and its profile, so they run in both environments and the skipped ceiling did not move. WITH a test database the last measurement was 2026-09-05 (1385/1381/0/4) and has NOT been re-measured; do not quote a configured-run number as though it were observed.",
   "counts": {
-    "total": 1416,
-    "pass": 967,
+    "total": 1436,
+    "pass": 987,
     "skipped": 442,
     "failed": 7
   },
@@ -80,5 +80,5 @@
     }
   ],
   "//goldenSuite": "server/tests/golden.test.js — one test per lesson that cost something. Organised by incident, not by module. Never skips: no database, no network, no model. Entries are only ever added. GOLDEN-001 (tenant isolation, 3), GOLDEN-002 (test-database separation, 3), GOLDEN-003 (tool refusal retry loop, 1), GOLDEN-004 (test-database redirect defeated by require order, 1), GOLDEN-005 (SPA fallback swallowing published pharmacy websites: 005 and 005b for the /p/ path form, 005c for the <address>.rxnaija.com host form, 3), GOLDEN-006 (health check restarting the process on a database blip, 1). 12 tests. Added 2026-08-29, extended 2026-09-05 and 2026-09-06.",
-  "//lastChange": "Pharmacy subdomains, second attempt (2026-09-08). The first used *.rxnaija.com with on-demand TLS and took the dashboard offline three times: that wildcard matches app.rxnaija.com, so Caddy served the DASHBOARD through the on-demand policy instead of the certificate it had held for months, and answered every handshake with tlsv1 alert internal error. Pharmacy subdomains worked throughout, which is why it survived three deploys. Neither allowlisting the dashboard in the ask endpoint nor giving it an explicit TLS connection policy helped — the failure is in which policy Caddy selects, not what it permits. Replaced with scripts/generate-caddy-sites.js, which writes one explicit site block per published address: no wildcard exists to capture a sibling. The 8 new tests cover the one genuinely dangerous part — those hostnames come from a column pharmacy owners control and are written into a Caddy config, where a brace or a newline is not a bad hostname but a new site block."
+  "//lastChange": "Page model for the website builder (2026-09-08). services/website/pages.js derives the whole site map from the pharmacy row and its profile: the router will serve from it, the sitemap will be generated from it, and every title, breadcrumb and internal link comes out of it. One function decides what exists, which is what makes a sitemap listing a 404, or a page nothing links to, structurally impossible rather than merely unlikely. Pages are derived and never stored, so adding a service to the profile creates its page and removing it takes the page away with nothing to publish or tidy. A page is only created when the pharmacy has the information it would be about — a generated page with nothing real on it is a thin page, and a site full of them ranks worse than a small site that is entirely substantial."
 }
