@@ -82,6 +82,31 @@ test('the preview URL changes with the nonce, so the iframe actually reloads', (
   expect(api.previewUrl(7)).toContain('/api/website/preview.html');
 });
 
+/**
+ * The preview is FETCHED, not framed, and this is the test that says why.
+ *
+ * An <iframe src="/api/..."> is a navigation: it never reaches the patched
+ * fetch in auth.js, so it sends no Authorization header and the route
+ * answers 401. That shipped, because DEV_AUTH_BYPASS makes it work on every
+ * developer machine and only the live site sees the 401 — as an empty grey
+ * box with nothing on screen saying anything was wrong.
+ */
+test('the preview document goes through fetch, so it carries the bearer token', async () => {
+  const calls = [];
+  globalThis.fetch = vi.fn(async (url) => {
+    calls.push(String(url));
+    return { ok: true, status: 200, text: async () => '<!doctype html><p>hi</p>' };
+  });
+
+  await expect(api.previewHtml(42)).resolves.toContain('<!doctype html>');
+  expect(calls[0]).toContain('/api/website/preview.html?v=42');
+});
+
+test('an expired session is reported, never rendered as an empty preview', async () => {
+  globalThis.fetch = vi.fn(async () => ({ ok: false, status: 401, text: async () => '' }));
+  await expect(api.previewHtml(1)).rejects.toThrow(/session has expired/i);
+});
+
 test('a candidate template is asked for by name, and only when one is given', () => {
   // "View preview" on another design renders that template's seed against
   // this pharmacy's real data. Omitting the argument must produce exactly the

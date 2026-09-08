@@ -168,7 +168,7 @@ export async function savePublicWhatsappNumber(number) {
 }
 
 /**
- * Cache-busted so the iframe re-fetches after every save.
+ * Cache-busted so the preview re-fetches after every save.
  *
  * `templateId` is optional: pass it to preview a candidate template's
  * structure (see TemplatePicker's "View preview") without changing the
@@ -177,6 +177,34 @@ export async function savePublicWhatsappNumber(number) {
  */
 export const previewUrl = (nonce, templateId = null) =>
   `/api/website/preview.html?v=${nonce}${templateId ? `&template=${encodeURIComponent(templateId)}` : ''}`;
+
+/**
+ * The preview document itself.
+ *
+ * FETCHED, NOT FRAMED, and that distinction is the entire reason this
+ * function exists rather than the iframe pointing at the URL directly.
+ *
+ * An `<iframe src="/api/...">` is a browser NAVIGATION. It does not go
+ * through the patched fetch in auth.js, so it carries no Authorization
+ * header — and requireAuth reads only that header, with no cookie to fall
+ * back on. The route answers 401 and the iframe renders an error page.
+ *
+ * That failed in exactly the way worth writing down: invisibly. Locally
+ * DEV_AUTH_BYPASS serves every request unauthenticated, so the preview
+ * worked on every developer machine and was blank on the live site, where
+ * it is the largest thing on the screen. Fetching the HTML here puts it back
+ * on the authenticated path; the caller hands the string to `srcdoc`.
+ */
+export async function previewHtml(nonce, templateId = null) {
+  const res = await fetch(previewUrl(nonce, templateId));
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error('Your session has expired. Reload the page to see your preview.');
+    }
+    throw new Error(`Your preview could not be loaded (${res.status}).`);
+  }
+  return res.text();
+}
 
 // ---------------------------------------------------------------------
 // Images

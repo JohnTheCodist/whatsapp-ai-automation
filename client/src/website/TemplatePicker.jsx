@@ -51,7 +51,22 @@ export default function TemplatePicker({ mode = 'create', activeTemplateId = nul
   // for a candidate to be rendered against, so it keeps its swatch-only
   // cards exactly as they were.
   const [previewing, setPreviewing] = useState(null);
-  const [previewNonce, setPreviewNonce] = useState(0);
+  const [previewHtml, setPreviewHtml] = useState(null);
+  const [previewError, setPreviewError] = useState(null);
+
+  // Fetched rather than framed, for the reason in api.previewHtml: an iframe
+  // src is a navigation and carries no bearer token, so pointing one at the
+  // preview route renders a 401 page.
+  useEffect(() => {
+    if (!previewing) return undefined;
+    let live = true;
+    setPreviewHtml(null);
+    setPreviewError(null);
+    api.previewHtml(Date.now(), previewing)
+      .then((doc) => { if (live) setPreviewHtml(doc); })
+      .catch((err) => { if (live) setPreviewError(err.message); });
+    return () => { live = false; };
+  }, [previewing]);
 
   useEffect(() => {
     let live = true;
@@ -89,10 +104,6 @@ export default function TemplatePicker({ mode = 'create', activeTemplateId = nul
   }
 
   function openPreview(templateId) {
-    // A fresh nonce every time, so re-opening the same design's preview
-    // after an unrelated change (a saved photo, a new service) reloads it
-    // rather than showing an iframe the browser decided not to refetch.
-    setPreviewNonce(Date.now());
     setPreviewing(templateId);
   }
 
@@ -151,16 +162,25 @@ export default function TemplatePicker({ mode = 'create', activeTemplateId = nul
         )}
 
         <div className="flex justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-100 p-3">
-          <iframe
-            key={`${previewing}-${previewNonce}`}
-            title={`Preview of the ${t?.name || 'selected'} design`}
-            src={api.previewUrl(previewNonce, previewing)}
-            // Same responsive height as PreviewPane, for the same reason: a
-            // fixed 820px is the right focal point on a desktop and taller
-            // than the entire viewport on a phone.
-            className="h-[60vh] min-h-[380px] w-full max-w-4xl rounded-lg border border-slate-200 bg-white shadow-sm sm:h-[620px] sm:min-h-0 xl:h-[820px]"
-            sandbox="allow-popups allow-popups-to-escape-sandbox"
-          />
+          {previewError && (
+            <p className="px-6 py-10 text-center text-sm text-red-700">{previewError}</p>
+          )}
+          {!previewError && !previewHtml && (
+            <p className="px-6 py-10 text-center text-sm text-slate-500">
+              Rendering this design with your pharmacy’s details…
+            </p>
+          )}
+          {!previewError && previewHtml && (
+            <iframe
+              title={`Preview of the ${t?.name || 'selected'} design`}
+              srcDoc={previewHtml}
+              // Same responsive height as PreviewPane, for the same reason: a
+              // fixed 820px is the right focal point on a desktop and taller
+              // than the entire viewport on a phone.
+              className="h-[60vh] min-h-[380px] w-full max-w-4xl rounded-lg border border-slate-200 bg-white shadow-sm sm:h-[620px] sm:min-h-0 xl:h-[820px]"
+              sandbox="allow-popups allow-popups-to-escape-sandbox"
+            />
+          )}
         </div>
       </div>
     );
