@@ -341,7 +341,13 @@ function photoSection(ctx, { kinds = ['gallery'], limit = 6, heading = null, eag
   }).join('');
 
   return '<section class="rx-block">'
-    + (heading ? `<h2 class="rx-narrow">${esc(heading)}</h2>` : '')
+    // NOT .rx-narrow. That class is `max-width:44rem; margin-inline:auto`,
+    // which CENTRES whatever carries it — so this heading sat ~140px inboard
+    // of the h1 above it and the photographs below it, and the page looked
+    // like it had been assembled by two different people. .rx-narrow belongs
+    // on a section, where the surrounding rule left-aligns its children; on a
+    // bare heading it just centres it.
+    + (heading ? `<h2>${esc(heading)}</h2>` : '')
     + `<div class="rx-photo-grid">${imgs}</div></section>`;
 }
 

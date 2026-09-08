@@ -557,6 +557,18 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
   background:var(--rx-tint);
 }
 
+/* A LONE PHOTOGRAPH IS A FIGURE, NOT A BILLBOARD.
+   With one upload the grid is a single full-width column, and a 4:3 crop at
+   the shell's 72rem is about 860px tall — taller than most laptop viewports,
+   so the photo WAS the page and everything below it was pushed off the
+   screen. Capped by the viewport rather than by a fixed height, so it stays
+   proportionate on a phone and on a 27" monitor alike; object-fit crops
+   rather than squashing. */
+.rx-photo-grid:not(:has(:nth-child(2))) .rx-photo{
+  aspect-ratio:16/9;
+  max-height:min(58vh,520px);
+}
+
 /* ---- hours ---- */
 .rx-hours{margin:var(--rx-md) 0 0;max-width:32rem}
 .rx-hours-row{
@@ -783,9 +795,20 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
   }
   .rx-photo:hover,.rx-hero-media img:hover,.rx-split-media img:hover{transform:scale(1.015)}
 }
+/* MOVES, NEVER FADES — a correctness decision, not a taste one.
+   A scroll-driven animation holds its start state for everything that has not
+   entered the viewport yet. With zero opacity in that state, any renderer that
+   does not advance the timeline the way a scrolling browser does — a stitched
+   full-page screenshot, a headless capture, a preview crawler — photographs a
+   pharmacy's website as a blank page. That happened here twice.
+   Starting at a 14px offset instead means the worst case is content sitting
+   fractionally low. It is always readable. Nothing about the reveal carries
+   information, so nothing is lost by making it unable to hide anything.
+   (Straight quotes and no backticks in this file: the whole sheet is a JS
+   template literal, and a backtick here ends the string.) */
 @keyframes rx-rise{
-  from{opacity:0;transform:translateY(12px)}
-  to{opacity:1;transform:none}
+  from{transform:translateY(14px)}
+  to{transform:none}
 }
 
 /* Respect a reader who has asked for less motion. */
