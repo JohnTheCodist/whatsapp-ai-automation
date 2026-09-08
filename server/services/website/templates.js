@@ -71,8 +71,13 @@ const TEMPLATES = [
         b('pharmacy.services', 1, { heading: 'What we offer' }),
         b('pharmacy.openingHours', 1, { heading: 'Opening hours' }),
         b('pharmacy.location', 1, { heading: 'Find us' }),
+        // The closing band, and the page's last word. A heading turns the
+        // bare button into a real ending rather than one more section — see
+        // the whatsappCta renderer.
         b('pharmacy.whatsappCta', 1, {
-          label: 'Have a question? Message us',
+          heading: 'Need something from the pharmacy?',
+          description: 'Message us on WhatsApp and we will tell you what we have before you travel.',
+          label: 'Chat with us on WhatsApp',
           style: 'band',
         }),
         b('pharmacy.footer', 1),

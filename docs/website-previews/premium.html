@@ -4,15 +4,28 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ikeja Family Pharmacy — Pharmacy in Ikeja</title>
-<meta name="description" content="We have served the Allen Avenue community since 2014. Our pharmacists are here six days a week for prescriptions, advice and everyday health needs. If you ar…">
+<meta name="description" content="A community pharmacy serving Allen Avenue since 2011. Our pharmacists dispense prescriptions, check blood pressure, and answer questions about medicines.">
+
 
 <meta property="og:type" content="website">
 <meta property="og:title" content="Ikeja Family Pharmacy — Pharmacy in Ikeja">
-<meta property="og:description" content="We have served the Allen Avenue community since 2014. Our pharmacists are here six days a week for prescriptions, advice and everyday health needs. If you ar…">
+<meta property="og:description" content="A community pharmacy serving Allen Avenue since 2011. Our pharmacists dispense prescriptions, check blood pressure, and answer questions about medicines.">
+
+<meta property="og:site_name" content="Ikeja Family Pharmacy">
+
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Ikeja Family Pharmacy — Pharmacy in Ikeja">
+<meta name="twitter:description" content="A community pharmacy serving Allen Avenue since 2011. Our pharmacists dispense prescriptions, check blood pressure, and answer questions about medicines.">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@600;700&amp;family=Inter:wght@400;500;600&display=swap">
-<style>:root{
+<style>/* Hallmark · macrostructure: Split Studio · genre: editorial
+ * theme: RxNaija theme contract (locked — 6 palettes, 4 pairings, 3 radii)
+ * nav: N1b brand-links-CTA · footer: Ft5 statement · enrichment: pharmacy photography
+ * pre-emit critique: P5 H5 E4 S5 R4 V4
+ */
+:root{
   --rx-primary:#334155;
   --rx-on-primary:#ffffff;
   --rx-ink:#0f172a;
@@ -22,9 +35,54 @@
   --rx-radius:2px;
   --rx-display:'Source Serif 4', Georgia, 'Times New Roman', serif;
   --rx-text:'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Derived, never chosen. A hairline and a wash that belong to whichever
+     palette is active — a fixed grey would be wrong on five of the six.
+     The flat value first is the fallback for a browser without color-mix. */
+  --rx-line:#e5e7eb;
+  --rx-line:color-mix(in oklab, var(--rx-ink) 14%, transparent);
+  --rx-line-strong:#cbd5e1;
+  --rx-line-strong:color-mix(in oklab, var(--rx-ink) 26%, transparent);
+  --rx-tint:var(--rx-soft);
+
+  /* Type scale. Fluid between a 320px phone and a desktop, so nothing has to
+     be re-declared per breakpoint and nothing overshoots on a small screen. */
+  --rx-size-xs:.8125rem;
+  --rx-size-sm:.9375rem;
+  --rx-size-base:1.0625rem;
+  --rx-size-lg:clamp(1.125rem,.98rem + .55vw,1.3125rem);
+  --rx-size-xl:clamp(1.3rem,1.1rem + .9vw,1.6rem);
+  --rx-size-h2:clamp(1.65rem,1.3rem + 1.7vw,2.4rem);
+  --rx-size-h1:clamp(2.1rem,1.55rem + 2.7vw,3.6rem);
+
+  /* 4pt rhythm. The two large steps are what separate SECTIONS; everything
+     smaller is inside one. */
+  --rx-2xs:.25rem;
+  --rx-xs:.5rem;
+  --rx-sm:.75rem;
+  --rx-md:1.25rem;
+  --rx-lg:2rem;
+  --rx-xl:3.5rem;
+  --rx-2xl:clamp(3.5rem,2.2rem + 6vw,6rem);
+
+  --rx-shell:72rem;
+  --rx-measure:38rem;
+
+  --rx-ease:cubic-bezier(.16,1,.3,1);
+  --rx-dur:220ms;
+
+  /* Shadows are barely there on purpose. A pharmacy website that leans on
+     drop shadows to separate its sections is a website with no other idea. */
+  --rx-shadow:0 1px 2px rgba(15,23,42,.04),0 8px 24px -12px rgba(15,23,42,.14);
 }
+
 *,*::before,*::after{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
+/* clip, never hidden: hidden on the root creates a scroll container and
+   breaks position:sticky on the header. */
+html,body{overflow-x:clip}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+
 body{
   margin:0;
   background:var(--rx-surface);
@@ -33,130 +91,476 @@ body{
   /* 1.0625rem rather than 1rem: this is read on phones, often in daylight,
      often by people who are unwell. Slightly larger body text is the single
      cheapest accessibility win available here. */
-  font-size:1.0625rem;
-  line-height:1.6;
+  font-size:var(--rx-size-base);
+  line-height:1.65;
+  -webkit-font-smoothing:antialiased;
 }
 img{max-width:100%;height:auto;display:block}
-a{color:var(--rx-primary)}
 
-h1,h2,h3{font-family:var(--rx-display);line-height:1.2;margin:0 0 .75rem}
-h1{font-size:clamp(1.9rem,5vw,3rem);letter-spacing:-.02em}
-h2{font-size:clamp(1.4rem,3.5vw,2rem);letter-spacing:-.01em}
-h3{font-size:1.125rem}
-p{margin:0 0 .75rem}
+a{color:var(--rx-primary);text-underline-offset:.2em;text-decoration-thickness:1px}
+a:hover{text-decoration-thickness:2px}
+/* Never animated, and always visible: a focus ring that fades in is a focus
+   ring that is not there when the key is pressed. */
+:focus-visible{outline:2px solid var(--rx-primary);outline-offset:3px;border-radius:2px}
 
-/* Every section shares one gutter and one max width, so the page has a spine
-   regardless of which blocks a pharmacy chose or what order they are in. */
-.rx-block{padding:2rem 1.25rem}
-.rx-block>*{max-width:70rem;margin-inline:auto}
+h1,h2,h3{
+  font-family:var(--rx-display);
+  font-style:normal;
+  line-height:1.1;
+  margin:0 0 var(--rx-sm);
+  /* A long pharmacy name is one unbreakable word on a 320px screen unless
+     this says otherwise. */
+  overflow-wrap:anywhere;
+  min-width:0;
+}
+h1{font-size:var(--rx-size-h1);letter-spacing:-.025em;font-weight:700}
+h2{font-size:var(--rx-size-h2);letter-spacing:-.015em;font-weight:700}
+h3{font-size:var(--rx-size-lg);letter-spacing:-.005em;font-weight:600}
+p{margin:0 0 var(--rx-sm)}
+p:last-child{margin-bottom:0}
+
+/* The small contextual label above a heading. STACKED, never set beside the
+   heading in its own column — the label-left/heading-right arrangement is the
+   most reliable templated-editorial tell there is. */
+.rx-eyebrow{
+  display:block;
+  font-family:var(--rx-display);
+  font-size:var(--rx-size-xs);
+  font-weight:600;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--rx-primary);
+  margin:0 0 var(--rx-xs);
+}
+
+/* ---- the page spine ----
+   Every section shares one gutter and one max width, so the page reads as one
+   site regardless of which blocks a pharmacy chose or what order they are in.
+   The vertical step is the large one: section separation is carried by SPACE,
+   not by a border on every band. */
+.rx-block{padding:var(--rx-xl) var(--rx-md)}
+.rx-block>*{max-width:var(--rx-shell);margin-inline:auto}
 .rx-narrow,.rx-prose{max-width:44rem;margin-inline:auto}
+.rx-prose p{color:var(--rx-muted);font-size:var(--rx-size-lg)}
+.rx-lede{font-size:var(--rx-size-lg);color:var(--rx-muted);max-width:var(--rx-measure)}
 
-/* Screen-reader-only text. Used for the rating equivalent in reviews — the
-   stars are aria-hidden and this carries the actual value. */
 .rx-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 
-/* ---- buttons ---- */
+/* ---- the diptych ----
+   The page's structural signature: text on one side, proof on the other,
+   alternating direction down the page. One column on a phone, always. */
+.rx-split{display:grid;gap:var(--rx-lg);align-items:center}
+/* For pairs where the two halves are different lengths — a heading against a
+   seven-row table — centring them looks like a mistake. */
+.rx-split--top{align-items:start}
+.rx-split--top .rx-hours{margin-top:0}
+.rx-split-media img{
+  width:100%;
+  border-radius:var(--rx-radius);
+  /* A pharmacy sends portrait phone snaps and landscape ones. Cropping to a
+     fixed shape is what stops a page of ragged, differently-proportioned
+     boxes; object-fit is what stops the crop becoming a stretch. */
+  aspect-ratio:4/5;
+  object-fit:cover;
+  background:var(--rx-tint);
+}
+
+/* ---- buttons ----
+   Eight states are overkill for a link; these have the four a link can be in,
+   and the tap target is sized for a thumb on a phone. */
 .rx-btn{
-  display:inline-block;
-  padding:.75rem 1.35rem;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:.5rem;
+  padding:.8rem 1.4rem;
   border-radius:var(--rx-radius);
   font-family:var(--rx-display);
   font-weight:600;
+  font-size:var(--rx-size-sm);
   text-decoration:none;
   /* 44px is the smallest reliably tappable target; a CTA that is hard to hit
      on a phone is a CTA that does not get hit. */
   min-height:44px;
-  line-height:1.5;
+  line-height:1.3;
+  /* A CTA that wraps to two lines stops reading as a button. */
+  white-space:nowrap;
+  transition:transform var(--rx-dur) var(--rx-ease),
+             box-shadow var(--rx-dur) var(--rx-ease),
+             background-color var(--rx-dur) var(--rx-ease);
 }
-.rx-btn-wa{background:var(--rx-primary);color:var(--rx-on-primary)}
-.rx-btn-ghost{background:transparent;color:var(--rx-primary);box-shadow:inset 0 0 0 2px currentColor}
-.rx-btn-outline{background:transparent;color:var(--rx-primary);box-shadow:inset 0 0 0 2px currentColor}
-.rx-btn-band{background:var(--rx-primary);color:var(--rx-on-primary)}
-.rx-cta-row{display:flex;flex-wrap:wrap;gap:.75rem;margin-top:1.25rem}
+.rx-btn:hover{transform:translateY(-1px)}
+.rx-btn:active{transform:translateY(0)}
+.rx-btn-wa,.rx-btn-band,.rx-btn-solid{
+  background:var(--rx-primary);
+  color:var(--rx-on-primary);
+  box-shadow:var(--rx-shadow);
+}
+.rx-btn-wa:hover,.rx-btn-band:hover,.rx-btn-solid:hover{
+  box-shadow:0 2px 4px rgba(15,23,42,.06),0 14px 30px -14px rgba(15,23,42,.3);
+}
+.rx-btn-ghost,.rx-btn-outline{
+  background:transparent;
+  color:var(--rx-ink);
+  box-shadow:inset 0 0 0 1px var(--rx-line-strong);
+}
+.rx-btn-ghost:hover,.rx-btn-outline:hover{
+  background:var(--rx-tint);
+  box-shadow:inset 0 0 0 1px var(--rx-primary);
+  color:var(--rx-primary);
+}
+.rx-cta-row{display:flex;flex-wrap:wrap;gap:var(--rx-sm);margin-top:var(--rx-md)}
 
-/* ---- header ---- */
-.rx-pharmacy-header{background:var(--rx-surface);border-bottom:1px solid var(--rx-soft);padding-block:1.25rem}
-.rx-header-inner{display:flex;flex-direction:column;align-items:flex-start;gap:.75rem}
-.rx-brand-name{font-family:var(--rx-display);font-weight:700;font-size:1.25rem}
-.rx-logo{max-height:52px;width:auto}
-.rx-nav{display:flex;flex-wrap:wrap;gap:1.25rem}
-.rx-nav a{text-decoration:none;color:var(--rx-muted);font-weight:500}
+/* ---- header ----
+   Sticky, because the WhatsApp button is the page's one job and it should
+   never be more than a thumb away. Lightweight, because it is chrome. */
+/* .rx-block.<name>, not .<name>: every block also carries .rx-block, and the
+   section padding is raised inside a later media query. A single-class rule
+   here loses to it and the sticky header renders 220px tall with six rems of
+   air above a 56px row — measured at 768px, not theorised. */
+.rx-block.rx-pharmacy-header{
+  position:sticky;
+  top:0;
+  z-index:50;
+  background:var(--rx-surface);
+  border-bottom:1px solid var(--rx-line);
+  padding:var(--rx-sm) var(--rx-md);
+}
+@supports (backdrop-filter:blur(8px)){
+  .rx-pharmacy-header{
+    background:color-mix(in oklab, var(--rx-surface) 88%, transparent);
+    backdrop-filter:blur(10px);
+  }
+}
+.rx-header-inner{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:var(--rx-md);
+  width:100%;
+  max-width:var(--rx-shell);
+  margin-inline:auto;
+}
+.rx-brand{display:flex;align-items:center;gap:.6rem;text-decoration:none;color:inherit;min-width:0}
+.rx-brand-name{
+  font-family:var(--rx-display);
+  font-weight:700;
+  font-size:1.0625rem;
+  letter-spacing:-.01em;
+  color:var(--rx-ink);
+  text-decoration:none;
+  /* Two lines of pharmacy name is fine; three pushes the header over. */
+  overflow-wrap:anywhere;
+}
+.rx-logo{max-height:40px;width:auto}
 
-/* ---- hero ---- */
-.rx-pharmacy-hero{background:var(--rx-soft)}
-.rx-hero-inner{display:flex;flex-direction:column;gap:2rem}
-.rx-lede{font-size:1.15rem;color:var(--rx-muted);max-width:38rem}
-.rx-hero-media img{border-radius:var(--rx-radius);width:100%;object-fit:cover}
+/* Desktop nav is hidden until there is room for it; the disclosure below
+   carries the same links on a phone. */
+.rx-nav{display:none;gap:var(--rx-lg);align-items:center}
+/* inline-flex + min-height, not padding: the nav bar first appears at 768px,
+   which is a TABLET — a touch device — and a 25px link is a mouse target, not
+   a thumb one. Measured, not assumed. */
+.rx-nav a{
+  display:inline-flex;
+  align-items:center;
+  min-height:44px;
+  text-decoration:none;
+  color:var(--rx-muted);
+  font-weight:500;
+  font-size:var(--rx-size-sm);
+  white-space:nowrap;
+}
+.rx-nav a:hover{color:var(--rx-ink)}
+.rx-nav a[aria-current="page"]{color:var(--rx-ink);font-weight:600}
+.rx-header-cta{display:none}
 
-/* ---- grids: services, reviews ---- */
-.rx-grid{display:grid;gap:1.25rem;padding:0;margin:1.25rem 0 0;list-style:none}
-.rx-service h3{margin-bottom:.25rem}
-.rx-service p{color:var(--rx-muted);margin:0}
-/* Not an icon set. A small primary-coloured dot that marks the item without
+/* The mobile menu: a <details>, because there is no JavaScript on this page
+   and a disclosure widget is what the platform already provides. */
+.rx-menu{position:relative}
+.rx-menu>summary{
+  list-style:none;
+  display:inline-flex;
+  align-items:center;
+  gap:.5rem;
+  min-height:44px;
+  padding:0 .5rem;
+  cursor:pointer;
+  font-family:var(--rx-display);
+  font-weight:600;
+  font-size:var(--rx-size-sm);
+  color:var(--rx-ink);
+}
+.rx-menu>summary::-webkit-details-marker{display:none}
+.rx-menu-bars{display:block;width:18px;height:2px;background:currentColor;position:relative}
+.rx-menu-bars::before,.rx-menu-bars::after{content:"";position:absolute;left:0;width:18px;height:2px;background:currentColor}
+.rx-menu-bars::before{top:-6px}
+.rx-menu-bars::after{top:6px}
+.rx-menu[open] .rx-menu-bars{background:transparent}
+.rx-menu[open] .rx-menu-bars::before{top:0;transform:rotate(45deg)}
+.rx-menu[open] .rx-menu-bars::after{top:0;transform:rotate(-45deg)}
+.rx-menu-panel{
+  position:absolute;
+  right:0;
+  top:calc(100% + .6rem);
+  min-width:min(16rem,calc(100vw - 2rem));
+  padding:var(--rx-sm);
+  background:var(--rx-surface);
+  border:1px solid var(--rx-line);
+  border-radius:var(--rx-radius);
+  box-shadow:var(--rx-shadow);
+  display:grid;
+  gap:.125rem;
+}
+.rx-menu-panel a{
+  display:block;
+  padding:.7rem .75rem;
+  min-height:44px;
+  line-height:1.6;
+  text-decoration:none;
+  color:var(--rx-ink);
+  font-weight:500;
+  border-radius:calc(var(--rx-radius) / 1.5);
+}
+.rx-menu-panel a:hover{background:var(--rx-tint);color:var(--rx-primary)}
+.rx-menu-panel .rx-btn{margin-top:var(--rx-xs);width:100%}
+
+/* ---- hero ----
+   The strongest section on the page, and the only one that gets the tint as a
+   full-bleed ground. Text left, the pharmacy's own photograph right. */
+.rx-pharmacy-hero{background:var(--rx-tint);border-bottom:1px solid var(--rx-line)}
+.rx-hero-inner{display:grid;gap:var(--rx-lg);align-items:center}
+.rx-hero-copy{min-width:0}
+.rx-hero-media img{
+  width:100%;
+  border-radius:var(--rx-radius);
+  aspect-ratio:4/3;
+  object-fit:cover;
+  box-shadow:var(--rx-shadow);
+  background:var(--rx-surface);
+}
+
+/* ---- section heads ---- */
+.rx-head{margin-bottom:var(--rx-lg);max-width:var(--rx-measure)}
+.rx-head p{color:var(--rx-muted)}
+
+/* ---- services ----
+   NOT a row of identical shadowed cards. A hairline-ruled list that reads as
+   one considered set, and that looks deliberate whether a pharmacy offers
+   three services or nine. */
+.rx-grid{display:grid;gap:0;padding:0;margin:var(--rx-md) 0 0;list-style:none;border-top:1px solid var(--rx-line)}
+.rx-service{
+  padding:var(--rx-md) 0;
+  border-bottom:1px solid var(--rx-line);
+  display:block;
+  text-decoration:none;
+  color:inherit;
+  transition:padding-inline-start var(--rx-dur) var(--rx-ease),
+             background-color var(--rx-dur) var(--rx-ease);
+}
+a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
+.rx-service h3{margin-bottom:.25rem;color:var(--rx-ink)}
+.rx-service p{color:var(--rx-muted);margin:0;font-size:var(--rx-size-sm)}
+/* Not an icon set. A small primary-coloured rule that marks the item without
    pretending to be a glyph library the page does not ship. */
-.rx-icon{display:block;width:12px;height:12px;border-radius:999px;background:var(--rx-primary);margin-bottom:.5rem}
+.rx-icon{display:block;width:26px;height:3px;border-radius:2px;background:var(--rx-primary);margin-bottom:var(--rx-sm)}
 
-.rx-review{margin:0;padding:1.25rem;background:var(--rx-soft);border-radius:var(--rx-radius)}
-.rx-review blockquote{margin:0}
-.rx-review figcaption{color:var(--rx-muted);font-weight:600;margin-top:.5rem}
-.rx-rating{margin:0 0 .5rem;color:var(--rx-primary);letter-spacing:.1em}
+.rx-review{margin:0;padding:var(--rx-md);background:var(--rx-tint);border-radius:var(--rx-radius)}
+.rx-review blockquote{margin:0;font-size:var(--rx-size-lg);font-family:var(--rx-display);line-height:1.4}
+.rx-review figcaption{color:var(--rx-muted);font-weight:600;margin-top:var(--rx-xs);font-size:var(--rx-size-sm)}
+.rx-rating{margin:0 0 var(--rx-xs);color:var(--rx-primary);letter-spacing:.1em}
+
+/* ---- photographs ----
+   A feature image with supporting ones beside it, not four identical tiles.
+   Falls back to a plain even grid when there is only one photo, so a pharmacy
+   with a single shopfront picture still looks composed. */
+.rx-photo-grid{display:grid;gap:var(--rx-sm)}
+.rx-photo{
+  width:100%;
+  height:auto;
+  aspect-ratio:4/3;
+  object-fit:cover;
+  border-radius:var(--rx-radius);
+  display:block;
+  background:var(--rx-tint);
+}
 
 /* ---- hours ---- */
-.rx-hours{margin:1.25rem 0 0;max-width:32rem}
-.rx-hours-row{display:flex;justify-content:space-between;gap:1.25rem;padding:.6rem 0;border-bottom:1px solid var(--rx-soft)}
-.rx-hours dt{font-weight:600}
-.rx-hours dd{margin:0;color:var(--rx-muted);text-align:right}
-.rx-hours-note{margin-top:.75rem;color:var(--rx-muted)}
+.rx-hours{margin:var(--rx-md) 0 0;max-width:32rem}
+.rx-hours-row{
+  display:flex;
+  justify-content:space-between;
+  gap:var(--rx-md);
+  padding:.7rem 0;
+  border-bottom:1px solid var(--rx-line);
+}
+.rx-hours-row:last-child{border-bottom:0}
+.rx-hours dt,.rx-hours-row span:first-child{font-weight:600}
+.rx-hours dd,.rx-hours-row span:last-child{margin:0;color:var(--rx-muted);text-align:right;font-variant-numeric:tabular-nums}
+.rx-hours-note{margin-top:var(--rx-sm);color:var(--rx-muted);font-size:var(--rx-size-sm)}
 
 /* ---- location & contact ---- */
-.rx-address{font-style:normal;margin-bottom:1.25rem}
+.rx-address{font-style:normal;margin-bottom:var(--rx-md);font-size:var(--rx-size-lg)}
 .rx-landmark{color:var(--rx-muted)}
-.rx-contact{list-style:none;padding:0;margin:1.25rem 0 0;display:grid;gap:.75rem;max-width:32rem}
-.rx-contact li{display:flex;gap:.75rem;flex-wrap:wrap}
-.rx-label{font-weight:600;min-width:6.5rem}
+.rx-contact{list-style:none;padding:0;margin:var(--rx-md) 0 0;display:grid;gap:0;max-width:32rem;border-top:1px solid var(--rx-line)}
+.rx-contact li{
+  display:flex;
+  gap:var(--rx-sm);
+  flex-wrap:wrap;
+  align-items:baseline;
+  padding:.8rem 0;
+  border-bottom:1px solid var(--rx-line);
+}
+.rx-label{font-weight:600;min-width:6.5rem;color:var(--rx-muted);font-size:var(--rx-size-sm)}
+
+/* ---- the closing WhatsApp band ----
+   The page's last word. Inverted, so it reads as an ending rather than as one
+   more section. */
+.rx-pharmacy-whatsappCta{background:var(--rx-primary);color:var(--rx-on-primary);text-align:center}
+.rx-pharmacy-whatsappCta h2{color:var(--rx-on-primary)}
+.rx-pharmacy-whatsappCta p{color:var(--rx-on-primary);opacity:.86;max-width:34rem;margin-inline:auto}
+.rx-pharmacy-whatsappCta .rx-btn-wa,
+.rx-pharmacy-whatsappCta .rx-btn-band{
+  background:var(--rx-on-primary);
+  color:var(--rx-primary);
+  margin-top:var(--rx-md);
+}
+
+/* ---- breadcrumbs ---- */
+.rx-crumbs{display:flex;flex-wrap:wrap;gap:.4rem;padding:0;margin:0;list-style:none;font-size:var(--rx-size-sm);color:var(--rx-muted)}
+.rx-crumbs li+li::before{content:"/";margin-right:.4rem;color:var(--rx-line-strong)}
+.rx-crumbs a{color:var(--rx-muted);text-decoration:none}
+.rx-crumbs a:hover{color:var(--rx-primary);text-decoration:underline}
+
+/* ---- health-article furniture ---- */
+.rx-seek-care{
+  border-inline-start:3px solid var(--rx-primary);
+  background:var(--rx-tint);
+  border-radius:var(--rx-radius);
+  padding:var(--rx-md) var(--rx-md) var(--rx-md) var(--rx-lg);
+}
+.rx-seek-care h2{font-size:var(--rx-size-xl)}
+.rx-byline{color:var(--rx-muted);font-size:var(--rx-size-sm)}
+.rx-byline p{margin:0}
+.rx-disclaimer{color:var(--rx-muted);font-size:var(--rx-size-sm);border-top:1px solid var(--rx-line);padding-top:var(--rx-md)}
 
 /* ---- footer ----
-   The secondary text here is a TRANSLUCENT WHITE, not var(--rx-muted).
-   --rx-muted is tuned for the light page body; on the dark footer it was
-   #475569 on #0f172a, about 2:1, which fails WCAG AA badly and was visibly
-   unreadable in review. Deriving it from the foreground instead means it
-   stays correct for every palette, including any added later — a fixed grey
-   would have to be re-checked against each one. */
-.rx-pharmacy-footer{background:var(--rx-ink);color:var(--rx-surface);padding-block:2rem}
-.rx-pharmacy-footer a{color:var(--rx-surface)}
-.rx-footer-name{font-family:var(--rx-display);font-weight:700;font-size:1.1rem}
-.rx-footer-address{color:rgba(255,255,255,.8)}
-.rx-footer-legal{color:rgba(255,255,255,.66);margin-top:1.25rem;font-size:.9375rem}
+   A statement, not four columns of links. The secondary text is a TRANSLUCENT
+   WHITE rather than var(--rx-muted): --rx-muted is tuned for the light page
+   body, and on the dark footer it was about 2:1, which fails WCAG AA badly and
+   was visibly unreadable in review. Deriving it from the foreground keeps it
+   correct for every palette, including any added later. */
+.rx-block.rx-pharmacy-footer{background:var(--rx-ink);color:var(--rx-surface);padding:var(--rx-xl) var(--rx-md)}
+.rx-pharmacy-footer{background:var(--rx-ink);color:var(--rx-surface)}
+.rx-pharmacy-footer a{color:var(--rx-surface);text-decoration:none}
+.rx-pharmacy-footer a:hover{text-decoration:underline}
+.rx-footer-inner{max-width:var(--rx-shell);margin-inline:auto;display:grid;gap:var(--rx-md)}
+.rx-footer-name{
+  font-family:var(--rx-display);
+  font-weight:700;
+  font-size:var(--rx-size-xl);
+  letter-spacing:-.015em;
+  margin:0;
+}
+.rx-footer-address{color:rgba(255,255,255,.82);margin:0}
+.rx-footer-contact{display:flex;flex-wrap:wrap;gap:0 var(--rx-md);margin:0;padding:0;list-style:none}
+.rx-footer-nav{display:flex;flex-wrap:wrap;gap:0 var(--rx-md);margin:0;padding:0;list-style:none}
+.rx-footer-nav a{color:rgba(255,255,255,.82);font-size:var(--rx-size-sm)}
+/* 44px, because these are the only links in the footer and a phone number
+   that is hard to hit is a phone call that does not happen. Measured at
+   320px: they were 19px tall, which is a line of text, not a target. */
+.rx-footer-nav a,.rx-footer-contact a{display:inline-flex;align-items:center;min-height:44px}
+.rx-footer-legal{
+  color:rgba(255,255,255,.62);
+  margin:0;
+  padding-top:var(--rx-md);
+  border-top:1px solid rgba(255,255,255,.16);
+  font-size:var(--rx-size-sm);
+}
 
 /* ---- the responsive step ----
-   These two class names are declared by the blocks themselves, in their
-   "responsive" metadata, and emitted by their renderers. Adding a block that
-   stacks at a new breakpoint means adding one rule here, not restructuring
-   anything.
-   (Straight quotes, not backticks: this comment lives inside a JS template
-   literal, and a backtick here closes the string.) */
+   rx-stack-640 and rx-stack-768 are declared by the blocks themselves, in
+   their "responsive" metadata, and emitted by their renderers. Adding a block
+   that stacks at a new breakpoint means adding one rule here, not
+   restructuring anything.
+   minmax(0,1fr) rather than 1fr on every image-bearing track: a bare 1fr is
+   min-content-floored, and an image inside one pushes the grid wider than the
+   viewport. */
 @media (min-width:640px){
-  .rx-block{padding:3.5rem 2rem}
-  .rx-stack-640{flex-direction:row;align-items:center;justify-content:space-between;width:100%}
-  .rx-grid-2{grid-template-columns:repeat(2,1fr)}
-  .rx-grid-3{grid-template-columns:repeat(2,1fr)}
+  .rx-block{padding:var(--rx-2xl) var(--rx-lg)}
+  .rx-photo-grid{grid-template-columns:repeat(auto-fit,minmax(15rem,minmax(0,1fr)))}
+  /* Three or more photos get a composition rather than a row: one large, the
+     rest stacked beside it. */
+  .rx-photo-grid:has(:nth-child(3)){grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)}
+  .rx-photo-grid:has(:nth-child(3))>:first-child{grid-row:span 2;aspect-ratio:4/5}
+  .rx-footer-inner{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);align-items:start}
+  .rx-footer-legal{grid-column:1 / -1}
 }
 @media (min-width:768px){
-  .rx-stack-768{flex-direction:row;align-items:center}
-  .rx-stack-768>*{flex:1 1 0}
+  .rx-stack-640{display:flex;flex-direction:row;align-items:center;justify-content:space-between;width:100%}
+  .rx-nav{display:flex}
+  .rx-header-cta{display:inline-flex}
+  .rx-menu{display:none}
+  .rx-stack-768,.rx-split{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .rx-hero-inner{grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:var(--rx-xl)}
+  /* The alternation that makes this a Split Studio rather than a stack of
+     rows: the flipped block puts its media first on desktop and keeps the
+     copy first in the DOM, so the reading order on a phone is unchanged. */
+  .rx-split--flip .rx-split-media{order:-1}
+  .rx-grid-2{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--rx-md);border-top:0}
+  .rx-grid-2 .rx-review{border-bottom:0}
 }
 @media (min-width:1024px){
-  .rx-grid-3{grid-template-columns:repeat(3,1fr)}
+  /* Services become two columns of ruled rows — still a list, still hairlines,
+     never a card wall. */
+  .rx-grid-3{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:var(--rx-xl)}
+  .rx-grid-3 .rx-service:nth-last-child(-n+2){border-bottom:0}
 }
 
-/* Respect a reader who has asked for less motion. There is no animation here
-   today, but the published page is generated and this costs one line. */
+/* ---- motion ----
+   Scroll-driven, declarative, and entirely optional: browsers without
+   animation-timeline never run it and see the finished page, which is the
+   correct fallback and the reason this needs no script. */
+@media (prefers-reduced-motion:no-preference){
+  @supports (animation-timeline:view()){
+    .rx-block{
+      animation:rx-rise linear both;
+      animation-timeline:view();
+      animation-range:entry 0% entry 55%;
+    }
+    /* The header is sticky and the hero is the first thing seen — neither
+       should animate in. */
+    .rx-pharmacy-header,.rx-pharmacy-hero{animation:none}
+  }
+  .rx-photo,.rx-hero-media img,.rx-split-media img{
+    transition:transform 420ms var(--rx-ease);
+  }
+  .rx-photo:hover,.rx-hero-media img:hover,.rx-split-media img:hover{transform:scale(1.015)}
+}
+@keyframes rx-rise{
+  from{opacity:0;transform:translateY(12px)}
+  to{opacity:1;transform:none}
+}
+
+/* Respect a reader who has asked for less motion. */
 @media (prefers-reduced-motion:reduce){
   *{animation:none!important;transition:none!important}
+}
+
+/* ---- print ----
+   A pharmacy prints its own page to check it, and a customer prints the
+   address. Neither wants a dark footer slab using half a cartridge. */
+@media print{
+  .rx-pharmacy-header,.rx-menu,.rx-cta-row{display:none}
+  .rx-pharmacy-footer{background:none;color:#000;border-top:1px solid #000}
+  .rx-pharmacy-footer a,.rx-footer-address,.rx-footer-legal{color:#000}
+  .rx-block{padding:1rem 0;break-inside:avoid}
 }</style>
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"Pharmacy","name":"Ikeja Family Pharmacy","address":{"@type":"PostalAddress","streetAddress":"12 Allen Avenue, Ikeja","addressLocality":"Ikeja","addressRegion":"Lagos","addressCountry":"NG"},"telephone":"08012345678","description":"We have served the Allen Avenue community since 2014. Our pharmacists are here six days a week for prescriptions, advice and everyday health needs. If you are not sure what you need, just ask — there is never a charge for advice.","hasMap":"https://maps.google.com/?q=ikeja"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Pharmacy","name":"Ikeja Family Pharmacy","address":{"@type":"PostalAddress","streetAddress":"12 Allen Avenue","addressLocality":"Ikeja","addressRegion":"Lagos","addressCountry":"NG"},"telephone":"08012345678","description":"A community pharmacy serving Allen Avenue since 2011. Our pharmacists dispense prescriptions, check blood pressure, and answer questions about medicines.","hasMap":"https://maps.google.com/?q=ikeja"}</script>
+
+
+
 </head>
 <body>
-<header class="rx-block rx-pharmacy-header"><div class="rx-header-inner rx-stack-640"><span class="rx-brand-name">Ikeja Family Pharmacy</span><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Chat on WhatsApp</a></div></header><section class="rx-block rx-pharmacy-hero"><div class="rx-hero-inner rx-stack-768"><div class="rx-hero-copy"><h1>Expert pharmacy care, close to home</h1><p class="rx-lede">Qualified pharmacists you can talk to, and the medicines you need without the wait.</p><div class="rx-cta-row"><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678?text=Hello%2C%20I%20have%20a%20question%20about%20my%20medication." rel="noopener noreferrer" target="_blank">Speak to our team</a></div></div></div></section><section class="rx-block rx-pharmacy-about"><div class="rx-prose"><h2>Our pharmacy</h2><p>We have served the Allen Avenue community since 2014. Our pharmacists are here six days a week for prescriptions, advice and everyday health needs.</p><p>If you are not sure what you need, just ask — there is never a charge for advice.</p></div></section><section class="rx-block rx-pharmacy-pharmacistCta"><div class="rx-narrow"><h2>Not sure what you need?</h2><p>Our pharmacists answer questions every day. Ask us before you buy — there is no charge for advice.</p><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678?text=Hello%2C%20please%20may%20I%20speak%20to%20a%20pharmacist%3F" rel="noopener noreferrer" target="_blank">Ask a pharmacist</a></div></section><section class="rx-block rx-pharmacy-services"><h2>Services</h2><ul class="rx-grid rx-grid-3"><li class="rx-service"><span class="rx-icon rx-icon-pill" aria-hidden="true"></span><h3>Prescriptions</h3><p>Dispensed and checked by a registered pharmacist.</p></li><li class="rx-service"><span class="rx-icon rx-icon-delivery" aria-hidden="true"></span><h3>Home delivery</h3><p>Across Ikeja, same day where possible.</p></li><li class="rx-service"><span class="rx-icon rx-icon-test" aria-hidden="true"></span><h3>Blood pressure checks</h3><p>Walk in any weekday morning.</p></li><li class="rx-service"><span class="rx-icon rx-icon-advice" aria-hidden="true"></span><h3>Health advice</h3><p>Talk to a pharmacist before you buy.</p></li></ul></section><section class="rx-block rx-pharmacy-openingHours"><h2>Opening hours</h2><dl class="rx-hours"><div class="rx-hours-row"><dt>Monday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Tuesday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Wednesday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Thursday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Friday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Saturday</dt><dd>9:00 am – 6:00 pm</dd></div><div class="rx-hours-row"><dt>Sunday</dt><dd>Closed</dd></div></dl></section><section class="rx-block rx-pharmacy-location"><h2>Visit us</h2><address class="rx-address"><p>12 Allen Avenue, Ikeja, Ikeja, Lagos</p><p class="rx-landmark">Near Opposite GTBank</p></address><a class="rx-btn rx-btn-ghost" href="https://maps.google.com/?q=ikeja" rel="noopener noreferrer" target="_blank">Get directions</a></section><section class="rx-block rx-pharmacy-contact"><h2>Get in touch</h2><ul class="rx-contact"><li><span class="rx-label">Phone</span> <a href="tel:08012345678">08012345678</a></li><li><span class="rx-label">WhatsApp</span> <a href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Message us</a></li><li><span class="rx-label">Address</span> 12 Allen Avenue, Ikeja</li></ul></section><footer class="rx-block rx-pharmacy-footer"><div class="rx-footer-inner"><p class="rx-footer-name">Ikeja Family Pharmacy</p><p class="rx-footer-address">12 Allen Avenue, Ikeja</p><p><a href="tel:08012345678">08012345678</a></p><p><a href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">WhatsApp</a></p><p class="rx-footer-legal">© 2026 Ikeja Family Pharmacy</p></div></footer>
+<header class="rx-block rx-pharmacy-header"><div class="rx-header-inner"><a class="rx-brand rx-brand-name" href="/">Ikeja Family Pharmacy</a><nav class="rx-nav" aria-label="Main"><a href="/about/">About</a><a href="/services/">Services</a><a href="/location/">Location</a><a href="/contact/">Contact</a></nav><a class="rx-btn rx-btn-wa rx-header-cta" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Chat on WhatsApp</a><details class="rx-menu"><summary aria-label="Menu"><span class="rx-menu-bars" aria-hidden="true"></span>Menu</summary><div class="rx-menu-panel"><a href="/about/">About</a><a href="/services/">Services</a><a href="/location/">Location</a><a href="/contact/">Contact</a><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Chat on WhatsApp</a></div></details></div></header><section class="rx-block rx-pharmacy-hero"><div class="rx-hero-inner"><div class="rx-hero-copy"><span class="rx-eyebrow">Pharmacy in Ikeja, Lagos</span><h1>Expert pharmacy care, close to home</h1><p class="rx-lede">Qualified pharmacists you can talk to, and the medicines you need without the wait.</p><div class="rx-cta-row"><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678?text=Hello%2C%20I%20have%20a%20question%20about%20my%20medication." rel="noopener noreferrer" target="_blank">Speak to our team</a><a class="rx-btn rx-btn-ghost" href="https://maps.google.com/?q=ikeja" rel="noopener noreferrer" target="_blank">Get directions</a></div></div></div></section><section class="rx-block rx-pharmacy-about"><div class="rx-prose"><h2>Our pharmacy</h2><p>A community pharmacy serving Allen Avenue since 2011. Our pharmacists dispense prescriptions, check blood pressure, and answer questions about medicines.</p></div></section><section class="rx-block rx-pharmacy-pharmacistCta"><div class="rx-narrow"><h2>Not sure what you need?</h2><p>Our pharmacists answer questions every day. Ask us before you buy — there is no charge for advice.</p><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678?text=Hello%2C%20please%20may%20I%20speak%20to%20a%20pharmacist%3F" rel="noopener noreferrer" target="_blank">Ask a pharmacist</a></div></section><section class="rx-block rx-pharmacy-services"><div class="rx-head"><h2>Services</h2></div><ul class="rx-grid rx-grid-3"><li class="rx-service"><h3>Prescription Refills</h3></li><li class="rx-service"><h3>Blood Pressure Checks</h3></li><li class="rx-service"><h3>Blood Glucose Testing</h3></li><li class="rx-service"><h3>Medication Counselling</h3></li></ul></section><section class="rx-block rx-pharmacy-openingHours"><div class="rx-split rx-split--top"><div class="rx-split-copy"><h2>Opening hours</h2></div><dl class="rx-hours"><div class="rx-hours-row"><dt>Monday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Tuesday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Wednesday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Thursday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Friday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Saturday</dt><dd>9:00 am – 6:00 pm</dd></div><div class="rx-hours-row"><dt>Sunday</dt><dd>Closed</dd></div></dl></div></section><section class="rx-block rx-pharmacy-location"><div class="rx-split-copy"><h2>Visit us</h2><address class="rx-address"><p>12 Allen Avenue, Ikeja, Lagos</p><p class="rx-landmark">Near the Computer Village bus stop</p></address><a class="rx-btn rx-btn-ghost" href="https://maps.google.com/?q=ikeja" rel="noopener noreferrer" target="_blank">Get directions</a></div></section><section class="rx-block rx-pharmacy-contact"><h2>Get in touch</h2><ul class="rx-contact"><li><span class="rx-label">Phone</span> <a href="tel:08012345678">08012345678</a></li><li><span class="rx-label">WhatsApp</span> <a href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Message us</a></li><li><span class="rx-label">Address</span> 12 Allen Avenue</li></ul></section><footer class="rx-block rx-pharmacy-footer"><div class="rx-footer-inner"><p class="rx-footer-name">Ikeja Family Pharmacy</p><p class="rx-footer-address">12 Allen Avenue</p><ul class="rx-footer-contact"><li><a href="tel:08012345678">08012345678</a></li><li><a href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">WhatsApp</a></li></ul><nav aria-label="Footer"><ul class="rx-footer-nav"><li><a href="/about/">About</a></li><li><a href="/services/">Services</a></li><li><a href="/location/">Location</a></li><li><a href="/contact/">Contact</a></li></ul></nav><p class="rx-footer-legal">© 2026 Ikeja Family Pharmacy</p></div></footer>
 </body>
 </html>

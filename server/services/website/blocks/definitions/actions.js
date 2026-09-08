@@ -8,7 +8,30 @@
  * whatsappUrl() hardcodes the host and is the only thing that builds one.
  */
 
-const { esc, safeHref, waHref, assetUrl, section } = require('../render');
+const { esc, safeHref, waHref, mapsHref, assetUrl, assetsOfKind, section } = require('../render');
+
+/**
+ * The photograph the hero leads with.
+ *
+ * DETERMINISTIC, and resolved by KIND rather than stored on the block. An
+ * explicit `image` prop still wins — an owner who picked one meant it — but
+ * with none set the hero takes the pharmacy's first `hero` photo, or its
+ * first `gallery` photo when there is no hero one. That ordering is what
+ * makes "upload a photo of your shop" enough to get a photograph into the
+ * hero, with nothing else to configure.
+ *
+ * Templates deliberately store no asset id (see templates.js), so this is the
+ * path every template-built site takes. Returns null rather than a
+ * placeholder when the pharmacy has uploaded nothing at all: the hero then
+ * renders as a single column of type, which is a composition rather than an
+ * empty grey rectangle where a picture was supposed to be.
+ */
+function heroImage(props, ctx) {
+  const explicit = assetUrl(props.image, ctx);
+  if (explicit) return { url: explicit, width: null, height: null };
+  const [photo] = [...assetsOfKind(ctx, 'hero'), ...assetsOfKind(ctx, 'gallery')];
+  return photo || null;
+}
 
 const hero = {
   id: 'pharmacy.hero',
@@ -52,30 +75,54 @@ const hero = {
 
   render(props, ctx) {
     const wa = waHref(props.primaryCtaWhatsapp, props.primaryCtaMessage, ctx);
-    const secondary = safeHref(props.secondaryCtaUrl);
-    const image = assetUrl(props.image, ctx);
+    // The secondary action is directions when the pharmacy has a map link and
+    // has not set its own — "where are you" is the second question every
+    // visitor has, and it is the only other thing worth a button up here.
+    // Routed through mapsHref so the tap is counted like any other.
+    const ownSecondary = safeHref(props.secondaryCtaUrl);
+    const secondary = ownSecondary || mapsHref(ctx?.profile?.maps_url, ctx);
+    const secondaryLabel = props.secondaryCtaLabel || (ownSecondary ? '' : 'Get directions');
+    const photo = heroImage(props, ctx);
+
+    // The place, in the pharmacy's own words, above its name. Omitted when
+    // the profile has no city or state — an eyebrow reading "Pharmacy" is
+    // furniture, not information.
+    const place = [ctx?.profile?.city, ctx?.profile?.state].filter(Boolean).join(', ');
+    const eyebrow = place ? `<span class="rx-eyebrow">Pharmacy in ${esc(place)}</span>` : '';
 
     const buttons = [
       wa && props.primaryCtaLabel
         ? `<a class="rx-btn rx-btn-wa" href="${esc(wa)}" rel="noopener noreferrer" target="_blank">${esc(props.primaryCtaLabel)}</a>`
         : '',
-      secondary && props.secondaryCtaLabel
-        ? `<a class="rx-btn rx-btn-ghost" href="${esc(secondary)}" rel="noopener noreferrer">${esc(props.secondaryCtaLabel)}</a>`
+      secondary && secondaryLabel
+        ? `<a class="rx-btn rx-btn-ghost" href="${esc(secondary)}" rel="noopener noreferrer" target="_blank">${esc(secondaryLabel)}</a>`
         : '',
     ].filter(Boolean).join('');
 
     const copy = [
+      eyebrow,
       props.heading ? `<h1>${esc(props.heading)}</h1>` : '',
       props.subheading ? `<p class="rx-lede">${esc(props.subheading)}</p>` : '',
       buttons ? `<div class="rx-cta-row">${buttons}</div>` : '',
     ].filter(Boolean).join('');
 
-    // alt="" because the hero image is decorative — the heading beside it
-    // already carries the meaning, and describing it again is noise in a
-    // screen reader.
-    const media = image ? `<div class="rx-hero-media"><img src="${esc(image)}" alt="" /></div>` : '';
+    // The alt names the business and the place rather than describing the
+    // photograph. We know it is this pharmacy; we have not seen what is in
+    // the frame, and inventing "our bright modern dispensary" would be
+    // software describing an image nobody here has looked at.
+    const alt = place
+      ? `${ctx?.pharmacy?.name || 'The pharmacy'}, ${place}`
+      : (ctx?.pharmacy?.name || '');
+    const dims = photo && photo.width && photo.height
+      ? ` width="${photo.width}" height="${photo.height}"`
+      : '';
+    // eager + high fetchpriority: this is the largest element above the fold,
+    // so it is the one the Largest Contentful Paint is measured on.
+    const media = photo
+      ? `<div class="rx-hero-media"><img src="${esc(photo.url)}" alt="${esc(alt)}"${dims} loading="eager" fetchpriority="high" decoding="async" /></div>`
+      : '';
 
-    return section(this.id, `<div class="rx-hero-inner rx-stack-768">${`<div class="rx-hero-copy">${copy}</div>`}${media}</div>`);
+    return section(this.id, `<div class="rx-hero-inner">${`<div class="rx-hero-copy">${copy}</div>`}${media}</div>`);
   },
 };
 
@@ -88,6 +135,11 @@ const whatsappCta = {
 
   props: {
     label: { type: 'text', max: 60 },
+    // The band's own heading and line. Optional: with neither set this stays
+    // the bare button it has always been, which is what the `solid` and
+    // `outline` styles are for mid-page.
+    heading: { type: 'text', max: 120 },
+    description: { type: 'text', max: 240 },
     phoneNumber: { type: 'phone', from: 'pharmacy.public_whatsapp_number' },
     message: { type: 'text', max: 160 },
     style: { type: 'enum', values: ['solid', 'outline', 'band'] },
@@ -110,7 +162,19 @@ const whatsappCta = {
     // No number, no block. Rendering a dead button on a public page is worse
     // than rendering nothing: a customer taps it and nothing happens.
     if (!wa) return '';
-    return section(this.id, `<a class="rx-btn rx-btn-wa rx-btn-${esc(props.style)}" href="${esc(wa)}" rel="noopener noreferrer" target="_blank">${esc(props.label)}</a>`);
+
+    const button = `<a class="rx-btn rx-btn-wa rx-btn-${esc(props.style)}" href="${esc(wa)}" rel="noopener noreferrer" target="_blank">${esc(props.label)}</a>`;
+
+    // With a heading it becomes the page's closing statement; without one it
+    // stays the plain button it was, for use mid-page.
+    if (!props.heading && !props.description) return section(this.id, button);
+
+    const inner = [
+      props.heading ? `<h2>${esc(props.heading)}</h2>` : '',
+      props.description ? `<p>${esc(props.description)}</p>` : '',
+      button,
+    ].filter(Boolean).join('');
+    return section(this.id, `<div class="rx-narrow">${inner}</div>`);
   },
 };
 

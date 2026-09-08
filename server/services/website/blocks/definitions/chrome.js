@@ -6,9 +6,23 @@
  * customisation an owner meant to make, and the guided builder should not
  * offer it. The adapter turns these flags into GrapesJS component options
  * later; nothing here knows GrapesJS exists.
+ *
+ * THE MOBILE MENU IS A <details>, NOT A SCRIPT. Published pages carry
+ * `script-src 'none'` and contain no JavaScript at all — that is what makes
+ * the whole stored-XSS class unreachable rather than merely defended against,
+ * and it is not being traded away for a navigation drawer. A disclosure
+ * widget is what the platform already provides, it is keyboard-operable and
+ * screen-reader-announced for free, and it cannot fail to open because a
+ * bundle did not load on a slow connection.
  */
 
 const { esc, attr, waHref, telHref, assetUrl, section } = require('../render');
+
+/** The links the site actually has, or the owner's own if they set any. */
+function navLinks(props, ctx) {
+  if ((props.navigation || []).length) return props.navigation;
+  return (ctx.sitePages || []).map((page) => ({ href: page.path, label: page.nav }));
+}
 
 const header = {
   id: 'pharmacy.header',
@@ -63,13 +77,15 @@ const header = {
     icon: 'layout-top',
   },
 
-  a11y: 'Renders a <header> landmark with a <nav>; the WhatsApp button is a link, not a div.',
+  a11y: 'Renders a <header> landmark with a <nav>; the WhatsApp button is a link, not a div. The mobile menu is a <details>, so it is operable by keyboard and announced as a disclosure without any script.',
 
   render(props, ctx) {
     const logo = assetUrl(props.logo, ctx);
+    // The brand is a link home. On every page but the home page that is the
+    // one navigation control a visitor looks for first.
     const brand = logo
-      ? `<img class="rx-logo" src="${esc(logo)}"${attr('alt', props.pharmacyName)} />`
-      : `<span class="rx-brand-name">${esc(props.pharmacyName)}</span>`;
+      ? `<a class="rx-brand" href="/"><img class="rx-logo" src="${esc(logo)}"${attr('alt', props.pharmacyName)} /></a>`
+      : `<a class="rx-brand rx-brand-name" href="/">${esc(props.pharmacyName)}</a>`;
 
     // NAVIGATION: the owner's own links if they set any, otherwise the
     // site's real pages.
@@ -78,30 +94,28 @@ const header = {
     // This prop defaults to an empty list, so before this the home page
     // linked nowhere — every generated page was an orphan reachable only by
     // typing its URL, which is precisely the shape of internal linking
-    // failure that makes pages rank for nothing. Caught by a test asserting
-    // the home page links to /health/ exactly once.
-    //
-    // An explicit list still wins. A pharmacy that chose its own navigation
-    // meant it, and silently appending to it would be overriding a decision
-    // rather than filling a gap.
-    const links = (props.navigation || []).length
-      ? props.navigation
-      : (ctx.sitePages || []).map((page) => ({ href: page.path, label: page.nav }));
-
-    const nav = links.length
-      ? `<nav class="rx-nav" aria-label="Main">${
-        links.map((i) => `<a href="${esc(i.href)}">${esc(i.label)}</a>`).join('')
-      }</nav>`
-      : '';
+    // failure that makes pages rank for nothing.
+    const links = navLinks(props, ctx);
+    const linkHtml = links.map((i) => `<a href="${esc(i.href)}">${esc(i.label)}</a>`).join('');
+    const nav = links.length ? `<nav class="rx-nav" aria-label="Main">${linkHtml}</nav>` : '';
 
     const wa = waHref(props.whatsappNumber, null, ctx);
     // rel on every outbound link: noopener closes the window.opener handle,
     // and these all leave the site.
     const cta = wa
-      ? `<a class="rx-btn rx-btn-wa" href="${esc(wa)}" rel="noopener noreferrer" target="_blank">${esc(props.whatsappLabel)}</a>`
+      ? `<a class="rx-btn rx-btn-wa rx-header-cta" href="${esc(wa)}" rel="noopener noreferrer" target="_blank">${esc(props.whatsappLabel)}</a>`
       : '';
 
-    return section(this.id, `<div class="rx-header-inner rx-stack-640">${brand}${nav}${cta}</div>`, {
+    // The same links again, in a disclosure, for a screen with no room for a
+    // nav bar. Rendered only when there is something to put in it.
+    const menu = (links.length || wa)
+      ? `<details class="rx-menu"><summary aria-label="Menu"><span class="rx-menu-bars" aria-hidden="true"></span>Menu</summary>`
+        + `<div class="rx-menu-panel">${linkHtml}`
+        + (wa ? `<a class="rx-btn rx-btn-wa" href="${esc(wa)}" rel="noopener noreferrer" target="_blank">${esc(props.whatsappLabel)}</a>` : '')
+        + `</div></details>`
+      : '';
+
+    return section(this.id, `<div class="rx-header-inner">${brand}${nav}${cta}${menu}</div>`, {
       tag: 'header',
     });
   },
@@ -142,17 +156,34 @@ const footer = {
     const tel = telHref(props.phone, ctx);
     const wa = waHref(props.whatsappNumber, null, ctx);
 
-    const lines = [
+    // A statement, not four columns of links: the pharmacy's name at size,
+    // the address under it, and the two ways to reach it. Everything here is
+    // omitted when the pharmacy has not got it — an empty column with a
+    // heading over nothing is worse than one column fewer.
+    const identity = [
       props.pharmacyName ? `<p class="rx-footer-name">${esc(props.pharmacyName)}</p>` : '',
       props.address ? `<p class="rx-footer-address">${esc(props.address)}</p>` : '',
-      tel ? `<p><a href="${esc(tel)}">${esc(props.phone)}</a></p>` : '',
-      wa ? `<p><a href="${esc(wa)}" rel="noopener noreferrer" target="_blank">WhatsApp</a></p>` : '',
-      // No fabricated year — see the copyright prop.
-      props.copyright ? `<p class="rx-footer-legal">${esc(props.copyright)}</p>`
-        : (ctx.year ? `<p class="rx-footer-legal">© ${esc(ctx.year)} ${esc(props.pharmacyName)}</p>` : ''),
+      (tel || wa)
+        ? `<ul class="rx-footer-contact">${
+          (tel ? `<li><a href="${esc(tel)}">${esc(props.phone)}</a></li>` : '')
+          + (wa ? `<li><a href="${esc(wa)}" rel="noopener noreferrer" target="_blank">WhatsApp</a></li>` : '')
+        }</ul>`
+        : '',
     ].filter(Boolean).join('');
 
-    return section(this.id, `<div class="rx-footer-inner">${lines}</div>`, { tag: 'footer' });
+    const pages = ctx.sitePages || [];
+    const nav = pages.length
+      ? `<nav aria-label="Footer"><ul class="rx-footer-nav">${
+        pages.map((p) => `<li><a href="${esc(p.path)}">${esc(p.nav)}</a></li>`).join('')
+      }</ul></nav>`
+      : '';
+
+    // No fabricated year — see the copyright prop.
+    const legal = props.copyright
+      ? `<p class="rx-footer-legal">${esc(props.copyright)}</p>`
+      : (ctx.year ? `<p class="rx-footer-legal">© ${esc(ctx.year)} ${esc(props.pharmacyName)}</p>` : '');
+
+    return section(this.id, `<div class="rx-footer-inner">${identity}${nav}${legal}</div>`, { tag: 'footer' });
   },
 };
 

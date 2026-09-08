@@ -9,7 +9,7 @@
  * with its own clinical review.
  */
 
-const { esc, section } = require('../render');
+const { esc, section, assetsOfKind } = require('../render');
 
 const about = {
   id: 'pharmacy.about',
@@ -30,7 +30,7 @@ const about = {
 
   a11y: 'Paragraphs are split on blank lines so the text is not one unbroken wall for a screen reader.',
 
-  render(props) {
+  render(props, ctx = {}) {
     if (!props.description) return '';
 
     // Paragraphs from blank lines. This is the one place a renderer turns
@@ -45,7 +45,32 @@ const about = {
       .join('');
 
     const heading = props.heading ? `<h2>${esc(props.heading)}</h2>` : '';
-    return section(this.id, `<div class="rx-prose">${heading}${paragraphs}</div>`);
+
+    // THE SECOND PHOTOGRAPH, not the first. The hero has already taken the
+    // pharmacy's leading image; About takes the next one so the two are not
+    // the same picture twice. With only one photo uploaded, this section
+    // stays prose — which is a composition, not a gap.
+    const photos = [...assetsOfKind(ctx, 'hero'), ...assetsOfKind(ctx, 'gallery')];
+    const photo = photos[1] || null;
+
+    if (!photo) {
+      return section(this.id, `<div class="rx-prose">${heading}${paragraphs}</div>`);
+    }
+
+    const place = [ctx?.profile?.city, ctx?.profile?.state].filter(Boolean).join(', ');
+    const alt = place
+      ? `${ctx?.pharmacy?.name || 'The pharmacy'}, ${place}`
+      : (ctx?.pharmacy?.name || '');
+    const dims = photo.width && photo.height ? ` width="${photo.width}" height="${photo.height}"` : '';
+
+    // rx-split--flip puts the photograph on the LEFT at desktop width while
+    // leaving the copy first in the DOM — so the alternation reads as a
+    // designed rhythm on a wide screen and the reading order on a phone is
+    // still heading, then words, then picture.
+    return section(this.id, `<div class="rx-split rx-split--flip">`
+      + `<div class="rx-split-copy">${heading}${paragraphs}</div>`
+      + `<div class="rx-split-media"><img src="${esc(photo.url)}" alt="${esc(alt)}"${dims} loading="lazy" decoding="async" /></div>`
+      + `</div>`);
   },
 };
 
@@ -90,8 +115,15 @@ const services = {
       return `<li class="rx-service">${icon}<h3>${esc(s.name)}</h3>${desc}</li>`;
     }).join('');
 
-    const heading = props.heading ? `<h2>${esc(props.heading)}</h2>` : '';
-    return section(this.id, `${heading}<ul class="rx-grid rx-grid-3">${items}</ul>`);
+    // A ruled list rather than a wall of shadowed cards, and the reason is
+    // that a pharmacy's service count is not ours to choose: three services
+    // in a three-column card grid is a tidy row, and four is a widow sitting
+    // alone on a second line. Hairline rows read as one deliberate set at any
+    // count, from three to twelve.
+    const head = props.heading
+      ? `<div class="rx-head"><h2>${esc(props.heading)}</h2></div>`
+      : '';
+    return section(this.id, `${head}<ul class="rx-grid rx-grid-3">${items}</ul>`);
   },
 };
 

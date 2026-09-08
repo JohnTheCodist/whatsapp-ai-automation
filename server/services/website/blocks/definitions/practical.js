@@ -23,7 +23,7 @@
  * default.
  */
 
-const { esc, mapsHref, waHref, telHref, mailHref, section } = require('../render');
+const { esc, mapsHref, waHref, telHref, mailHref, assetsOfKind, section } = require('../render');
 
 /** Canonical order and long names. Matches services/pharmacies.js's DAYS. */
 const DAY_ORDER = Object.freeze(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
@@ -96,7 +96,16 @@ const openingHours = {
     if (!rows) return '';
     const heading = props.heading ? `<h2>${esc(props.heading)}</h2>` : '';
     const note = props.note ? `<p class="rx-hours-note">${esc(props.note)}</p>` : '';
-    return section(this.id, `${heading}<dl class="rx-hours">${rows}</dl>${note}`);
+
+    // A diptych rather than one narrow column pinned to the left margin.
+    // Seven rows of times is about 32rem wide at most, and on a desktop that
+    // left the right half of the section empty — which reads as a page that
+    // ran out of things to say rather than as deliberate space. The heading
+    // now holds that side.
+    return section(this.id, `<div class="rx-split rx-split--top">`
+      + `<div class="rx-split-copy">${heading}${note}</div>`
+      + `<dl class="rx-hours">${rows}</dl>`
+      + `</div>`);
   },
 };
 
@@ -144,7 +153,27 @@ const location = {
       : '';
 
     const heading = props.heading ? `<h2>${esc(props.heading)}</h2>` : '';
-    return section(this.id, `${heading}<address class="rx-address">${lines}</address>${link}`);
+
+    // NO EMBEDDED MAP, and that is a constraint rather than an omission: the
+    // published CSP is `default-src 'none'` with no frame-src, so a Google
+    // Maps iframe would be blocked — and loosening the policy to embed a
+    // third-party frame on a page about somebody's health is a bad trade for
+    // a picture of a street. The photograph beside the address does the same
+    // job better: it is what the customer will actually be looking for when
+    // they arrive.
+    const [photo] = assetsOfKind(ctx, 'gallery');
+    const place = [ctx?.profile?.city, ctx?.profile?.state].filter(Boolean).join(', ');
+    const alt = place
+      ? `${ctx?.pharmacy?.name || 'The pharmacy'}, ${place}`
+      : (ctx?.pharmacy?.name || '');
+    const media = photo
+      ? `<div class="rx-split-media"><img src="${esc(photo.url)}" alt="${esc(alt)}"`
+        + `${photo.width && photo.height ? ` width="${photo.width}" height="${photo.height}"` : ''}`
+        + ` loading="lazy" decoding="async" /></div>`
+      : '';
+
+    const copy = `<div class="rx-split-copy">${heading}<address class="rx-address">${lines}</address>${link}</div>`;
+    return section(this.id, media ? `<div class="rx-split">${copy}${media}</div>` : copy);
   },
 };
 
