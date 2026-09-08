@@ -10,6 +10,7 @@
  */
 
 const { esc, section, assetsOfKind } = require('../render');
+const { serviceIcon } = require('../icons');
 
 const about = {
   id: 'pharmacy.about',
@@ -109,10 +110,14 @@ const services = {
     const list = props.services || [];
     if (!list.length) return '';
 
+    // EVERY service gets a mark, not only the ones with an explicit icon set.
+    // Matched from the name the owner typed, through the same catalogue that
+    // decides the service's URL — so the drawing and the page agree about
+    // what the service is. See blocks/icons.js.
     const items = list.map((s) => {
-      const icon = s.icon ? `<span class="rx-icon rx-icon-${esc(s.icon)}" aria-hidden="true"></span>` : '';
+      const icon = `<span class="rx-service-mark">${serviceIcon(s.name, s.icon)}</span>`;
       const desc = s.description ? `<p>${esc(s.description)}</p>` : '';
-      return `<li class="rx-service">${icon}<h3>${esc(s.name)}</h3>${desc}</li>`;
+      return `<li class="rx-service">${icon}<div class="rx-service-body"><h3>${esc(s.name)}</h3>${desc}</div></li>`;
     }).join('');
 
     // A ruled list rather than a wall of shadowed cards, and the reason is

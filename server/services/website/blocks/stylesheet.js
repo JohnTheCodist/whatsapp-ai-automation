@@ -364,6 +364,15 @@ p:last-child{margin-bottom:0}
 .rx-pharmacy-hero{background:var(--rx-tint);border-bottom:1px solid var(--rx-line)}
 .rx-hero-inner{display:grid;gap:var(--rx-lg);align-items:center}
 .rx-hero-copy{min-width:0}
+
+/* The typographic hero — no photograph uploaded. Centred, with the measure
+   pulled in so the lede breaks in a considered place rather than running the
+   full width of a desktop. */
+.rx-hero--type{justify-items:center;text-align:center}
+.rx-hero--type .rx-hero-copy{max-width:46rem}
+.rx-hero--type .rx-lede{margin-inline:auto}
+.rx-hero--type .rx-cta-row{justify-content:center}
+.rx-hero--type h1{font-size:clamp(2.3rem,1.6rem + 3.4vw,4.2rem)}
 .rx-hero-media img{
   width:100%;
   border-radius:var(--rx-radius);
@@ -385,17 +394,45 @@ p:last-child{margin-bottom:0}
 .rx-service{
   padding:var(--rx-md) 0;
   border-bottom:1px solid var(--rx-line);
-  display:block;
+  display:flex;
+  gap:var(--rx-md);
+  align-items:flex-start;
   text-decoration:none;
   color:inherit;
   transition:padding-inline-start var(--rx-dur) var(--rx-ease),
              background-color var(--rx-dur) var(--rx-ease);
 }
 a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
+.rx-service-body{min-width:0}
 .rx-service h3{margin-bottom:.25rem;color:var(--rx-ink)}
 .rx-service p{color:var(--rx-muted);margin:0;font-size:var(--rx-size-sm)}
-/* Not an icon set. A small primary-coloured rule that marks the item without
-   pretending to be a glyph library the page does not ship. */
+
+/* The drawn mark beside a service. A tinted square rather than a bare glyph:
+   at 24px a single-stroke icon floating in text is a smudge, and the square
+   gives it a size and a footing so a row of them reads as a set. */
+.rx-service-mark{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:44px;
+  height:44px;
+  border-radius:calc(var(--rx-radius) / 1.4);
+  background:var(--rx-tint);
+  color:var(--rx-primary);
+  transition:background-color var(--rx-dur) var(--rx-ease),
+             color var(--rx-dur) var(--rx-ease),
+             transform var(--rx-dur) var(--rx-ease);
+}
+.rx-service:hover .rx-service-mark{
+  background:var(--rx-primary);
+  color:var(--rx-on-primary);
+  transform:translateY(-1px);
+}
+.rx-svg{display:block}
+
+/* The old marker, kept because a site published before the icon set exists
+   still has blocks that emit it. */
 .rx-icon{display:block;width:26px;height:3px;border-radius:2px;background:var(--rx-primary);margin-bottom:var(--rx-sm)}
 
 .rx-review{margin:0;padding:var(--rx-md);background:var(--rx-tint);border-radius:var(--rx-radius)}
@@ -536,6 +573,9 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
   .rx-menu{display:none}
   .rx-stack-768,.rx-split{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .rx-hero-inner{grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:var(--rx-xl)}
+  /* One column, whatever the width: there is no second thing to put in it. */
+  .rx-hero-inner.rx-hero--type{grid-template-columns:minmax(0,1fr)}
+  .rx-block.rx-pharmacy-hero:has(.rx-hero--type){padding-block:calc(var(--rx-2xl) * 1.15)}
   /* The alternation that makes this a Split Studio rather than a stack of
      rows: the flipped block puts its media first on desktop and keeps the
      copy first in the DOM, so the reading order on a phone is unchanged. */

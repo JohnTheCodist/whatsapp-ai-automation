@@ -8,7 +8,7 @@
  * whatsappUrl() hardcodes the host and is the only thing that builds one.
  */
 
-const { esc, safeHref, waHref, mapsHref, assetUrl, assetsOfKind, section } = require('../render');
+const { esc, safeHref, waHref, telHref, mapsHref, assetUrl, assetsOfKind, section } = require('../render');
 
 /**
  * The photograph the hero leads with.
@@ -75,6 +75,13 @@ const hero = {
 
   render(props, ctx) {
     const wa = waHref(props.primaryCtaWhatsapp, props.primaryCtaMessage, ctx);
+    // WhatsApp is the primary action and the point of the product — but a
+    // pharmacy that has not set its published number would otherwise get a
+    // hero with nothing to do in it, which is the weakest thing a page can
+    // be. The phone is the honest fallback: it is real, it is already on the
+    // profile, and it is counted the same way. Still nothing at all when the
+    // pharmacy has neither, because a button that dials nobody is worse.
+    const phone = wa ? '' : telHref(ctx?.profile?.phone, ctx);
     // The secondary action is directions when the pharmacy has a map link and
     // has not set its own — "where are you" is the second question every
     // visitor has, and it is the only other thing worth a button up here.
@@ -93,6 +100,9 @@ const hero = {
     const buttons = [
       wa && props.primaryCtaLabel
         ? `<a class="rx-btn rx-btn-wa" href="${esc(wa)}" rel="noopener noreferrer" target="_blank">${esc(props.primaryCtaLabel)}</a>`
+        : '',
+      phone
+        ? `<a class="rx-btn rx-btn-wa" href="${esc(phone)}">Call ${esc(ctx.profile.phone)}</a>`
         : '',
       secondary && secondaryLabel
         ? `<a class="rx-btn rx-btn-ghost" href="${esc(secondary)}" rel="noopener noreferrer" target="_blank">${esc(secondaryLabel)}</a>`
@@ -122,7 +132,14 @@ const hero = {
       ? `<div class="rx-hero-media"><img src="${esc(photo.url)}" alt="${esc(alt)}"${dims} loading="eager" fetchpriority="high" decoding="async" /></div>`
       : '';
 
-    return section(this.id, `<div class="rx-hero-inner">${`<div class="rx-hero-copy">${copy}</div>`}${media}</div>`);
+    // WITH a photograph the hero is a diptych. WITHOUT one it becomes a
+    // centred typographic statement rather than a column of text with an
+    // empty half beside it — which is what a pharmacy that has not uploaded
+    // anything was getting, and it read as a page still loading. A hero with
+    // no image is a legitimate design; a hero with a hole where an image goes
+    // is not.
+    const shape = media ? 'rx-hero-inner' : 'rx-hero-inner rx-hero--type';
+    return section(this.id, `<div class="${shape}">${`<div class="rx-hero-copy">${copy}</div>`}${media}</div>`);
   },
 };
 

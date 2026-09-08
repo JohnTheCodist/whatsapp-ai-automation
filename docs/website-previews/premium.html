@@ -330,6 +330,15 @@ p:last-child{margin-bottom:0}
 .rx-pharmacy-hero{background:var(--rx-tint);border-bottom:1px solid var(--rx-line)}
 .rx-hero-inner{display:grid;gap:var(--rx-lg);align-items:center}
 .rx-hero-copy{min-width:0}
+
+/* The typographic hero — no photograph uploaded. Centred, with the measure
+   pulled in so the lede breaks in a considered place rather than running the
+   full width of a desktop. */
+.rx-hero--type{justify-items:center;text-align:center}
+.rx-hero--type .rx-hero-copy{max-width:46rem}
+.rx-hero--type .rx-lede{margin-inline:auto}
+.rx-hero--type .rx-cta-row{justify-content:center}
+.rx-hero--type h1{font-size:clamp(2.3rem,1.6rem + 3.4vw,4.2rem)}
 .rx-hero-media img{
   width:100%;
   border-radius:var(--rx-radius);
@@ -351,17 +360,45 @@ p:last-child{margin-bottom:0}
 .rx-service{
   padding:var(--rx-md) 0;
   border-bottom:1px solid var(--rx-line);
-  display:block;
+  display:flex;
+  gap:var(--rx-md);
+  align-items:flex-start;
   text-decoration:none;
   color:inherit;
   transition:padding-inline-start var(--rx-dur) var(--rx-ease),
              background-color var(--rx-dur) var(--rx-ease);
 }
 a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
+.rx-service-body{min-width:0}
 .rx-service h3{margin-bottom:.25rem;color:var(--rx-ink)}
 .rx-service p{color:var(--rx-muted);margin:0;font-size:var(--rx-size-sm)}
-/* Not an icon set. A small primary-coloured rule that marks the item without
-   pretending to be a glyph library the page does not ship. */
+
+/* The drawn mark beside a service. A tinted square rather than a bare glyph:
+   at 24px a single-stroke icon floating in text is a smudge, and the square
+   gives it a size and a footing so a row of them reads as a set. */
+.rx-service-mark{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:44px;
+  height:44px;
+  border-radius:calc(var(--rx-radius) / 1.4);
+  background:var(--rx-tint);
+  color:var(--rx-primary);
+  transition:background-color var(--rx-dur) var(--rx-ease),
+             color var(--rx-dur) var(--rx-ease),
+             transform var(--rx-dur) var(--rx-ease);
+}
+.rx-service:hover .rx-service-mark{
+  background:var(--rx-primary);
+  color:var(--rx-on-primary);
+  transform:translateY(-1px);
+}
+.rx-svg{display:block}
+
+/* The old marker, kept because a site published before the icon set exists
+   still has blocks that emit it. */
 .rx-icon{display:block;width:26px;height:3px;border-radius:2px;background:var(--rx-primary);margin-bottom:var(--rx-sm)}
 
 .rx-review{margin:0;padding:var(--rx-md);background:var(--rx-tint);border-radius:var(--rx-radius)}
@@ -502,6 +539,9 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
   .rx-menu{display:none}
   .rx-stack-768,.rx-split{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .rx-hero-inner{grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:var(--rx-xl)}
+  /* One column, whatever the width: there is no second thing to put in it. */
+  .rx-hero-inner.rx-hero--type{grid-template-columns:minmax(0,1fr)}
+  .rx-block.rx-pharmacy-hero:has(.rx-hero--type){padding-block:calc(var(--rx-2xl) * 1.15)}
   /* The alternation that makes this a Split Studio rather than a stack of
      rows: the flipped block puts its media first on desktop and keeps the
      copy first in the DOM, so the reading order on a phone is unchanged. */
@@ -561,6 +601,6 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
 
 </head>
 <body>
-<header class="rx-block rx-pharmacy-header"><div class="rx-header-inner"><a class="rx-brand rx-brand-name" href="/">Ikeja Family Pharmacy</a><nav class="rx-nav" aria-label="Main"><a href="/about/">About</a><a href="/services/">Services</a><a href="/location/">Location</a><a href="/contact/">Contact</a></nav><a class="rx-btn rx-btn-wa rx-header-cta" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Chat on WhatsApp</a><details class="rx-menu"><summary aria-label="Menu"><span class="rx-menu-bars" aria-hidden="true"></span>Menu</summary><div class="rx-menu-panel"><a href="/about/">About</a><a href="/services/">Services</a><a href="/location/">Location</a><a href="/contact/">Contact</a><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Chat on WhatsApp</a></div></details></div></header><section class="rx-block rx-pharmacy-hero"><div class="rx-hero-inner"><div class="rx-hero-copy"><span class="rx-eyebrow">Pharmacy in Ikeja, Lagos</span><h1>Expert pharmacy care, close to home</h1><p class="rx-lede">Qualified pharmacists you can talk to, and the medicines you need without the wait.</p><div class="rx-cta-row"><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678?text=Hello%2C%20I%20have%20a%20question%20about%20my%20medication." rel="noopener noreferrer" target="_blank">Speak to our team</a><a class="rx-btn rx-btn-ghost" href="https://maps.google.com/?q=ikeja" rel="noopener noreferrer" target="_blank">Get directions</a></div></div></div></section><section class="rx-block rx-pharmacy-about"><div class="rx-prose"><h2>Our pharmacy</h2><p>A community pharmacy serving Allen Avenue since 2011. Our pharmacists dispense prescriptions, check blood pressure, and answer questions about medicines.</p></div></section><section class="rx-block rx-pharmacy-pharmacistCta"><div class="rx-narrow"><h2>Not sure what you need?</h2><p>Our pharmacists answer questions every day. Ask us before you buy — there is no charge for advice.</p><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678?text=Hello%2C%20please%20may%20I%20speak%20to%20a%20pharmacist%3F" rel="noopener noreferrer" target="_blank">Ask a pharmacist</a></div></section><section class="rx-block rx-pharmacy-services"><div class="rx-head"><h2>Services</h2></div><ul class="rx-grid rx-grid-3"><li class="rx-service"><h3>Prescription Refills</h3></li><li class="rx-service"><h3>Blood Pressure Checks</h3></li><li class="rx-service"><h3>Blood Glucose Testing</h3></li><li class="rx-service"><h3>Medication Counselling</h3></li></ul></section><section class="rx-block rx-pharmacy-openingHours"><div class="rx-split rx-split--top"><div class="rx-split-copy"><h2>Opening hours</h2></div><dl class="rx-hours"><div class="rx-hours-row"><dt>Monday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Tuesday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Wednesday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Thursday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Friday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Saturday</dt><dd>9:00 am – 6:00 pm</dd></div><div class="rx-hours-row"><dt>Sunday</dt><dd>Closed</dd></div></dl></div></section><section class="rx-block rx-pharmacy-location"><div class="rx-split-copy"><h2>Visit us</h2><address class="rx-address"><p>12 Allen Avenue, Ikeja, Lagos</p><p class="rx-landmark">Near the Computer Village bus stop</p></address><a class="rx-btn rx-btn-ghost" href="https://maps.google.com/?q=ikeja" rel="noopener noreferrer" target="_blank">Get directions</a></div></section><section class="rx-block rx-pharmacy-contact"><h2>Get in touch</h2><ul class="rx-contact"><li><span class="rx-label">Phone</span> <a href="tel:08012345678">08012345678</a></li><li><span class="rx-label">WhatsApp</span> <a href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Message us</a></li><li><span class="rx-label">Address</span> 12 Allen Avenue</li></ul></section><footer class="rx-block rx-pharmacy-footer"><div class="rx-footer-inner"><p class="rx-footer-name">Ikeja Family Pharmacy</p><p class="rx-footer-address">12 Allen Avenue</p><ul class="rx-footer-contact"><li><a href="tel:08012345678">08012345678</a></li><li><a href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">WhatsApp</a></li></ul><nav aria-label="Footer"><ul class="rx-footer-nav"><li><a href="/about/">About</a></li><li><a href="/services/">Services</a></li><li><a href="/location/">Location</a></li><li><a href="/contact/">Contact</a></li></ul></nav><p class="rx-footer-legal">© 2026 Ikeja Family Pharmacy</p></div></footer>
+<header class="rx-block rx-pharmacy-header"><div class="rx-header-inner"><a class="rx-brand rx-brand-name" href="/">Ikeja Family Pharmacy</a><nav class="rx-nav" aria-label="Main"><a href="/about/">About</a><a href="/services/">Services</a><a href="/location/">Location</a><a href="/contact/">Contact</a></nav><a class="rx-btn rx-btn-wa rx-header-cta" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Chat on WhatsApp</a><details class="rx-menu"><summary aria-label="Menu"><span class="rx-menu-bars" aria-hidden="true"></span>Menu</summary><div class="rx-menu-panel"><a href="/about/">About</a><a href="/services/">Services</a><a href="/location/">Location</a><a href="/contact/">Contact</a><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Chat on WhatsApp</a></div></details></div></header><section class="rx-block rx-pharmacy-hero"><div class="rx-hero-inner rx-hero--type"><div class="rx-hero-copy"><span class="rx-eyebrow">Pharmacy in Ikeja, Lagos</span><h1>Expert pharmacy care, close to home</h1><p class="rx-lede">Qualified pharmacists you can talk to, and the medicines you need without the wait.</p><div class="rx-cta-row"><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678?text=Hello%2C%20I%20have%20a%20question%20about%20my%20medication." rel="noopener noreferrer" target="_blank">Speak to our team</a><a class="rx-btn rx-btn-ghost" href="https://maps.google.com/?q=ikeja" rel="noopener noreferrer" target="_blank">Get directions</a></div></div></div></section><section class="rx-block rx-pharmacy-about"><div class="rx-prose"><h2>Our pharmacy</h2><p>A community pharmacy serving Allen Avenue since 2011. Our pharmacists dispense prescriptions, check blood pressure, and answer questions about medicines.</p></div></section><section class="rx-block rx-pharmacy-pharmacistCta"><div class="rx-narrow"><h2>Not sure what you need?</h2><p>Our pharmacists answer questions every day. Ask us before you buy — there is no charge for advice.</p><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678?text=Hello%2C%20please%20may%20I%20speak%20to%20a%20pharmacist%3F" rel="noopener noreferrer" target="_blank">Ask a pharmacist</a></div></section><section class="rx-block rx-pharmacy-services"><div class="rx-head"><h2>Services</h2></div><ul class="rx-grid rx-grid-3"><li class="rx-service"><span class="rx-service-mark"><svg class="rx-svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g transform="rotate(-45 12 12)"><rect x="2.5" y="8.5" width="19" height="7" rx="3.5"/><path d="M12 8.5v7"/></g></svg></span><div class="rx-service-body"><h3>Prescription Refills</h3></div></li><li class="rx-service"><span class="rx-service-mark"><svg class="rx-svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 20.4 4.9 13.3a4.6 4.6 0 0 1 6.5-6.5l.6.6.6-.6a4.6 4.6 0 0 1 6.5 6.5Z"/><path d="M5.5 12.4h3l1.4-2.6 2.2 5 1.6-3.3 1.1 1h3.7"/></svg></span><div class="rx-service-body"><h3>Blood Pressure Checks</h3></div></li><li class="rx-service"><span class="rx-service-mark"><svg class="rx-svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.6c0 0 6 6.3 6 10.1a6 6 0 0 1-12 0c0-3.8 6-10.1 6-10.1Z"/></svg></span><div class="rx-service-body"><h3>Blood Glucose Testing</h3></div></li><li class="rx-service"><span class="rx-service-mark"><svg class="rx-svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 14.4A2.6 2.6 0 0 1 17.4 17H9.2L4.5 20.2V6.6A2.6 2.6 0 0 1 7.1 4h10.3A2.6 2.6 0 0 1 20 6.6Z"/><path d="M12.2 8.2v5M9.7 10.7h5"/></svg></span><div class="rx-service-body"><h3>Medication Counselling</h3></div></li></ul></section><section class="rx-block rx-pharmacy-openingHours"><div class="rx-split rx-split--top"><div class="rx-split-copy"><h2>Opening hours</h2></div><dl class="rx-hours"><div class="rx-hours-row"><dt>Monday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Tuesday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Wednesday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Thursday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Friday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Saturday</dt><dd>9:00 am – 6:00 pm</dd></div><div class="rx-hours-row"><dt>Sunday</dt><dd>Closed</dd></div></dl></div></section><section class="rx-block rx-pharmacy-location"><div class="rx-split-copy"><h2>Visit us</h2><address class="rx-address"><p>12 Allen Avenue, Ikeja, Lagos</p><p class="rx-landmark">Near the Computer Village bus stop</p></address><a class="rx-btn rx-btn-ghost" href="https://maps.google.com/?q=ikeja" rel="noopener noreferrer" target="_blank">Get directions</a></div></section><section class="rx-block rx-pharmacy-contact"><h2>Get in touch</h2><ul class="rx-contact"><li><span class="rx-label">Phone</span> <a href="tel:08012345678">08012345678</a></li><li><span class="rx-label">WhatsApp</span> <a href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Message us</a></li><li><span class="rx-label">Address</span> 12 Allen Avenue</li></ul></section><footer class="rx-block rx-pharmacy-footer"><div class="rx-footer-inner"><p class="rx-footer-name">Ikeja Family Pharmacy</p><p class="rx-footer-address">12 Allen Avenue</p><ul class="rx-footer-contact"><li><a href="tel:08012345678">08012345678</a></li><li><a href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">WhatsApp</a></li></ul><nav aria-label="Footer"><ul class="rx-footer-nav"><li><a href="/about/">About</a></li><li><a href="/services/">Services</a></li><li><a href="/location/">Location</a></li><li><a href="/contact/">Contact</a></li></ul></nav><p class="rx-footer-legal">© 2026 Ikeja Family Pharmacy</p></div></footer>
 </body>
 </html>
