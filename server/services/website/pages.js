@@ -156,6 +156,26 @@ function servicePages(pharmacy, profile) {
 }
 
 /**
+ * A meta description for one page.
+ *
+ * UNIQUE PER PAGE, BUILT FROM REAL DATA. Two pages sharing a description is
+ * a duplicate-content signal a pharmacy would never think to look for, and
+ * the fallback that causes it — "use the site description when the page has
+ * none" — looks harmless until half the site shares one sentence.
+ *
+ * Truncated on a word boundary at 155 characters, which is roughly where
+ * Google stops showing one. Nothing is padded to reach a length: a short
+ * accurate description beats a padded one.
+ */
+function metaDescription(text) {
+  const flat = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!flat) return null;
+  if (flat.length <= 155) return flat;
+  const cut = flat.slice(0, 155);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > 80 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+/**
  * Every page on this pharmacy's site, in the order they should be linked.
  *
  * @param {object} args
@@ -181,6 +201,10 @@ function buildPages({ pharmacy, profile, health = [], healthLibrary = [] } = {})
     title: place ? `${name} — Pharmacy in ${place}` : `${name} — Pharmacy`,
     h1: area ? `Trusted community pharmacy in ${area}` : `${name}`,
     nav: 'Home',
+    description: metaDescription(profile?.description)
+      || metaDescription(area
+        ? `${name} is a community pharmacy in ${area}. Prescriptions, advice and everyday health. Message us on WhatsApp.`
+        : `${name}. Prescriptions, advice and everyday health. Message us on WhatsApp.`),
   });
 
   // /about/ needs the pharmacy to have said something about itself. Without a
@@ -192,6 +216,9 @@ function buildPages({ pharmacy, profile, health = [], healthLibrary = [] } = {})
       title: place ? `About ${name} — Pharmacy in ${place}` : `About ${name}`,
       h1: `About ${name}`,
       nav: 'About',
+      description: metaDescription(area
+        ? `About ${name}, a community pharmacy in ${area}. ${profile.description}`
+        : `About ${name}. ${profile.description}`),
     });
   }
 
@@ -202,6 +229,9 @@ function buildPages({ pharmacy, profile, health = [], healthLibrary = [] } = {})
       title: place ? `Pharmacy Services in ${place} — ${name}` : `Services — ${name}`,
       h1: area ? `Pharmacy services in ${area}` : 'Our services',
       nav: 'Services',
+      description: metaDescription(area
+        ? `Services at ${name} in ${area}: ${services.map((s) => s.label).join(', ')}.`
+        : `Services at ${name}: ${services.map((s) => s.label).join(', ')}.`),
       children: services.map((s) => s.path),
     });
     for (const service of services) {
@@ -209,6 +239,11 @@ function buildPages({ pharmacy, profile, health = [], healthLibrary = [] } = {})
         ...service,
         title: place ? `${service.label} in ${place} — ${name}` : `${service.label} — ${name}`,
         h1: area ? `${service.label} in ${area}` : service.label,
+        // The owner's own words where they wrote any, and a factual
+        // sentence naming the service and the place where they did not.
+        description: metaDescription(service.description
+          ? `${service.label} at ${name}${area ? ` in ${area}` : ''}. ${service.description}`
+          : `${service.label} at ${name}${area ? ` in ${area}` : ''}.`),
         nav: service.label,
         parent: '/services/',
       });
@@ -222,6 +257,9 @@ function buildPages({ pharmacy, profile, health = [], healthLibrary = [] } = {})
       title: area ? `Find ${name} in ${area} — Address & Opening Hours` : `Find ${name}`,
       h1: area ? `Find us in ${area}` : 'Find us',
       nav: 'Location',
+      description: metaDescription(
+        `${name} is at ${[profile.address_line, area].filter(Boolean).join(', ')}. `
+        + 'Opening hours, directions and how to reach us.'),
     });
   }
 
@@ -233,6 +271,9 @@ function buildPages({ pharmacy, profile, health = [], healthLibrary = [] } = {})
     title: place ? `Contact ${name} — Pharmacy in ${place}` : `Contact ${name}`,
     h1: `Contact ${name}`,
     nav: 'Contact',
+    description: metaDescription(area
+      ? `Contact ${name} in ${area} on WhatsApp or by phone. Address and opening hours.`
+      : `Contact ${name} on WhatsApp or by phone. Address and opening hours.`),
   });
 
   // Health articles are OPT-IN and come from a reviewed library. See
@@ -286,6 +327,7 @@ function breadcrumbsFor(pages, path) {
 
 module.exports = {
   buildPages,
+  metaDescription,
   navPages,
   breadcrumbsFor,
   servicePages,

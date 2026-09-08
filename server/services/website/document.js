@@ -17,9 +17,10 @@
  */
 
 const { renderSite } = require('./blocks');
-const { esc } = require('./blocks/render');
+const { esc, assetUrl } = require('./blocks/render');
 const { stylesheet } = require('./blocks/stylesheet');
 const { resolveTheme } = require('./blocks/theme');
+const { breadcrumbsFor } = require('./pages');
 
 /**
  * A page title that says what the business is and where.
@@ -98,13 +99,65 @@ function structuredData(pharmacy, profile) {
 }
 
 /**
+ * BreadcrumbList, so a search result shows Home › Services › Blood Pressure
+ * Checks instead of a bare URL.
+ *
+ * Emitted only when there is a real trail. A one-item breadcrumb describing
+ * the page you are on is not a trail, and marking it up as one asserts a
+ * hierarchy that does not exist.
+ */
+function breadcrumbData(trail, canonicalBase) {
+  if (!trail || trail.length < 2) return '';
+  const data = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: trail.map((c, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      name: c.label,
+      item: `${canonicalBase}${c.path}`,
+    })),
+  };
+  return `<script type="application/ld+json">${JSON.stringify(data).replace(/</g, '\u003c')}</script>`;
+}
+
+/**
+ * Service schema for a service page.
+ *
+ * provider points at the pharmacy by name, and areaServed carries the city.
+ * Nothing here is asserted that the profile does not already contain.
+ */
+function serviceData(page, pharmacy, profile) {
+  if (page?.kind !== 'service' || !pharmacy?.name) return '';
+  const data = {
+    '@context': 'https://schema.org',
+    '@type': 'Service',
+    name: page.label,
+    provider: { '@type': 'Pharmacy', name: pharmacy.name },
+  };
+  if (page.description) data.description = page.description;
+  if (profile?.city) data.areaServed = { '@type': 'City', name: profile.city };
+  return `<script type="application/ld+json">${JSON.stringify(data).replace(/</g, '\u003c')}</script>`;
+}
+
+/**
  * Render the complete document.
+ *
+ * ONE HEAD ASSEMBLER FOR EVERY PAGE. The home page composes its body from the
+ * owner's blocks and the generated pages compose theirs from the profile, but
+ * both arrive here for their title, description, canonical and structured
+ * data. Two assemblers would drift, and the way that drift shows up is a
+ * second canonical tag or a page quietly missing one — neither of which is
+ * visible to anybody looking at the site.
  *
  * `noindex` is set for previews. A draft that a search engine crawled would
  * be a half-finished pharmacy website in results, outranking nothing and
  * embarrassing someone.
  */
-function renderDocument({ site, pharmacy, profile, assets, assetBaseUrl, theme, noindex = false, year, trackingBase } = {}) {
+function renderDocument({
+  site, pharmacy, profile, assets, assetBaseUrl, theme, noindex = false, year, trackingBase,
+  page = null, pages = null, canonicalBase = '', bodyHtml = null,
+} = {}) {
   const ctx = {
     pharmacy: pharmacy || {},
     profile: profile || {},
@@ -116,10 +169,20 @@ function renderDocument({ site, pharmacy, profile, assets, assetBaseUrl, theme, 
     trackingBase: trackingBase || null,
   };
 
-  const body = renderSite(site || { blocks: [] }, ctx);
+  const body = bodyHtml != null ? bodyHtml : renderSite(site || { blocks: [] }, ctx);
   const resolved = resolveTheme(theme);
-  const title = pageTitle(ctx.pharmacy, ctx.profile);
-  const description = pageDescription(ctx.pharmacy, ctx.profile);
+
+  // The page's own metadata wins. Falling back to the site-wide title is what
+  // makes this safe to call for the home page, which has no page record.
+  const title = page?.title || pageTitle(ctx.pharmacy, ctx.profile);
+  const description = page?.description || pageDescription(ctx.pharmacy, ctx.profile);
+
+  // A canonical is only emitted when we know the site's real origin. Guessing
+  // one is worse than omitting it: a wrong canonical tells Google to index a
+  // URL that may not exist, and it does so silently.
+  const canonical = canonicalBase && page?.path ? `${canonicalBase}${page.path}` : '';
+  const logo = ctx.profile?.logo_asset_id ? assetUrl(ctx.profile.logo_asset_id, ctx) : '';
+  const trail = pages && page ? breadcrumbsFor(pages, page.path) : [];
 
   return `<!doctype html>
 <html lang="en">
@@ -129,14 +192,24 @@ function renderDocument({ site, pharmacy, profile, assets, assetBaseUrl, theme, 
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}">
 ${noindex ? '<meta name="robots" content="noindex, nofollow">' : ''}
+${canonical ? `<link rel="canonical" href="${esc(canonical)}">` : ''}
 <meta property="og:type" content="website">
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
+${canonical ? `<meta property="og:url" content="${esc(canonical)}">` : ''}
+${ctx.pharmacy?.name ? `<meta property="og:site_name" content="${esc(ctx.pharmacy.name)}">` : ''}
+${logo ? `<meta property="og:image" content="${esc(logo)}">` : ''}
+<meta name="twitter:card" content="${logo ? 'summary_large_image' : 'summary'}">
+<meta name="twitter:title" content="${esc(title)}">
+<meta name="twitter:description" content="${esc(description)}">
+${logo ? `<meta name="twitter:image" content="${esc(logo)}">` : ''}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=${esc(resolved.googleFonts.replace(/\|/g, '&family='))}&display=swap">
 <style>${stylesheet(theme)}</style>
 ${structuredData(ctx.pharmacy, ctx.profile)}
+${breadcrumbData(trail, canonicalBase)}
+${serviceData(page, ctx.pharmacy, ctx.profile)}
 </head>
 <body>
 ${body}
@@ -144,4 +217,6 @@ ${body}
 </html>`;
 }
 
-module.exports = { renderDocument, pageTitle, pageDescription, structuredData };
+module.exports = {
+  renderDocument, pageTitle, pageDescription, structuredData, breadcrumbData, serviceData,
+};
