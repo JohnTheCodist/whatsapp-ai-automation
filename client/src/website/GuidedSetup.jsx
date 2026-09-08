@@ -23,6 +23,7 @@ import { Panel, PanelHead } from '../DashboardKit.jsx';
 import { IconSetup } from '../Icons.jsx';
 import * as api from './api.js';
 import LogoUpload from './LogoUpload.jsx';
+import PhotoUpload from './PhotoUpload.jsx';
 import ServicesPicker from './ServicesPicker.jsx';
 import HealthTopics from './HealthTopics.jsx';
 
@@ -132,6 +133,13 @@ export default function GuidedSetup({ site, onThemeChange, onSaved, onNavigate }
 
         <div className="mb-5 border-b border-slate-100 pb-5">
           <LogoUpload profile={profile} onChanged={(saved) => { setProfile(saved); onSaved?.(); }} />
+        </div>
+
+        {/* No onChanged: gallery photos are found by kind rather than
+            referenced from the profile, so there is nothing for the parent to
+            re-read after an upload. */}
+        <div className="mb-5 border-b border-slate-100 pb-5">
+          <PhotoUpload />
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
