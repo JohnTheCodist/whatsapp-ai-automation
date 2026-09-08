@@ -66,13 +66,52 @@ function storageOrigin() {
   }
 }
 
+/**
+ * Is this the error Supabase returns when the bucket has never been created?
+ *
+ * Matched on the code first and the message only as a fallback, because the
+ * message is prose and prose gets reworded between client versions.
+ */
+function isMissingBucket(error) {
+  if (!error) return false;
+  const code = String(error.code || error.error || '');
+  if (/NoSuchBucket/i.test(code)) return true;
+  return /bucket not found/i.test(String(error.message || ''));
+}
+
+/**
+ * Create the bucket, treating "already there" as success.
+ *
+ * WHY THIS IS NOT IN A MIGRATION
+ * Storage buckets are not database objects; db/migrations cannot make one, and
+ * a deployment that ran every migration successfully still had no bucket. That
+ * gap was invisible until somebody uploaded a logo and got an error naming a
+ * Supabase internal — 2026-09-08, on a live pharmacy, after the rest of the
+ * website builder had been working for two days.
+ *
+ * PUBLIC ON PURPOSE. Published pages reference these images by the public
+ * storage URL, so a private bucket would accept every upload and then 404 on
+ * every page that displayed one — a failure that appears long after the action
+ * that caused it, on the pharmacy's own website, in front of its customers.
+ *
+ * Two processes uploading at once can both attempt this. Whichever loses gets
+ * "already exists", which is the state it wanted, so the race has no bad
+ * branch.
+ */
+async function ensureBucket() {
+  const { error } = await supabase().storage.createBucket(BUCKET, { public: true });
+  if (!error) return;
+  if (/exist/i.test(String(error.message || ''))) return;
+  throw new Error(`Could not create the image store: ${error.message}`);
+}
+
 const supabaseStore = {
   /**
    * Write an object. `path` is always built by the service and always begins
    * with the pharmacy's id — this function never constructs it.
    */
   async put(path, buffer, contentType) {
-    const { error } = await supabase().storage.from(BUCKET).upload(path, buffer, {
+    const attempt = () => supabase().storage.from(BUCKET).upload(path, buffer, {
       contentType,
       // Immutable in practice: every object gets a fresh uuid, so an upsert
       // could only ever overwrite something after a uuid collision. `false`
@@ -82,6 +121,18 @@ const supabaseStore = {
       // only way to get a different image is a different URL.
       cacheControl: '31536000',
     });
+
+    let { error } = await attempt();
+
+    // Create the bucket only when its absence is what stopped us, and retry
+    // once. Checking up front would add a round trip to every upload forever
+    // to guard against a condition that is true at most once in the life of a
+    // deployment.
+    if (isMissingBucket(error)) {
+      await ensureBucket();
+      ({ error } = await attempt());
+    }
+
     if (error) throw new Error(`Could not store the image: ${error.message}`);
     return { path };
   },
