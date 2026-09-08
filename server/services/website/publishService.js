@@ -26,6 +26,7 @@
 
 const { getSql, assertPharmacyId } = require('../db');
 const { renderDocument } = require('./document');
+const { renderAllPages } = require('./siteRender');
 const { normalizeWebAddress } = require('./webAddress');
 const { getPharmacy, getProfile } = require('../pharmacies');
 const { assetMapFor } = require('./assetService');
@@ -116,6 +117,55 @@ async function setWebAddress(pharmacyId, input) {
 }
 
 /**
+ * Replace this pharmacy's stored pages with exactly the set just rendered.
+ *
+ * UPSERT THEN DELETE-WHAT-IS-MISSING, in that order and in one transaction.
+ * Deleting first would leave the site with no pages for the duration of the
+ * write, and a crawler that arrived in that window would see a site of 404s.
+ *
+ * The delete is what makes removing a service safe. A pharmacy that unticks
+ * "BP checks" does not need anybody to remember /services/blood-pressure-check/
+ * — it is simply not in the new set, so it goes. A publish path that only
+ * ever inserted would accumulate pages for services the pharmacy no longer
+ * offers, still linked from the sitemap, indefinitely.
+ */
+async function replacePages(tx, pharmacyId, rendered) {
+  for (const page of rendered) {
+    await tx`
+      insert into pharmacy_website_pages (pharmacy_id, path, kind, html, title, updated_at)
+      values (${pharmacyId}, ${page.path}, ${page.kind}, ${page.html}, ${page.title || null}, now())
+      on conflict (pharmacy_id, path) do update
+        set kind = excluded.kind,
+            html = excluded.html,
+            title = excluded.title,
+            updated_at = now()
+    `;
+  }
+
+  const keep = rendered.map((p) => p.path);
+  await tx`
+    delete from pharmacy_website_pages
+     where pharmacy_id = ${pharmacyId}
+       and not (path = any(${keep}))
+  `;
+}
+
+/**
+ * The absolute origin this site's canonical URLs are built from.
+ *
+ * Empty when subdomains are not configured, and renderDocument then omits the
+ * canonical entirely. That is deliberate: a guessed canonical tells Google to
+ * index a URL that may not exist, it does so silently, and the damage is
+ * invisible from the site itself. No canonical is a missing optimisation; a
+ * wrong one is a broken site.
+ */
+function canonicalBaseFor(subdomain) {
+  const domain = (process.env.PUBLIC_SITE_DOMAIN || '').trim().toLowerCase();
+  if (!domain || !subdomain) return '';
+  return `https://${subdomain}.${domain}`;
+}
+
+/**
  * Publish the current draft.
  *
  * Refuses without a web address, because a published site with no address is
@@ -143,7 +193,24 @@ async function publishWebsite(pharmacyId, { userId } = {}) {
   // passes no trackingBase: a preview is the owner looking at their own page,
   // and counting that as customer engagement would make the one number this
   // feature produces a lie.
-  const html = renderDocument({
+  // Every page, not just the home page. The sitemap is generated from the
+  // same array in the same call, so it cannot list a URL the render skipped.
+  //
+  // trackingBase stays the /p/ form even though most visitors will arrive on
+  // the subdomain: ONE rendering has to work on both shapes, and the host
+  // router accepts the /p/ tracking path for exactly that reason. Rendering
+  // twice to make redirect URLs prettier would double the storage and create
+  // two versions of a page that must never disagree.
+  const canonicalBase = canonicalBaseFor(site.subdomain);
+  const { pages, rendered } = renderAllPages({
+    ...ctx, site: site.site_data, theme: site.theme,
+    trackingBase: `/p/${site.subdomain}`, canonicalBase,
+  });
+
+  // published_html remains the home page, so every existing reader of that
+  // column keeps working unchanged.
+  const home = rendered.find((r) => r.path === '/');
+  const html = home ? home.html : renderDocument({
     ...ctx, site: site.site_data, theme: site.theme, trackingBase: `/p/${site.subdomain}`,
   });
 
@@ -169,6 +236,8 @@ async function publishWebsite(pharmacyId, { userId } = {}) {
          )
     `;
 
+    await replacePages(tx, pharmacyId, rendered);
+
     return tx`
       update pharmacy_websites
          set published_data = ${tx.json(site.site_data)},
@@ -181,7 +250,7 @@ async function publishWebsite(pharmacyId, { userId } = {}) {
     `;
   });
 
-  return { ok: true, site: row, bytes: html.length };
+  return { ok: true, site: row, bytes: html.length, pages: pages.length };
 }
 
 /**
@@ -230,16 +299,35 @@ async function rerenderPublished(pharmacyId) {
   if (!site || !site.published_data) return { ok: true, skipped: true };
 
   const ctx = await renderContextFor(pharmacyId);
-  const html = renderDocument({
+
+  // EVERY page, not just the home page. This runs when the PROFILE changes,
+  // and the profile is what decides which pages exist: adding a service here
+  // has to create its page, and removing one has to take the page away. A
+  // rerender that only refreshed published_html would leave a pharmacy with a
+  // live /services/blood-pressure-check/ it had already stopped offering, and
+  // a sitemap still advertising it.
+  const canonicalBase = canonicalBaseFor(site.subdomain);
+  const { rendered } = renderAllPages({
+    ...ctx, site: site.published_data, theme: site.theme,
+    trackingBase: `/p/${site.subdomain}`, canonicalBase,
+  });
+  const home = rendered.find((r) => r.path === '/');
+  const html = home ? home.html : renderDocument({
     ...ctx, site: site.published_data, theme: site.theme, trackingBase: `/p/${site.subdomain}`,
   });
 
-  await db`
-    update pharmacy_websites
-       set published_html = ${html}, updated_at = now()
-     where pharmacy_id = ${pharmacyId} and status = 'published'
-  `;
-  return { ok: true, skipped: false, bytes: html.length };
+  // One transaction: the home page cache and the page rows describe the same
+  // site, and a reader that caught them disagreeing would see a navigation
+  // menu listing pages that 404.
+  await db.begin(async (tx) => {
+    await replacePages(tx, pharmacyId, rendered);
+    await tx`
+      update pharmacy_websites
+         set published_html = ${html}, updated_at = now()
+       where pharmacy_id = ${pharmacyId} and status = 'published'
+    `;
+  });
+  return { ok: true, skipped: false, bytes: html.length, pages: rendered.length };
 }
 
 /** Publish history, newest first. Never includes HTML — see the header. */

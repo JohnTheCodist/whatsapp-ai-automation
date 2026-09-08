@@ -21,6 +21,7 @@ const { asyncRoute } = require('../middleware/errorHandler');
 const {
   resolveSiteKey, getPublishedSite, getClickTarget, etagFor,
   publicCsp, MAX_AGE_SECONDS, SHARED_MAX_AGE_SECONDS, addressFromHost,
+  getPublishedPage, getPublishedPaths, baseDomain,
 } = require('../services/website/publicSite');
 const analytics = require('../services/website/analytics');
 
@@ -42,16 +43,90 @@ function notFound(res) {
   res.send('There is no pharmacy website at this address.\n');
 }
 
+/**
+ * The stored form of a request path: leading and trailing slash, and only the
+ * characters pages.js can produce.
+ *
+ * STRICT ON PURPOSE. Matching exactly what the generator emits turns the
+ * lookup into an equality test rather than a normalisation guess, so the
+ * router and the sitemap cannot disagree about what a URL is. Anything else
+ * is refused before it reaches the database — scanners send a great deal of
+ * traversal, encoded nulls and 4KB paths, and none of it should cost a query.
+ */
+function normalizePath(raw) {
+  let path = String(raw || '/');
+  const q = path.indexOf('?');
+  if (q !== -1) path = path.slice(0, q);
+  if (!path.startsWith('/')) path = `/${path}`;
+  if (!path.endsWith('/')) path += '/';
+  if (path.length > 200) return null;
+  return /^\/([a-z0-9-]+\/)*$/.test(path) ? path : null;
+}
+
+/** The absolute origin for a site, or '' when subdomains are not configured. */
+function originFor(address) {
+  const domain = baseDomain();
+  return domain && address ? `https://${address}.${domain}` : '';
+}
+
+/**
+ * A real 404 page rather than a bare line of text.
+ *
+ * Someone who mistypes a URL should still be one click from the pharmacy.
+ * Carries noindex, because a soft 404 indexed as content is worse for the site
+ * than the missing page ever was — and still says exactly the same thing for
+ * "no such address" as for "not published", for the reason in notFound above.
+ *
+ * Self-contained and tiny: this is the one page that must render when nothing
+ * else about the site could be loaded.
+ */
+function notFoundPage(res) {
+  const style = 'body{font-family:system-ui,-apple-system,sans-serif;margin:0;min-height:100vh;'
+    + 'display:grid;place-items:center;background:#f7f8f7;color:#16211c}'
+    + 'main{text-align:center;padding:2rem}h1{font-size:1.5rem;margin:0 0 .5rem}'
+    + 'p{color:#4b5a53;margin:.25rem 0}a{color:#0f766e}';
+  const html = '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+    + '<meta name="viewport" content="width=device-width, initial-scale=1">'
+    + '<meta name="robots" content="noindex">'
+    + '<title>Page not found</title>'
+    + `<style>${style}</style></head><body><main>`
+    + '<h1>Page not found</h1>'
+    + '<p>That page does not exist on this website.</p>'
+    + '<p><a href="/">Go to the home page</a></p>'
+    + '</main></body></html>';
+
+  res.status(404)
+    .type('text/html; charset=utf-8')
+    .setHeader('Cache-Control', 'public, max-age=60');
+  res.setHeader('X-Robots-Tag', 'noindex');
+  res.send(html);
+}
+
+/**
+ * Serve one page of a published site.
+ *
+ * This replaced a handler that could only ever answer with the single stored
+ * page. The same code now serves /, /about/ and
+ * /services/blood-pressure-check/, because the page is looked up BY PATH
+ * rather than assumed to be the only one there is.
+ */
 const pageHandler = asyncRoute(async (req, res) => {
   const address = resolveSiteKey(req);
   // A malformed address never reaches the database. Scanners send a great
   // deal of this.
-  if (!address) return notFound(res);
+  if (!address) return notFoundPage(res);
 
-  const site = await getPublishedSite(address);
-  if (!site) return notFound(res);
+  // On the /p/<address>/... shape the address is part of the request path and
+  // must not be part of the PAGE path. req.params[0] is whatever followed it;
+  // on the subdomain shape there is no slug and the whole path is the page.
+  const rest = typeof req.params[0] === 'string' ? req.params[0] : '';
+  const path = normalizePath(req.params.slug ? `/${rest}` : req.path);
+  if (!path) return notFoundPage(res);
 
-  const html = site.published_html;
+  const page = await getPublishedPage(address, path);
+  if (!page) return notFoundPage(res);
+
+  const html = page.html;
   const etag = etagFor(html);
 
   res.setHeader('Content-Security-Policy', publicCsp());
@@ -72,7 +147,13 @@ const pageHandler = asyncRoute(async (req, res) => {
   // view. Buffered in memory and flushed on a timer — this must not put a
   // write on the connection pool for every visitor. Nothing about the visitor
   // is recorded; see services/website/analytics.js.
-  analytics.record(site.pharmacy_id, 'view');
+  //
+  // ONLY THE HOME PAGE COUNTS AS A VIEW. A visitor who reads four pages is one
+  // visit, not four. Counting every page would silently multiply the one
+  // number this feature reports to a pharmacy on the day the site gained more
+  // than one page — an improvement in the product showing up as a spike in
+  // customer interest that never happened.
+  if (page.kind === 'home') analytics.record(page.pharmacy_id, 'view');
 
   res.type('text/html; charset=utf-8').send(html);
 });
@@ -138,8 +219,51 @@ const robotsHandler = asyncRoute(async (req, res) => {
   // there would point a crawler at a path that 404s on that host — a
   // robots.txt that de-indexes the very site it exists to open up.
   const onHost = Boolean(addressFromHost(req.hostname));
+  // The sitemap is advertised only on the shape it is served on, and only
+  // when we know the real origin. A Sitemap: line pointing at a URL that
+  // 404s is worse than no line at all — it is the first thing a crawler
+  // fetches and the first thing it learns not to trust.
+  const origin = onHost ? originFor(address) : '';
   res.send(`User-agent: *
 Allow: ${onHost ? '/' : `/p/${address}`}
+${origin ? `\nSitemap: ${origin}/sitemap.xml\n` : ''}`);
+});
+
+/**
+ * sitemap.xml, listing exactly the pages that are stored.
+ *
+ * Read from the same table the router serves from, so it cannot advertise a
+ * URL that 404s. That is the single commonest defect in a generated site, and
+ * making it structurally impossible is worth more than any amount of care.
+ *
+ * Served only on the subdomain shape. The /p/ form has no origin of its own —
+ * its pages live under a path on the dashboard's hostname — and a sitemap
+ * full of guessed absolute URLs would be actively misleading.
+ */
+const sitemapHandler = asyncRoute(async (req, res) => {
+  const address = resolveSiteKey(req);
+  if (!address) return notFoundPage(res);
+
+  const origin = originFor(address);
+  if (!origin) return notFoundPage(res);
+
+  const rows = await getPublishedPaths(address);
+  if (!rows.length) return notFoundPage(res);
+
+  const urls = rows.map((row) => {
+    // lastmod from the row's real timestamp. "Now" on every fetch is a lie
+    // that teaches a crawler the field means nothing.
+    const stamp = row.updated_at ? new Date(row.updated_at).toISOString().slice(0, 10) : null;
+    return `  <url><loc>${origin}${row.path}</loc>`
+      + `${stamp ? `<lastmod>${stamp}</lastmod>` : ''}</url>`;
+  }).join('\n');
+
+  res.type('application/xml; charset=utf-8');
+  res.setHeader('Cache-Control', `public, max-age=${SHARED_MAX_AGE_SECONDS}`);
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls}
+</urlset>
 `);
 });
 
@@ -158,13 +282,33 @@ Allow: ${onHost ? '/' : `/p/${address}`}
  * flyer must keep working forever, and a redirect would cost every one of
  * those visitors a round trip.
  */
+// ORDER MATTERS. The catch-all must come last, or /p/<address>/robots.txt
+// would be looked up as a page called "robots.txt" and 404.
 router.get('/:slug', pageHandler);
 router.get('/:slug/go/:kind', goHandler);
 router.get('/:slug/robots.txt', robotsHandler);
+router.get('/:slug/sitemap.xml', sitemapHandler);
+router.get('/:slug/*', pageHandler);
 
 const hostRouter = express.Router();
 hostRouter.get('/', pageHandler);
 hostRouter.get('/go/:kind', goHandler);
 hostRouter.get('/robots.txt', robotsHandler);
+hostRouter.get('/sitemap.xml', sitemapHandler);
+
+// The /p/ tracking path, accepted on the subdomain too.
+//
+// A page is rendered ONCE and served on both shapes, so its counted links
+// carry one form — /p/<address>/go/whatsapp. On the subdomain that path would
+// otherwise match nothing and every WhatsApp button on the site would 404.
+// Rendering twice so the URLs could be prettier would double the storage and
+// create two versions of a page that must never disagree, to change a string
+// no visitor reads.
+hostRouter.get('/p/:slug/go/:kind', goHandler);
+
+// Last: anything else on a pharmacy host is a page or a 404, and must never
+// fall through to the dashboard. GOLDEN-005c asserts the guard that makes
+// that true.
+hostRouter.get('/*', pageHandler);
 
 module.exports = { router, hostRouter, notFound };

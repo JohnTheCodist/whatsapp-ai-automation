@@ -129,6 +129,51 @@ async function getPublishedSite(address) {
 }
 
 /**
+ * One published page of one pharmacy, by address and path.
+ *
+ * status = published is in the WHERE clause rather than checked afterwards,
+ * the same as getPublishedSite: an unpublished site is not merely hidden, its
+ * pages are never loaded into this process at all.
+ *
+ * The join is on subdomain because that is what the request carries — either
+ * as the hostname label or as the /p/ path segment. Both shapes resolve to
+ * the same row, which is what lets one rendering serve both.
+ */
+async function getPublishedPage(address, path) {
+  if (!address || !path) return null;
+  const db = getSql();
+  const [row] = await db`
+    select p.pharmacy_id, p.html, p.kind
+      from pharmacy_website_pages p
+      join pharmacy_websites w on w.pharmacy_id = p.pharmacy_id
+     where w.subdomain = ${address}
+       and w.status = 'published'
+       and p.path = ${path}
+  `;
+  return row || null;
+}
+
+/**
+ * Every published path for a site, for the sitemap.
+ *
+ * Ordered by path so the file is byte-stable between requests. A sitemap
+ * whose contents shuffle on every fetch looks changed to a crawler when it
+ * is not, which is a small way of training it to check less often.
+ */
+async function getPublishedPaths(address) {
+  if (!address) return [];
+  const db = getSql();
+  const rows = await db`
+    select p.path, p.updated_at
+      from pharmacy_website_pages p
+      join pharmacy_websites w on w.pharmacy_id = p.pharmacy_id
+     where w.subdomain = ${address}
+       and w.status = 'published'
+     order by p.path
+  `;
+  return rows;
+}
+/**
  * Where a tracked click should actually go.
  *
  * THE DESTINATION IS RESOLVED FROM THE PHARMACY'S OWN RECORD, and nothing in
@@ -244,6 +289,8 @@ module.exports = {
   addressFromHost,
   baseDomain,
   getPublishedSite,
+  getPublishedPage,
+  getPublishedPaths,
   getClickTarget,
   etagFor,
   publicCsp,
