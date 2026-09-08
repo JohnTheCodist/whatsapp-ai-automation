@@ -1,5 +1,16 @@
 [
   {
+    "date": "2026-09-08",
+    "macrostructure": "Split Studio",
+    "theme": "RxNaija theme contract (locked)",
+    "theme_axes": "light / varies by palette / varies by palette",
+    "nav": "N1b brand-links-CTA",
+    "footer": "Ft5 statement",
+    "enrichment": "the pharmacy's own photography (no stock, no CSS art)",
+    "scope": "public-site",
+    "brief": "Template 1 — the published pharmacy website. Third surface: not the app (Workbench) and not RxNaija's marketing pages, so design.md does not govern it. Palette/type stay the pharmacy's own theme, since each site carries its own brand."
+  },
+  {
     "date": "2026-08-24",
     "macrostructure": "Workbench",
     "theme": "design.md (locked)",
