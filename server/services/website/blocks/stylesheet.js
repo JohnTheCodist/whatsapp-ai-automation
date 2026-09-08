@@ -112,6 +112,15 @@ p{margin:0 0 ${SPACE.sm}}
 .rx-lede{font-size:1.15rem;color:var(--rx-muted);max-width:38rem}
 .rx-hero-media img{border-radius:var(--rx-radius);width:100%;object-fit:cover}
 
+/* ---- photographs ----
+   One column here, columns in the media query below, like every other grid in
+   this file: a phone must never have to undo a desktop assumption.
+   aspect-ratio with object-fit is what stops a portrait phone snap and a
+   landscape one from making a ragged row — every tile is the same shape and
+   the image is cropped to it rather than distorted. */
+.rx-photo-grid{display:grid;gap:${SPACE.sm}}
+.rx-photo{width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;border-radius:var(--rx-radius);display:block;background:var(--rx-soft)}
+
 /* ---- grids: services, reviews ---- */
 .rx-grid{display:grid;gap:${SPACE.md};padding:0;margin:${SPACE.md} 0 0;list-style:none}
 .rx-service h3{margin-bottom:.25rem}
@@ -164,6 +173,9 @@ p{margin:0 0 ${SPACE.sm}}
   .rx-stack-640{flex-direction:row;align-items:center;justify-content:space-between;width:100%}
   .rx-grid-2{grid-template-columns:repeat(2,1fr)}
   .rx-grid-3{grid-template-columns:repeat(2,1fr)}
+  /* auto-fit, so one photo fills the width and four become a grid without the
+     page having to know how many there are. */
+  .rx-photo-grid{grid-template-columns:repeat(auto-fit,minmax(15rem,1fr))}
 }
 @media (min-width:768px){
   .rx-stack-768{flex-direction:row;align-items:center}

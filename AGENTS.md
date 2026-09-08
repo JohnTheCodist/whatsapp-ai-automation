@@ -216,8 +216,8 @@ Command:  npm test
 
 eslint    0 errors, 44 warnings          (all no-unused-vars, in tests/helpers)
 
-tests     1475
-pass      1026
+tests     1482
+pass      1033
 skipped    442
 failed       7
 ```
@@ -311,6 +311,16 @@ Three files conflicted, all additively: this one, `test-baseline.json`, and
 numeric order). The 7 failures are the same pre-existing names as before the
 merge, and the skipped ceiling did not move — everything added on main since
 the branch was cut is database-free.
+
+**Photographs on the generated pages, 2026-09-08 → measured 1482/1033/442/7.**
+`pharmacy_assets` already carried `kind in (logo, hero, gallery, service)` and
+`width`/`height`, so nothing about the data model needed changing. What was
+missing is that `assetMapFor` dropped both on the way to the renderer, so a
+generated page could neither ask for "the hero photo" nor emit the dimensions
+that stop a page shifting as images load. Alt text is generated from the
+pharmacy name and city — true, and useful to a screen reader — and never
+describes what is in the frame, which no part of this system has seen. The 7
+added tests are database-free; the skipped ceiling did not move.
 
 **Added the deployed commit to the health endpoints, 2026-09-06 → measured
 1395/946/442/7.** The whole difference is `server/tests/version.test.js`: 7
@@ -486,10 +496,10 @@ After `npm test`, compare:
 
 | Observation | Meaning |
 |---|---|
-| **No test database:** 1026 pass / 442 skip / 7 fail, categories A+B | No regression. Proceed. |
+| **No test database:** 1033 pass / 442 skip / 7 fail, categories A+B | No regression. Proceed. |
 | **Test database configured:** ~1384 pass / 0 skip / 4 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. The figure is derived, not observed: the last measured configured run was 1381 on 2026-09-05, before three database-free tests were added. Re-measure and replace this with a real number rather than trusting the arithmetic. |
 | Any failure NOT among the 9 | **You broke something.** Fix the code, not the test. |
-| Fewer than 1026 passing | Something stopped running. Find out what. |
+| Fewer than 1033 passing | Something stopped running. Find out what. |
 | More than 442 skipped | A suite started skipping. That is a silent loss of coverage, not a pass — unless you added tests that skip, in which case say so and move the ceiling in the same commit. |
 | "writing pre-keys costs a constant number of round trips" fails | Known flaky against a local database, ~1 run in 4. Not in the baseline on purpose. Do not re-run until green — read the entry above and fix the yardstick. |
 

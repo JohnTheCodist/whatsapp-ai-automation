@@ -26,7 +26,7 @@
  * are fast.
  */
 
-const { esc, waHref, telHref, mapsHref } = require('./blocks/render');
+const { esc, waHref, telHref, mapsHref, assetsOfKind } = require('./blocks/render');
 const { navPages, breadcrumbsFor } = require('./pages');
 const { bylineFor, GENERAL_DISCLAIMER } = require('./health');
 
@@ -198,6 +198,58 @@ function footer(ctx, year) {
 }
 
 /**
+ * Photographs of the pharmacy.
+ *
+ * A real photograph of the shop is the strongest trust signal a small local
+ * business can put on a page, and it is what a stranger deciding whether to
+ * walk in actually looks at.
+ *
+ * ALT TEXT IS GENERATED, NOT INVENTED. We know these are photographs of this
+ * pharmacy in this place, so that is exactly what the alt says. It does not
+ * claim to know what is IN the picture — "our clean, modern dispensary" would
+ * be a description of an image nobody here has seen, written by software, on
+ * a real business's website. Letting the owner describe each photo would be
+ * better still, and is why this is a comment rather than a cleverer sentence.
+ *
+ * width and height are emitted whenever known, so the browser reserves the
+ * space before the bytes arrive. Without them the text jumps as each photo
+ * loads, which is measured directly as Cumulative Layout Shift.
+ *
+ * Everything after the first photo is lazy. It is below the fold on a phone,
+ * and loading it eagerly spends a Nigerian customer's data on something they
+ * may never scroll to.
+ */
+function photoSection(ctx, { kinds = ['gallery'], limit = 6, heading = null, eager = false } = {}) {
+  const seen = new Set();
+  const photos = [];
+  for (const kind of kinds) {
+    for (const photo of assetsOfKind(ctx, kind)) {
+      if (seen.has(photo.id) || photos.length >= limit) continue;
+      seen.add(photo.id);
+      photos.push(photo);
+    }
+  }
+  if (!photos.length) return '';
+
+  const name = ctx.pharmacy?.name || 'Pharmacy';
+  const area = areaOf(ctx.profile);
+  const alt = area ? `${name}, ${area}` : name;
+
+  const imgs = photos.map((photo, i) => {
+    const dims = photo.width && photo.height
+      ? ` width="${photo.width}" height="${photo.height}"`
+      : '';
+    const loading = i === 0 && eager ? 'eager' : 'lazy';
+    return `<img class="rx-photo" src="${esc(photo.url)}" alt="${esc(alt)}"${dims}`
+      + ` loading="${loading}" decoding="async">`;
+  }).join('');
+
+  return '<section class="rx-block">'
+    + (heading ? `<h2 class="rx-narrow">${esc(heading)}</h2>` : '')
+    + `<div class="rx-photo-grid">${imgs}</div></section>`;
+}
+
+/**
  * Author and reviewer, or nothing at all.
  *
  * A missing byline renders as an absence. There is no "reviewed by our team"
@@ -288,6 +340,10 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
   if (page.kind === 'about') {
     open(null);
     parts.push(`<section class="rx-block rx-narrow"><p>${esc(String(p.description).replace(/\s+/g, ' ').trim())}</p></section>`);
+    // Eager on the first one: on an About page the photograph is the point,
+    // it is above the fold, and lazy-loading the thing a visitor came to look
+    // at makes the page feel slower than it is.
+    parts.push(photoSection(ctx, { kinds: ['hero', 'gallery'], limit: 4, eager: true }));
     parts.push(addressSection(ctx));
     parts.push(hoursSection(p));
     parts.push(ctaRow(ctx, `Hello ${name}`));
@@ -320,6 +376,12 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
     }
   } else if (page.kind === 'location') {
     open(area ? `${name} is a community pharmacy in ${area}.` : `How to find ${name}.`);
+    // Somebody about to travel wants to recognise the shopfront when they get
+    // there. A photograph does that better than any amount of prose about
+    // landmarks.
+    parts.push(photoSection(ctx, {
+      kinds: ['gallery', 'hero'], limit: 6, heading: 'What to look for', eager: true,
+    }));
     parts.push(addressSection(ctx, 'Our address'));
     parts.push(hoursSection(p));
     const services = allPages.filter((x) => x.kind === 'service');

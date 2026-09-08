@@ -246,3 +246,121 @@ test('the template list ships metadata the picker needs and no seed payload', ()
     assert.equal(t.seed, undefined, 'the seed stays server-side');
   }
 });
+
+// =====================================================================
+// PHOTOGRAPHS
+// =====================================================================
+//
+// A real photograph of the shop is the strongest trust signal a small local
+// business can put on a page. The risks are narrow and worth pinning: an
+// image with no alt is invisible to a screen reader and worthless to a search
+// engine; one with no dimensions shifts the page as it loads; and an asset
+// map is the one place another tenant's file could leak into a public page.
+
+const { renderAllPages } = require('../services/website/siteRender');
+
+const PHOTO_PROFILE = {
+  city: 'Ikeja',
+  state: 'Lagos',
+  address_line: '12 Allen Avenue',
+  description: 'A community pharmacy serving Allen Avenue since 2011.',
+  services: [{ name: 'BP check' }],
+};
+
+/** An asset map shaped exactly like assetMapFor's output. */
+function assetMap(rows) {
+  return new Map(rows.map((r) => [r.id, {
+    storage_path: r.path, kind: r.kind, width: r.width ?? null, height: r.height ?? null,
+  }]));
+}
+
+function renderWithPhotos(rows) {
+  return renderAllPages({
+    site: templates.cloneSeed('professional'),
+    pharmacy: PHARMACY,
+    profile: PHOTO_PROFILE,
+    theme: templates.getTemplate('professional').theme,
+    assets: assetMap(rows),
+    assetBaseUrl: 'https://cdn.example.com',
+    year: 2026,
+  }).rendered;
+}
+
+const IMG = /<img[^>]*>/g;
+
+test('every image carries alt text describing the real business', () => {
+  const pages = renderWithPhotos([
+    { id: 'a1', path: 'ph/1.jpg', kind: 'hero', width: 1200, height: 900 },
+    { id: 'a2', path: 'ph/2.jpg', kind: 'gallery', width: 800, height: 600 },
+  ]);
+  let seen = 0;
+  for (const page of pages) {
+    for (const img of page.html.match(IMG) || []) {
+      seen += 1;
+      assert.match(img, /alt="[^"]+"/, `${page.path}: image with no alt — ${img}`);
+      // Accurate, not invented. We know whose pharmacy it is and where; we do
+      // not know what is in the frame, and must not claim to.
+      assert.match(img, /alt="Ikeja Family Pharmacy, Ikeja, Lagos"/);
+    }
+  }
+  assert.ok(seen > 0, 'no images rendered at all');
+});
+
+test('images declare width and height so the page does not shift as they load', () => {
+  const pages = renderWithPhotos([
+    { id: 'a1', path: 'ph/1.jpg', kind: 'hero', width: 1200, height: 900 },
+  ]);
+  const about = pages.find((p) => p.path === '/about/');
+  assert.match(about.html, /width="1200" height="900"/);
+});
+
+test('a photo with unknown dimensions still renders, without empty attributes', () => {
+  // Dimensions are nullable in the schema. A missing one must omit both rather
+  // than emit width="" — which is invalid and which browsers treat as zero.
+  const pages = renderWithPhotos([{ id: 'a1', path: 'ph/1.jpg', kind: 'hero' }]);
+  const about = pages.find((p) => p.path === '/about/');
+  assert.match(about.html, /<img[^>]*src="[^"]*ph\/1\.jpg"/);
+  assert.doesNotMatch(about.html, /width=""|height=""/);
+});
+
+test('only the first photo loads eagerly; the rest wait until scrolled to', () => {
+  const pages = renderWithPhotos([
+    { id: 'a1', path: 'ph/1.jpg', kind: 'gallery', width: 800, height: 600 },
+    { id: 'a2', path: 'ph/2.jpg', kind: 'gallery', width: 800, height: 600 },
+    { id: 'a3', path: 'ph/3.jpg', kind: 'gallery', width: 800, height: 600 },
+  ]);
+  const location = pages.find((p) => p.path === '/location/');
+  const imgs = location.html.match(IMG) || [];
+  assert.ok(imgs.length >= 3);
+  assert.match(imgs[0], /loading="eager"/);
+  for (const img of imgs.slice(1)) assert.match(img, /loading="lazy"/);
+});
+
+test('the same photo is never rendered twice on one page', () => {
+  // hero and gallery are both requested on /about/. A photo that somehow held
+  // both kinds must still appear once.
+  const pages = renderWithPhotos([
+    { id: 'a1', path: 'ph/1.jpg', kind: 'hero', width: 10, height: 10 },
+    { id: 'a2', path: 'ph/2.jpg', kind: 'gallery', width: 10, height: 10 },
+  ]);
+  const about = pages.find((p) => p.path === '/about/');
+  const srcs = [...about.html.matchAll(/<img[^>]*src="([^"]+)"/g)].map((m) => m[1]);
+  assert.equal(new Set(srcs).size, srcs.length);
+});
+
+test('a pharmacy with no photographs renders no empty gallery', () => {
+  const pages = renderWithPhotos([]);
+  for (const page of pages) {
+    assert.doesNotMatch(page.html, /<div class="rx-photo-grid"/, `${page.path} has an empty gallery`);
+    assert.doesNotMatch(page.html, /What to look for/, `${page.path} has an orphan heading`);
+  }
+});
+
+test('a logo is not silently reused as a shopfront photograph', () => {
+  // 'logo' is a kind, and it is not a photo of the premises. Rendering it in
+  // the gallery would put a cropped wordmark where a customer expects to see
+  // the shop.
+  const pages = renderWithPhotos([{ id: 'a1', path: 'ph/logo.png', kind: 'logo', width: 10, height: 10 }]);
+  const location = pages.find((p) => p.path === '/location/');
+  assert.doesNotMatch(location.html, /<div class="rx-photo-grid"/);
+});

@@ -190,9 +190,23 @@ async function assetMapFor(pharmacyId) {
   assertPharmacyId(pharmacyId);
   const db = getSql();
   const rows = await db`
-    select id, storage_path from pharmacy_assets where pharmacy_id = ${pharmacyId}
+    select id, storage_path, kind, width, height
+      from pharmacy_assets
+     where pharmacy_id = ${pharmacyId}
+     -- Ordered so a gallery renders the same way twice. Map preserves
+     -- insertion order, so this ordering IS the display order.
+     order by created_at asc, id asc
   `;
-  return new Map(rows.map((r) => [String(r.id).toLowerCase(), { storage_path: r.storage_path }]));
+  return new Map(rows.map((r) => [String(r.id).toLowerCase(), {
+    storage_path: r.storage_path,
+    // kind and dimensions travel with the row so a generated page can ask
+    // for "the hero photo" without a second query, and can emit width and
+    // height on the img — which is what stops the page shifting as images
+    // load, the layout half of Core Web Vitals.
+    kind: r.kind,
+    width: r.width,
+    height: r.height,
+  }]));
 }
 
 /**

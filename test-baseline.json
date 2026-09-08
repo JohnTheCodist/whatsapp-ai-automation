@@ -1,14 +1,14 @@
 {
   "//": "Machine-readable companion to the baseline section of AGENTS.md. scripts/check-baseline.js reads THIS file; AGENTS.md explains it to humans. Keep the two in step — they are updated in the same commit or not at all.",
   "measuredOn": "2026-09-06",
-  "commit": "85a9310",
-  "commitSubject": "Serve the pages that were being generated but never stored",
-  "workingTree": "health content system with review gating",
+  "commit": "c88650e",
+  "commitSubject": "Let a pharmacist choose what is on their website, without mentioning SEO",
+  "workingTree": "photographs on the generated About and Location pages",
   "command": "node --test \"server/tests/*.test.js\"",
-  "//counts": "Floors and ceilings, not equalities. Measured 2026-09-08 WITHOUT a test database: 1475/1026/442/7. The 19 added since 1456/1007 are websiteHealth.test.js — the article library is data and the renderer is pure, so they run in both environments. WITH a test database the last measurement was 2026-09-05 (1385/1381/0/4) and has NOT been re-measured.",
+  "//counts": "Floors and ceilings, not equalities. Measured 2026-09-08 WITHOUT a test database: 1482/1033/442/7 — the committed default. The 7 added since 1475/1026 are the photograph tests in websiteDocument.test.js, all database-free, so the skipped ceiling did not move.",
   "counts": {
-    "total": 1475,
-    "pass": 1026,
+    "total": 1482,
+    "pass": 1033,
     "skipped": 442,
     "failed": 7
   },
@@ -80,5 +80,5 @@
     }
   ],
   "//goldenSuite": "server/tests/golden.test.js — one test per lesson that cost something. Organised by incident, not by module. Never skips: no database, no network, no model. Entries are only ever added. GOLDEN-001 (tenant isolation, 3), GOLDEN-002 (test-database separation, 3), GOLDEN-003 (tool refusal retry loop, 1), GOLDEN-004 (test-database redirect defeated by require order, 1), GOLDEN-005 (SPA fallback swallowing published pharmacy websites: 005 and 005b for the /p/ path form, 005c for the <address>.rxnaija.com host form, 3), GOLDEN-006 (health check restarting the process on a database blip, 1). 12 tests. Added 2026-08-29, extended 2026-09-05 and 2026-09-06.",
-  "//lastChange": "Health content system (2026-09-08). A fixed library of four articles a pharmacy may opt into, NOT per-pharmacy generation: a model writing health copy for each pharmacy would put unreviewed medical text on a NAFDAC-registered business under its own name, and the assistant refuses to answer clinical questions in WhatsApp for exactly that reason. Publishing requires status APPROVED plus a named reviewer plus a date, checked in one filter that every render path defaults to — so an unreviewed article cannot become a page by any route, and all four ship pending_review with reviewer null. Out of the box a pharmacy can publish none of them, which is correct rather than unfinished. Tests assert the content contains no dosing language, does not diagnose, and always names when to seek care. One real bug surfaced: the home page linked nowhere, because the header block navigation defaults to empty and every generated page was an orphan reachable only by typing its URL."
+  "//lastChange": "Photographs on the generated pages (2026-09-08). pharmacy_assets already had kind in (logo, hero, gallery, service) and width/height columns, so the data model needed nothing; what was missing was that assetMapFor dropped kind and dimensions on the way to the renderer, so a generated page could not ask for \"the hero photo\" and could not emit width and height. Both now travel with the row. Alt text is generated from the pharmacy name and city — true and useful — and never describes what is in the frame, which nothing here has seen. The first photo loads eagerly and the rest lazily, because below-the-fold images spend a customer's data on what they may never scroll to."
 }

@@ -226,6 +226,28 @@ function resolveProps(definition, storedProps, ctx) {
 }
 
 /** Resolve an asset id to a public URL, scoped to this pharmacy's assets. */
+/**
+ * Every photo of one kind, in upload order.
+ *
+ * Returns url, width and height together because a responsive image needs
+ * all three: without width and height the browser cannot reserve space, the
+ * page reflows as each photo arrives, and that reflow is measured directly
+ * as Cumulative Layout Shift.
+ *
+ * Tenant-safe for the same reason assetUrl is: ctx.assets holds only this
+ * pharmacy's rows, so another tenant's photo cannot appear here.
+ */
+function assetsOfKind(ctx, kind) {
+  if (!ctx?.assets) return [];
+  const out = [];
+  for (const [id, asset] of ctx.assets) {
+    if (asset.kind !== kind) continue;
+    const url = assetUrl(id, ctx);
+    if (!url) continue;
+    out.push({ id, url, width: asset.width || null, height: asset.height || null });
+  }
+  return out;
+}
 function assetUrl(assetId, ctx) {
   if (!assetId || !ctx.assets) return '';
   // ctx.assets only ever contains rows already filtered by pharmacy_id, so an
@@ -244,6 +266,7 @@ function section(blockId, inner, opts = {}) {
 }
 
 module.exports = {
+  assetsOfKind,
   esc,
   waHref,
   telHref,
