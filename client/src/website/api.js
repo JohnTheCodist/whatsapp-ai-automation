@@ -84,6 +84,24 @@ export const createWebsite = (templateId) =>
 export const saveSiteData = (siteData) =>
   call('/site', { method: 'PUT', body: JSON.stringify({ site_data: siteData }) });
 
+/**
+ * The health articles this pharmacy may publish.
+ *
+ * Approved-and-reviewed only — the server decides, not the browser. A toggle
+ * for an article that would then refuse to render would look like a bug to
+ * the owner rather than like the safety rule it is.
+ */
+export const getHealthArticles = () => call('/health-articles');
+
+/**
+ * Save the guided flow's stored answers.
+ *
+ * REPLACES content wholesale, which is why callers pass the whole object.
+ * Sending only the changed key would silently discard every other answer —
+ * and the theme is a separate field, so it is not disturbed either way.
+ */
+export const saveContent = (content) =>
+  call('/content', { method: 'PATCH', body: JSON.stringify({ content }) });
 export const saveTheme = (theme) =>
   call('/content', { method: 'PATCH', body: JSON.stringify({ theme }) });
 

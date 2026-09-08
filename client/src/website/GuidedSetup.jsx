@@ -23,6 +23,8 @@ import { Panel, PanelHead } from '../DashboardKit.jsx';
 import { IconSetup } from '../Icons.jsx';
 import * as api from './api.js';
 import LogoUpload from './LogoUpload.jsx';
+import ServicesPicker from './ServicesPicker.jsx';
+import HealthTopics from './HealthTopics.jsx';
 
 const DAY_NAMES = {
   mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday',
@@ -193,6 +195,29 @@ export default function GuidedSetup({ site, onThemeChange, onSaved, onNavigate }
             {status.state === 'saving' ? 'Saving…' : 'Save details'}
           </button>
           {status.state === 'saved' && <span className="text-sm text-teal-700">Saved.</span>}
+        </div>
+      </Panel>
+
+      {/* ---- what the pharmacy offers, and what it publishes ----
+          These two decide which PAGES the website has. Everything above is
+          the same information rendered differently; this is the only place
+          where a choice adds or removes a URL. Kept as one panel because to
+          an owner it is one question — "what goes on my site?" — and split
+          across two would imply they are unrelated. */}
+      <Panel className="p-5">
+        <PanelHead Icon={IconSetup}>What is on your website</PanelHead>
+        <p className="mt-1 mb-4 text-sm text-slate-600">
+          Each thing you add here becomes its own page, so someone searching for it can
+          find your pharmacy.
+        </p>
+
+        <ServicesPicker
+          profile={profile}
+          onSaved={(saved) => { setProfile(saved); onSaved?.(); }}
+        />
+
+        <div className="mt-6 border-t border-slate-100 pt-5">
+          <HealthTopics site={site} onSaved={() => onSaved?.()} />
         </div>
       </Panel>
 

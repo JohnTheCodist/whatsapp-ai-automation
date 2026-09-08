@@ -26,6 +26,7 @@ const publish = require('../services/website/publishService');
 const assets = require('../services/website/assetService');
 const analytics = require('../services/website/analytics');
 const { listTemplates } = require('../services/website/templates');
+const { publishableArticles } = require('../services/website/health');
 const { renderDocument } = require('../services/website/document');
 const { editorManifest } = require('../services/website/blocks/editorManifest');
 const { themeOptions } = require('../services/website/blocks/theme');
@@ -98,6 +99,32 @@ router.get('/', requireAuth, asyncRoute(async (req, res) => {
   res.json({ site, publicDomain: baseDomain() || null });
 }));
 
+/**
+ * GET /api/website/health-articles — what this pharmacy may publish.
+ *
+ * PUBLISHABLE ONLY. The list is the approved-and-reviewed set, so the
+ * builder cannot offer a toggle for an article that would then refuse to
+ * render. An owner who could switch on an unreviewed article and see nothing
+ * appear would reasonably conclude the feature was broken, and the honest
+ * answer is that there is nothing to offer yet.
+ *
+ * The reviewer travels with each one, because "who checked this?" is the
+ * question a pharmacist should be able to answer before putting their own
+ * name on the page.
+ */
+router.get('/health-articles', requireAuth, asyncRoute(async (req, res) => {
+  res.json({
+    articles: publishableArticles().map((a) => ({
+      slug: a.slug,
+      title: a.title,
+      summary: a.summary,
+      reviewer: a.reviewer?.name || null,
+      reviewerTitle: a.reviewer?.title || null,
+      reviewedAt: a.reviewedAt || null,
+      updatedAt: a.updatedAt || null,
+    })),
+  });
+}));
 /**
  * GET /api/website/templates — what an owner may choose from.
  *
