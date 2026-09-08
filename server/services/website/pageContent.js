@@ -27,6 +27,8 @@
  */
 
 const { esc, waHref, telHref, mapsHref, assetsOfKind } = require('./blocks/render');
+const { renderBlock } = require('./blocks');
+const { serviceIcon } = require('./blocks/icons');
 const { navPages, breadcrumbsFor } = require('./pages');
 const { bylineFor, GENERAL_DISCLAIMER } = require('./health');
 
@@ -97,17 +99,29 @@ function areaOf(profile) {
   return [profile?.city, profile?.state].filter(Boolean).join(', ');
 }
 
-/** The site header: brand, then one level of navigation. */
+/**
+ * The site header — THE SAME BLOCK THE HOME PAGE USES, not a copy of it.
+ *
+ * This file used to build its own: a brand link and a <nav>, and nothing
+ * else. That was survivable while the two happened to look alike and stopped
+ * being survivable the moment the header grew a mobile disclosure — the home
+ * page had a menu on a phone and every generated page had NO NAVIGATION AT
+ * ALL below 768px, because the nav it emitted is the one the stylesheet
+ * hides at that width. Nothing failed; the pages simply became unreachable
+ * from each other on the device most customers use.
+ *
+ * Delegating removes the class of bug rather than that instance of it. The
+ * header and footer are defined once, in the block registry, and every page
+ * on the site is chrome-identical by construction.
+ */
 function header(ctx, pages, currentPath) {
-  const name = esc(ctx.pharmacy?.name || 'Pharmacy');
-  const links = navPages(pages).map((p) => {
-    const current = p.path === currentPath ? ' aria-current="page"' : '';
-    return `<a href="${esc(p.path)}"${current}>${esc(p.nav)}</a>`;
-  }).join('');
-  return `<header class="rx-block rx-pharmacy-header"><div class="rx-header-inner">`
-    + `<a class="rx-brand-name" href="/">${name}</a>`
-    + `<nav class="rx-nav" aria-label="Main">${links}</nav>`
-    + `</div></header>`;
+  return renderBlock({ type: 'pharmacy.header', version: 1, props: {} }, {
+    ...ctx,
+    // The block falls back to the site's real pages when the owner has set
+    // no navigation of their own; sitePages is how it learns them.
+    sitePages: ctx.sitePages || navPages(pages),
+    currentPath,
+  });
 }
 
 /**
@@ -172,29 +186,56 @@ function addressSection(ctx, heading = 'Where to find us') {
 /** FAQ list. Plain headings and paragraphs — no JavaScript accordions. */
 function faqSection(faqs) {
   if (!faqs?.length) return '';
-  const items = faqs.map(([q, a]) => `<h3>${esc(q)}</h3><p>${esc(a)}</p>`).join('');
-  return `<section class="rx-block rx-narrow"><h2>Common questions</h2>${items}</section>`;
+  // Each question is its own bounded panel rather than a run of h3/p down the
+  // page — a reader scanning for one answer needs to see where each begins
+  // and ends. Still plain headings and paragraphs underneath: no accordion,
+  // because an accordion needs JavaScript this page will never have, and a
+  // hidden answer is one a search engine may not credit either.
+  const items = faqs.map(([q, a]) => `<div class="rx-panel"><h3>${esc(q)}</h3><p>${esc(a)}</p></div>`).join('');
+  return `<section class="rx-block rx-narrow"><h2>Common questions</h2>`
+    + `<div class="rx-panels">${items}</div></section>`;
 }
 
-/** Cards linking to real crawlable URLs. Used by /services/ and /health/. */
-function cardGrid(items) {
+/**
+ * Cards linking to real crawlable URLs. Used by /services/ and /health/.
+ *
+ * ACTUAL CARDS, not ruled rows. The home page lists services as hairline rows
+ * because they sit inside a longer page and a wall of boxes there would be
+ * noise; an index page is nothing BUT the list, so the list has to carry the
+ * page. Each card takes the same drawn mark the home page uses, so a service
+ * looks like itself in both places.
+ *
+ * `withIcon` is off for health articles — they are not services and the
+ * service icon set says nothing true about them.
+ */
+function cardGrid(items, { withIcon = true } = {}) {
   const cards = items.map((item) => {
+    const label = item.label || item.nav;
+    const mark = withIcon
+      ? `<span class="rx-card-mark">${serviceIcon(item.name || label)}</span>`
+      : '';
     const desc = item.description ? `<p>${esc(item.description)}</p>` : '';
-    return `<a class="rx-service" href="${esc(item.path)}"><h3>${esc(item.label || item.nav)}</h3>${desc}</a>`;
+    return `<a class="rx-card" href="${esc(item.path)}">${mark}`
+      + `<span class="rx-card-body"><span class="rx-card-title">${esc(label)}</span>${desc}</span>`
+      + `<span class="rx-card-go" aria-hidden="true">→</span></a>`;
   }).join('');
-  return `<section class="rx-block"><div class="rx-grid">${cards}</div></section>`;
+  return `<section class="rx-block"><div class="rx-cards">${cards}</div></section>`;
 }
 
-/** The footer: NAP again, because it is the last thing a visitor scrolls to. */
-function footer(ctx, year) {
-  const name = esc(ctx.pharmacy?.name || 'Pharmacy');
-  const line = addressLine(ctx.profile);
-  const addr = line ? `<p class="rx-footer-address">${esc(line)}</p>` : '';
-  return `<footer class="rx-block rx-pharmacy-footer">`
-    + `<p class="rx-footer-name">${name}</p>${addr}`
-    + `<p class="rx-footer-legal">© ${esc(String(year || new Date().getUTCFullYear()))} ${name}. `
-    + `This website provides general information about our pharmacy and is not medical advice.</p>`
-    + `</footer>`;
+/**
+ * The footer — the same block the home page uses, for the reason in header().
+ *
+ * The hand-built one here emitted its children straight into the section, so
+ * it never got the shell's max-width and sat flush against the viewport edge
+ * on a wide screen while every other section was centred. One footer, one
+ * alignment.
+ */
+function footer(ctx, year, pages) {
+  return renderBlock({ type: 'pharmacy.footer', version: 1, props: {} }, {
+    ...ctx,
+    sitePages: ctx.sitePages || navPages(pages || []),
+    year: year ?? ctx.year,
+  });
 }
 
 /**
@@ -332,9 +373,21 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
   const name = ctx.pharmacy?.name || 'our pharmacy';
   const parts = [header(ctx, allPages, page.path), breadcrumbs(allPages, page.path)];
 
+  /**
+   * The page head.
+   *
+   * Left-aligned inside the SAME shell every other section uses, rather than
+   * centred in its own 44rem column. Mixed alignment down one page is the
+   * thing that reads as "unstructured" — the eye keeps re-finding the left
+   * edge. The measure is applied to the lede alone, which is the only part
+   * that needs one.
+   */
   const open = (intro) => {
-    parts.push(`<section class="rx-block rx-narrow"><h1>${esc(page.h1)}</h1>`
-      + (intro ? `<p class="rx-lede">${esc(intro)}</p>` : '') + `</section>`);
+    parts.push(`<section class="rx-block rx-page-head"><div>`
+      + `<span class="rx-eyebrow">${esc(page.nav || name)}</span>`
+      + `<h1>${esc(page.h1)}</h1>`
+      + (intro ? `<p class="rx-lede">${esc(intro)}</p>` : '')
+      + `</div></section>`);
   };
 
   if (page.kind === 'about') {
@@ -398,9 +451,11 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
   } else if (page.kind === 'healthIndex') {
     open('General health information, written for our customers.');
     const articles = allPages.filter((x) => x.kind === 'health');
+    // No icons: a health article is not a service, and the service marks
+    // would be claiming a correspondence that does not exist.
     parts.push(cardGrid(articles.map((a) => ({
       path: a.path, label: a.nav, description: a.description,
-    }))));
+    })), { withIcon: false }));
     parts.push(ctaRow(ctx, `Hello ${name}`));
   } else if (page.kind === 'health') {
     const article = page.article || {};
@@ -437,7 +492,7 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
     open(null);
   }
 
-  parts.push(footer(ctx, year));
+  parts.push(footer(ctx, year, allPages));
   return parts.filter(Boolean).join('\n');
 }
 

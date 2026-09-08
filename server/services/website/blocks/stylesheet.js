@@ -175,6 +175,25 @@ p:last-child{margin-bottom:0}
 .rx-block{padding:var(--rx-xl) var(--rx-md)}
 .rx-block>*{max-width:var(--rx-shell);margin-inline:auto}
 .rx-narrow,.rx-prose{max-width:44rem;margin-inline:auto}
+
+/* A READING COLUMN THAT STILL STARTS WHERE THE PAGE STARTS.
+   The generated pages declare .rx-narrow on the SECTION, which made the whole
+   band 44rem and centred it — so their text began at a different left edge
+   from the header, the cards and the footer, and a page of them read as
+   unstructured because the eye had to find the margin again at every section.
+   Full-bleed section, padded in to exactly where a centred shell's left edge
+   falls, children capped and left-aligned. max() keeps the ordinary gutter on
+   a phone, where the shell is narrower than the viewport anyway. */
+.rx-block.rx-narrow{
+  max-width:none;
+  margin-inline:0;
+  padding-inline:max(var(--rx-md), calc((100% - var(--rx-shell)) / 2));
+}
+.rx-block.rx-narrow>*{max-width:44rem;margin-inline:0}
+
+/* The page head on a generated page: eyebrow, h1, lede — same left edge. */
+.rx-page-head .rx-lede{max-width:44rem}
+.rx-page-head h1{margin-bottom:var(--rx-xs)}
 .rx-prose p{color:var(--rx-muted);font-size:var(--rx-size-lg)}
 .rx-lede{font-size:var(--rx-size-lg);color:var(--rx-muted);max-width:var(--rx-measure)}
 
@@ -435,6 +454,53 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
    still has blocks that emit it. */
 .rx-icon{display:block;width:26px;height:3px;border-radius:2px;background:var(--rx-primary);margin-bottom:var(--rx-sm)}
 
+/* ---- cards ----
+   For INDEX pages only — /services/ and /health/ — where the list is the
+   whole page and has to carry it. The home page keeps hairline rows: a wall
+   of boxes inside a longer page is noise, and the same list in both places
+   would make neither look considered. */
+.rx-cards{display:grid;gap:var(--rx-sm)}
+.rx-card{
+  display:flex;
+  align-items:center;
+  gap:var(--rx-md);
+  padding:var(--rx-md);
+  border:1px solid var(--rx-line);
+  border-radius:var(--rx-radius);
+  background:var(--rx-surface);
+  text-decoration:none;
+  color:inherit;
+  transition:border-color var(--rx-dur) var(--rx-ease),
+             transform var(--rx-dur) var(--rx-ease),
+             box-shadow var(--rx-dur) var(--rx-ease);
+}
+.rx-card:hover{border-color:var(--rx-primary);transform:translateY(-2px);box-shadow:var(--rx-shadow)}
+.rx-card-mark{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:44px;height:44px;
+  border-radius:calc(var(--rx-radius) / 1.4);
+  background:var(--rx-tint);
+  color:var(--rx-primary);
+  transition:background-color var(--rx-dur) var(--rx-ease),color var(--rx-dur) var(--rx-ease);
+}
+.rx-card:hover .rx-card-mark{background:var(--rx-primary);color:var(--rx-on-primary)}
+.rx-card-body{min-width:0;flex:1 1 auto}
+.rx-card-title{display:block;font-family:var(--rx-display);font-weight:600;font-size:var(--rx-size-lg);color:var(--rx-ink)}
+.rx-card p{margin:.15rem 0 0;color:var(--rx-muted);font-size:var(--rx-size-sm)}
+/* The arrow moves, not the card's contents — a whole card that slides on
+   hover drags the text under the reader's eye. */
+.rx-card-go{flex:0 0 auto;color:var(--rx-muted);transition:transform var(--rx-dur) var(--rx-ease),color var(--rx-dur) var(--rx-ease)}
+.rx-card:hover .rx-card-go{transform:translateX(3px);color:var(--rx-primary)}
+
+/* ---- panels ---- a bounded answer, for FAQs and anything read one at a time. */
+.rx-panels{display:grid;gap:var(--rx-sm);margin-top:var(--rx-md)}
+.rx-panel{padding:var(--rx-md);border:1px solid var(--rx-line);border-radius:var(--rx-radius);background:var(--rx-surface)}
+.rx-panel h3{margin-bottom:.35rem}
+.rx-panel p{margin:0;color:var(--rx-muted)}
+
 .rx-review{margin:0;padding:var(--rx-md);background:var(--rx-tint);border-radius:var(--rx-radius)}
 .rx-review blockquote{margin:0;font-size:var(--rx-size-lg);font-family:var(--rx-display);line-height:1.4}
 .rx-review figcaption{color:var(--rx-muted);font-weight:600;margin-top:var(--rx-xs);font-size:var(--rx-size-sm)}
@@ -496,7 +562,11 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
   margin-top:var(--rx-md);
 }
 
-/* ---- breadcrumbs ---- */
+/* ---- breadcrumbs ----
+   Furniture, not a section: it carries .rx-block for the shell and the gutter,
+   so without this it also took a full section's worth of vertical padding and
+   opened a 56px hole between the header and the page's own heading. */
+.rx-block:has(>.rx-crumbs){padding-block:var(--rx-md) 0}
 .rx-crumbs{display:flex;flex-wrap:wrap;gap:.4rem;padding:0;margin:0;list-style:none;font-size:var(--rx-size-sm);color:var(--rx-muted)}
 .rx-crumbs li+li::before{content:"/";margin-right:.4rem;color:var(--rx-line-strong)}
 .rx-crumbs a{color:var(--rx-muted);text-decoration:none}
@@ -582,6 +652,7 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
   .rx-split--flip .rx-split-media{order:-1}
   .rx-grid-2{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--rx-md);border-top:0}
   .rx-grid-2 .rx-review{border-bottom:0}
+  .rx-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (min-width:1024px){
   /* Services become two columns of ruled rows — still a list, still hairlines,

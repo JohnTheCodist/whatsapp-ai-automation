@@ -96,7 +96,14 @@ const header = {
     // typing its URL, which is precisely the shape of internal linking
     // failure that makes pages rank for nothing.
     const links = navLinks(props, ctx);
-    const linkHtml = links.map((i) => `<a href="${esc(i.href)}">${esc(i.label)}</a>`).join('');
+    // aria-current marks the page you are already on. Set from ctx rather
+    // than a prop because it is a fact about the request, not about the
+    // block — the home page composes this same header with no currentPath
+    // and simply gets no mark.
+    const linkHtml = links.map((i) => {
+      const current = ctx.currentPath && i.href === ctx.currentPath ? ' aria-current="page"' : '';
+      return `<a href="${esc(i.href)}"${current}>${esc(i.label)}</a>`;
+    }).join('');
     const nav = links.length ? `<nav class="rx-nav" aria-label="Main">${linkHtml}</nav>` : '';
 
     const wa = waHref(props.whatsappNumber, null, ctx);
@@ -130,7 +137,15 @@ const footer = {
 
   props: {
     pharmacyName: { type: 'text', max: 120, from: 'pharmacy.name' },
+    // The WHOLE address, in three bound parts. A footer that says "12 Allen
+    // Avenue" without the city is a worse footer for a reader and a broken
+    // one for local search: the name-address-phone string has to be identical
+    // on every page of the site, and the generated pages print the full
+    // locality. Asserted by websiteSeo.test.js, which caught this the day the
+    // footer stopped emitting city and state.
     address: { type: 'text', max: 200, from: 'profile.address_line' },
+    city: { type: 'text', max: 80, from: 'profile.city' },
+    state: { type: 'text', max: 80, from: 'profile.state' },
     phone: { type: 'phone', from: 'profile.phone' },
     whatsappNumber: { type: 'phone', from: 'pharmacy.public_whatsapp_number' },
     // Not bound and not defaulted to a year: a default computed at render
@@ -160,9 +175,12 @@ const footer = {
     // the address under it, and the two ways to reach it. Everything here is
     // omitted when the pharmacy has not got it — an empty column with a
     // heading over nothing is worse than one column fewer.
+    // One address string, built the same way every generated page builds it.
+    const address = [props.address, props.city, props.state].filter(Boolean).join(', ');
+
     const identity = [
       props.pharmacyName ? `<p class="rx-footer-name">${esc(props.pharmacyName)}</p>` : '',
-      props.address ? `<p class="rx-footer-address">${esc(props.address)}</p>` : '',
+      address ? `<p class="rx-footer-address">${esc(address)}</p>` : '',
       (tel || wa)
         ? `<ul class="rx-footer-contact">${
           (tel ? `<li><a href="${esc(tel)}">${esc(props.phone)}</a></li>` : '')
