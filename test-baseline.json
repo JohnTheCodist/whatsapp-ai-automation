@@ -1,14 +1,14 @@
 {
   "//": "Machine-readable companion to the baseline section of AGENTS.md. scripts/check-baseline.js reads THIS file; AGENTS.md explains it to humans. Keep the two in step — they are updated in the same commit or not at all.",
   "measuredOn": "2026-09-06",
-  "commit": "94280b8",
-  "commitSubject": "Derive the whole site map from the pharmacy own business information",
-  "workingTree": "multi-page pharmacy websites: renderers, sitemap, canonicals, structured data",
+  "commit": "85a9310",
+  "commitSubject": "Serve the pages that were being generated but never stored",
+  "workingTree": "health content system with review gating",
   "command": "node --test \"server/tests/*.test.js\"",
-  "//counts": "Floors and ceilings, not equalities. Measured 2026-09-08 WITHOUT a test database: 1456/1007/442/7. The 20 added since 1436/987 are websiteSeo.test.js, which renders a whole site for a realistic pharmacy and inspects the HTML a crawler would receive — a pure function of the pharmacy row, its profile and a template, so it runs in both environments. WITH a test database the last measurement was 2026-09-05 (1385/1381/0/4) and has NOT been re-measured.",
+  "//counts": "Floors and ceilings, not equalities. Measured 2026-09-08 WITHOUT a test database: 1475/1026/442/7. The 19 added since 1456/1007 are websiteHealth.test.js — the article library is data and the renderer is pure, so they run in both environments. WITH a test database the last measurement was 2026-09-05 (1385/1381/0/4) and has NOT been re-measured.",
   "counts": {
-    "total": 1456,
-    "pass": 1007,
+    "total": 1475,
+    "pass": 1026,
     "skipped": 442,
     "failed": 7
   },
@@ -80,5 +80,5 @@
     }
   ],
   "//goldenSuite": "server/tests/golden.test.js — one test per lesson that cost something. Organised by incident, not by module. Never skips: no database, no network, no model. Entries are only ever added. GOLDEN-001 (tenant isolation, 3), GOLDEN-002 (test-database separation, 3), GOLDEN-003 (tool refusal retry loop, 1), GOLDEN-004 (test-database redirect defeated by require order, 1), GOLDEN-005 (SPA fallback swallowing published pharmacy websites: 005 and 005b for the /p/ path form, 005c for the <address>.rxnaija.com host form, 3), GOLDEN-006 (health check restarting the process on a database blip, 1). 12 tests. Added 2026-08-29, extended 2026-09-05 and 2026-09-06.",
-  "//lastChange": "Multi-page pharmacy websites (2026-09-08). pageContent.js renders the body of every derived page, siteRender.js renders the whole site plus sitemap, robots and 404, and document.js gained canonical, og:url, og:image, Twitter cards, BreadcrumbList and Service schema — extended rather than duplicated, because two head assemblers drift and the way that shows up is a second canonical tag nobody can see. Migration 0051 adds pharmacy_website_pages: a table rather than a jsonb map so serving one page does not read every page on every crawler request. The 20 new tests are end-to-end on rendered HTML, because every failure they guard against is invisible in any single module: a duplicate description is correct behaviour in the function that produced it and a defect only when two pages are compared."
+  "//lastChange": "Health content system (2026-09-08). A fixed library of four articles a pharmacy may opt into, NOT per-pharmacy generation: a model writing health copy for each pharmacy would put unreviewed medical text on a NAFDAC-registered business under its own name, and the assistant refuses to answer clinical questions in WhatsApp for exactly that reason. Publishing requires status APPROVED plus a named reviewer plus a date, checked in one filter that every render path defaults to — so an unreviewed article cannot become a page by any route, and all four ship pending_review with reviewer null. Out of the box a pharmacy can publish none of them, which is correct rather than unfinished. Tests assert the content contains no dosing language, does not diagnose, and always names when to seek care. One real bug surfaced: the home page linked nowhere, because the header block navigation defaults to empty and every generated page was an orphan reachable only by typing its URL."
 }

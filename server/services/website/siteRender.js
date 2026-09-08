@@ -19,8 +19,9 @@
 const { renderSite } = require('./blocks');
 const { renderDocument } = require('./document');
 const { renderPageBody } = require('./pageContent');
-const { buildPages } = require('./pages');
+const { buildPages, navPages } = require('./pages');
 const { esc } = require('./blocks/render');
+const { publishableArticles } = require('./health');
 
 /**
  * Render every page of a site.
@@ -31,7 +32,11 @@ const { esc } = require('./blocks/render');
 function renderAllPages({
   site, pharmacy, profile, assets, assetBaseUrl, theme, year,
   trackingBase = null, canonicalBase = '', noindex = false,
-  health = [], healthLibrary = [],
+  health = [],
+  // Defaults to APPROVED articles only. A caller cannot widen this by
+  // omission, and an unreviewed article therefore cannot become a page
+  // through any path that forgets to filter.
+  healthLibrary = publishableArticles(),
 } = {}) {
   const pages = buildPages({ pharmacy, profile, health, healthLibrary });
 
@@ -42,6 +47,10 @@ function renderAllPages({
     assetBaseUrl: assetBaseUrl || '',
     year: year ?? null,
     trackingBase,
+    // The site map, so the header block can link to the pages that exist
+    // rather than to nothing. Set here because this is the only place that
+    // knows the whole site.
+    sitePages: navPages(pages),
   };
 
   const rendered = pages.map((page) => {

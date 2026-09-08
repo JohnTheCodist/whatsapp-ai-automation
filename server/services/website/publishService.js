@@ -205,6 +205,10 @@ async function publishWebsite(pharmacyId, { userId } = {}) {
   const { pages, rendered } = renderAllPages({
     ...ctx, site: site.site_data, theme: site.theme,
     trackingBase: `/p/${site.subdomain}`, canonicalBase,
+    // Which health articles this owner chose to publish. Stored with the
+    // other guided-flow answers, because that is what it is: a choice the
+    // owner made in the builder, not a property of the site structure.
+    health: Array.isArray(site.content?.health) ? site.content.health : [],
   });
 
   // published_html remains the home page, so every existing reader of that
@@ -292,7 +296,7 @@ async function rerenderPublished(pharmacyId) {
   const db = getSql();
 
   const [site] = await db`
-    select published_data, theme, status, subdomain
+    select published_data, theme, status, subdomain, content
       from pharmacy_websites
      where pharmacy_id = ${pharmacyId} and status = 'published'
   `;
@@ -310,6 +314,10 @@ async function rerenderPublished(pharmacyId) {
   const { rendered } = renderAllPages({
     ...ctx, site: site.published_data, theme: site.theme,
     trackingBase: `/p/${site.subdomain}`, canonicalBase,
+    // Which health articles this owner chose to publish. Stored with the
+    // other guided-flow answers, because that is what it is: a choice the
+    // owner made in the builder, not a property of the site structure.
+    health: Array.isArray(site.content?.health) ? site.content.health : [],
   });
   const home = rendered.find((r) => r.path === '/');
   const html = home ? home.html : renderDocument({

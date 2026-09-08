@@ -141,6 +141,53 @@ function serviceData(page, pharmacy, profile) {
 }
 
 /**
+ * A JSON-LD block.
+ *
+ * Only "<" is escaped, and that is exact rather than cautious: the content
+ * must remain valid JSON, so HTML-escaping the quotes would break it, and
+ * escaping "<" alone is precisely enough that "</script>" cannot terminate
+ * the element early from inside a string.
+ */
+function ldScript(data) {
+  const json = JSON.stringify(data).replace(/</g, String.fromCharCode(92) + 'u003c');
+  return `<script type="application/ld+json">${json}</script>`;
+}
+
+/**
+ * Article schema for a health page.
+ *
+ * author and reviewedBy are emitted ONLY when a real person is named. Google
+ * treats reviewedBy as a credibility signal for health content, which is
+ * exactly why software must not be able to produce one on its own: a
+ * fabricated reviewer is not a cosmetic defect but a false claim about a
+ * named professional, published and indexed.
+ *
+ * dateModified comes from the article, never from the clock. Stamping today
+ * on every render would tell a crawler the content changed when it did not.
+ */
+function articleData(page, pharmacy, canonicalBase) {
+  if (page?.kind !== 'health' || !page.article) return '';
+  const a = page.article;
+  const data = {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: a.title,
+    description: a.summary,
+  };
+  if (canonicalBase && page.path) data.mainEntityOfPage = `${canonicalBase}${page.path}`;
+  if (pharmacy?.name) data.publisher = { '@type': 'Pharmacy', name: pharmacy.name };
+  if (a.updatedAt) data.dateModified = a.updatedAt;
+  if (a.author?.name) {
+    data.author = { '@type': 'Person', name: a.author.name };
+    if (a.author.title) data.author.jobTitle = a.author.title;
+  }
+  if (a.reviewer?.name) {
+    data.reviewedBy = { '@type': 'Person', name: a.reviewer.name };
+    if (a.reviewer.title) data.reviewedBy.jobTitle = a.reviewer.title;
+  }
+  return ldScript(data);
+}
+/**
  * Render the complete document.
  *
  * ONE HEAD ASSEMBLER FOR EVERY PAGE. The home page composes its body from the
@@ -210,6 +257,7 @@ ${logo ? `<meta name="twitter:image" content="${esc(logo)}">` : ''}
 ${structuredData(ctx.pharmacy, ctx.profile)}
 ${breadcrumbData(trail, canonicalBase)}
 ${serviceData(page, ctx.pharmacy, ctx.profile)}
+${articleData(page, ctx.pharmacy, canonicalBase)}
 </head>
 <body>
 ${body}
@@ -218,5 +266,5 @@ ${body}
 }
 
 module.exports = {
-  renderDocument, pageTitle, pageDescription, structuredData, breadcrumbData, serviceData,
+  renderDocument, pageTitle, pageDescription, structuredData, breadcrumbData, serviceData, articleData,
 };

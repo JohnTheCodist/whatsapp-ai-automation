@@ -71,9 +71,26 @@ const header = {
       ? `<img class="rx-logo" src="${esc(logo)}"${attr('alt', props.pharmacyName)} />`
       : `<span class="rx-brand-name">${esc(props.pharmacyName)}</span>`;
 
-    const nav = (props.navigation || []).length
+    // NAVIGATION: the owner's own links if they set any, otherwise the
+    // site's real pages.
+    //
+    // The fallback is what connects the home page to the rest of the site.
+    // This prop defaults to an empty list, so before this the home page
+    // linked nowhere — every generated page was an orphan reachable only by
+    // typing its URL, which is precisely the shape of internal linking
+    // failure that makes pages rank for nothing. Caught by a test asserting
+    // the home page links to /health/ exactly once.
+    //
+    // An explicit list still wins. A pharmacy that chose its own navigation
+    // meant it, and silently appending to it would be overriding a decision
+    // rather than filling a gap.
+    const links = (props.navigation || []).length
+      ? props.navigation
+      : (ctx.sitePages || []).map((page) => ({ href: page.path, label: page.nav }));
+
+    const nav = links.length
       ? `<nav class="rx-nav" aria-label="Main">${
-        props.navigation.map((i) => `<a href="${esc(i.href)}">${esc(i.label)}</a>`).join('')
+        links.map((i) => `<a href="${esc(i.href)}">${esc(i.label)}</a>`).join('')
       }</nav>`
       : '';
 

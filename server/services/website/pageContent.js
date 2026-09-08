@@ -28,6 +28,7 @@
 
 const { esc, waHref, telHref, mapsHref } = require('./blocks/render');
 const { navPages, breadcrumbsFor } = require('./pages');
+const { bylineFor, GENERAL_DISCLAIMER } = require('./health');
 
 /**
  * Operational descriptions for services we can identify.
@@ -197,6 +198,76 @@ function footer(ctx, year) {
 }
 
 /**
+ * Author and reviewer, or nothing at all.
+ *
+ * A missing byline renders as an absence. There is no "reviewed by our team"
+ * fallback, because a vague attribution is still an attribution and a reader
+ * cannot tell it from a real one.
+ */
+function bylineSection(article) {
+  const by = bylineFor(article);
+  const bits = [];
+  if (by?.author) bits.push(`<p>Written by ${esc(by.author)}</p>`);
+  if (by?.reviewer) {
+    const when = by.reviewedAt ? ` on ${esc(by.reviewedAt)}` : '';
+    bits.push(`<p>Medically reviewed by ${esc(by.reviewer)}${when}</p>`);
+  }
+  if (article?.updatedAt) bits.push(`<p>Last updated ${esc(article.updatedAt)}</p>`);
+  if (!bits.length) return '';
+  return `<section class="rx-block rx-narrow rx-byline">${bits.join('')}</section>`;
+}
+
+/**
+ * The "when to seek care" block.
+ *
+ * Rendered as its own section on every article, and never merged into the
+ * prose above it. The single most useful thing a health page can do for
+ * somebody who is worried is tell them plainly when to stop reading a website.
+ */
+function seekCareSection(seekCare) {
+  if (!seekCare?.items?.length) return '';
+  const items = seekCare.items.map((i) => `<li>${esc(i)}</li>`).join('');
+  return `<section class="rx-block rx-narrow rx-seek-care">`
+    + `<h2>${esc(seekCare.heading || 'When to seek care')}</h2>`
+    + (seekCare.intro ? `<p>${esc(seekCare.intro)}</p>` : '')
+    + `<ul>${items}</ul>`
+    + (seekCare.closing ? `<p>${esc(seekCare.closing)}</p>` : '')
+    + `</section>`;
+}
+
+/**
+ * Related services and related articles.
+ *
+ * Contextual rather than a link farm: an article about blood pressure links to
+ * the blood pressure check this pharmacy actually offers, and only if it
+ * offers it. A link to a service page that does not exist would be a broken
+ * link generated on purpose.
+ */
+function relatedSection(article, allPages) {
+  const byPath = new Map(allPages.map((x) => [x.path, x]));
+  const services = (article.relatedServices || [])
+    .map((slug) => byPath.get(`/services/${slug}/`))
+    .filter(Boolean);
+  const articles = (article.relatedArticles || [])
+    .map((slug) => byPath.get(`/health/${slug}/`))
+    .filter(Boolean);
+
+  const blocks = [];
+  if (services.length) {
+    blocks.push(`<h2>How this pharmacy can help</h2><ul>`
+      + services.map((s) => `<li><a href="${esc(s.path)}">${esc(s.label)}</a></li>`).join('')
+      + `</ul>`);
+  }
+  if (articles.length) {
+    blocks.push(`<h2>Related reading</h2><ul>`
+      + articles.map((a) => `<li><a href="${esc(a.path)}">${esc(a.nav)}</a></li>`).join('')
+      + `</ul>`);
+  }
+  if (!blocks.length) return '';
+  return `<section class="rx-block rx-narrow">${blocks.join('')}</section>`;
+}
+
+/**
  * The body for one generated page.
  *
  * @param {object} page   the page from pages.js
@@ -262,6 +333,44 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
     parts.push(ctaRow(ctx, `Hello ${name}`));
     parts.push(addressSection(ctx));
     parts.push(hoursSection(p));
+  } else if (page.kind === 'healthIndex') {
+    open('General health information, written for our customers.');
+    const articles = allPages.filter((x) => x.kind === 'health');
+    parts.push(cardGrid(articles.map((a) => ({
+      path: a.path, label: a.nav, description: a.description,
+    }))));
+    parts.push(ctaRow(ctx, `Hello ${name}`));
+  } else if (page.kind === 'health') {
+    const article = page.article || {};
+    open(article.intro || null);
+
+    // Sections in the order they were written. h2 for each, so the heading
+    // hierarchy under the single h1 stays flat and correct.
+    for (const section of article.sections || []) {
+      const paras = (section.paragraphs || [])
+        .map((t) => `<p>${esc(t)}</p>`).join('');
+      parts.push(
+        '<section class="rx-block rx-narrow">'
+        + `<h2>${esc(section.heading)}</h2>` + paras
+        + '</section>',
+      );
+    }
+
+    // Before the byline and the links, not buried under them. Someone who
+    // is frightened should reach this without scrolling past a call to
+    // action.
+    parts.push(seekCareSection(article.seekCare));
+    parts.push(relatedSection(article, allPages));
+    parts.push(ctaRow(ctx, `Hello ${name}, I have a question`));
+    parts.push(bylineSection(article));
+
+    // The disclaimer is not optional and not configurable. Every health page
+    // carries it, in the same words, because a page that explains a
+    // condition has to say plainly what it is not.
+    parts.push(
+      '<section class="rx-block rx-narrow rx-disclaimer"><p>'
+      + esc(GENERAL_DISCLAIMER) + '</p></section>',
+    );
   } else {
     open(null);
   }

@@ -287,6 +287,8 @@ function buildPages({ pharmacy, profile, health = [], healthLibrary = [] } = {})
       h1: 'Health information',
       nav: 'Health',
       children: enabled.map((a) => `/health/${a.slug}/`),
+      description: metaDescription(
+        `Health information from ${name}: ${enabled.map((a) => a.title).join('; ')}.`),
     });
     for (const article of enabled) {
       pages.push({
@@ -298,6 +300,10 @@ function buildPages({ pharmacy, profile, health = [], healthLibrary = [] } = {})
         nav: article.title,
         parent: '/health/',
         description: article.summary,
+        // The whole article travels with the page. The renderer needs its
+        // sections, its reviewer and its related links, and re-looking it up
+        // by slug there would be a second source for the same fact.
+        article,
       });
     }
   }
