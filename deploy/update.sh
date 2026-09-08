@@ -405,6 +405,26 @@ as_app '
 '
 
 restart_and_verify
+
+# AFTER the restart, deliberately: this renders published pages with the code
+# that is now running, so the ordering is what makes it worth doing at all.
+#
+# A published page is stored HTML. Without this step a renderer improvement
+# reaches nobody — every live site keeps serving the bytes produced by whatever
+# version was running the last time its owner pressed Publish, and the deploy
+# looks like it did nothing. Renders published_data only, never a draft; see
+# scripts/rerender-sites.js.
+#
+# Not fatal: a pharmacy whose render fails must not fail a deploy that has
+# already restarted a healthy service. It is reported and the deploy carries on.
+say "Re-rendering published websites"
+as_app '
+  set -eo pipefail
+  cd '"$APP_DIR"'
+  set -a; . ./.env.production; set +a
+  node scripts/rerender-sites.js
+' || say "WARNING: some websites did not re-render — see the output above"
+
 sync_caddy
 
 exit 0
