@@ -68,7 +68,20 @@ function traitsFor(definition) {
     editsProfileField: definition.editor?.editsProfileField || null,
     ...(spec.values ? { options: spec.values } : {}),
     ...(spec.max !== undefined ? { max: spec.max } : {}),
-    ...(spec.of ? { itemFields: Object.keys(spec.of) } : {}),
+    // Each sub-field of a list item, with the two things an editor has to
+    // know to render a row for it: whether a value is required (so a blank
+    // one can be dropped rather than sent to be rejected) and how long it
+    // may be. Names alone were not enough once anything wanted to edit a
+    // list in a plain form rather than a generic repeater.
+    ...(spec.of
+      ? {
+        itemFields: Object.entries(spec.of).map(([itemName, itemSpec]) => ({
+          name: itemName,
+          required: Boolean(itemSpec.required),
+          ...(itemSpec.max !== undefined ? { max: itemSpec.max } : {}),
+        })),
+      }
+      : {}),
   }));
 }
 

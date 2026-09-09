@@ -245,6 +245,172 @@ p:last-child{margin-bottom:0}
    with it — see pageContent.js's highlightOwnName() for when this applies
    and when it plainly does not. */
 .rx-name-accent{color:var(--rx-accent)}
+
+/* ---- about: the story section (metro) ----
+   The owner's own words beside their own photograph — see pageContent.js's
+   storySection(). The photo sits in a white frame with two rotated panels
+   behind it, the same signature the showcase hero uses one page up; the
+   frame is its own element rather than a background on the panels' parent,
+   so the panels can extend past it without being painted over. */
+.rx-story-grid{display:grid;gap:var(--rx-xl);align-items:center}
+.rx-story-media{position:relative}
+.rx-story-media::before{
+  content:"";
+  position:absolute;
+  inset:-.75rem;
+  background:var(--rx-accent);
+  opacity:.5;
+  border-radius:var(--rx-radius);
+  transform:rotate(-3deg);
+}
+.rx-story-media::after{
+  content:"";
+  position:absolute;
+  inset:-.5rem;
+  background:var(--rx-primary);
+  opacity:.16;
+  border-radius:var(--rx-radius);
+  transform:rotate(2.5deg);
+}
+.rx-story-frame{
+  position:relative;
+  z-index:1;
+  padding:var(--rx-sm);
+  background:var(--rx-surface);
+  border-radius:var(--rx-radius);
+  box-shadow:var(--rx-shadow);
+}
+.rx-story-frame img{
+  display:block;
+  width:100%;
+  border-radius:min(calc(var(--rx-radius) - 4px), 16px);
+  aspect-ratio:4/5;
+  object-fit:cover;
+  background:var(--rx-tint);
+}
+.rx-story-copy h2{margin-bottom:var(--rx-sm)}
+.rx-story-copy p{color:var(--rx-muted)}
+/* A filled pill rather than the FAQ's outlined one: this badge sits on the
+   page's own light ground, where a hairline outline all but disappears. */
+.rx-eyebrow--pill{
+  display:inline-flex;
+  margin-bottom:var(--rx-md);
+  padding:.35rem 1.1rem;
+  border-radius:999px;
+  background:var(--rx-tint);
+}
+.rx-story-chips{display:flex;flex-wrap:wrap;gap:var(--rx-sm);margin-top:var(--rx-md)}
+.rx-story-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:.5rem;
+  padding:.6rem 1.1rem;
+  border:1px solid;
+  border-radius:var(--rx-radius);
+  font-family:var(--rx-display);
+  font-weight:600;
+  font-size:var(--rx-size-sm);
+  color:var(--rx-ink);
+}
+.rx-story-chip svg{flex:0 0 auto;color:var(--rx-primary)}
+.rx-story-chip--a{
+  background:color-mix(in oklab, var(--rx-accent) 14%, var(--rx-surface));
+  border-color:color-mix(in oklab, var(--rx-accent) 45%, transparent);
+}
+.rx-story-chip--b{
+  background:var(--rx-tint);
+  border-color:color-mix(in oklab, var(--rx-primary) 30%, transparent);
+}
+@media (min-width:768px){
+  .rx-story-grid{grid-template-columns:minmax(0,1fr) minmax(0,1.05fr)}
+}
+
+/* ---- about: mission and vision ----
+   Two cards under a thick top rule, each with a round mark straddling that
+   rule. Available to every template, because the cards only ever appear
+   once the owner has WRITTEN a mission or a vision — see pageContent.js's
+   missionVisionSection(), which has no default to fall back on. */
+.rx-mv-grid{display:grid;gap:var(--rx-lg);padding-top:1.75rem}
+.rx-mv-card{
+  position:relative;
+  padding:2.25rem var(--rx-md) var(--rx-lg);
+  background:var(--rx-surface);
+  border:1px solid var(--rx-line);
+  border-top:4px solid var(--rx-primary);
+  border-radius:var(--rx-radius);
+  box-shadow:var(--rx-shadow);
+  text-align:center;
+}
+.rx-mv-card h2{margin-bottom:var(--rx-sm)}
+.rx-mv-card p{margin:0;color:var(--rx-muted)}
+/* Straddles the card's top rule: half above it, half below. */
+.rx-mv-mark{
+  position:absolute;
+  top:0;
+  left:50%;
+  transform:translate(-50%,-50%);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:3.5rem;
+  height:3.5rem;
+  border-radius:50%;
+  background:var(--rx-primary);
+  color:var(--rx-on-primary);
+  box-shadow:var(--rx-shadow);
+}
+/* METRO gives the second card the accent instead, for the same two-tone
+   rhythm the services tiles and the location cards already carry. */
+.rx-mv--metro .rx-mv-card--vision{border-top-color:var(--rx-accent)}
+.rx-mv--metro .rx-mv-card--vision .rx-mv-mark{background:var(--rx-accent);color:var(--rx-ink)}
+@media (min-width:768px){
+  /* A REAL minimum, not minmax(0,1fr): with a zero floor auto-fit lays out
+     dozens of empty zero-width tracks beside the two real cards. 18rem also
+     means a lone mission card fills the row rather than sitting in half of
+     one, since auto-fit collapses the track it does not need. */
+  .rx-mv-grid{grid-template-columns:repeat(auto-fit,minmax(18rem,1fr))}
+}
+
+/* ---- about: why choose us ----
+   The owner's own reasons beside a standing offer to answer questions. A
+   soft tinted band by default; METRO takes the accent as a full band, which
+   is the one place on these sites that colour carries a whole section
+   rather than a detail. Ink on gold rather than on-primary: the accent is a
+   FIXED light gold, so its readable foreground is fixed too — deriving one
+   from --rx-on-primary would follow the palette and land on white. */
+.rx-why{background:var(--rx-tint)}
+.rx-why--metro{background:var(--rx-accent);color:var(--rx-ink)}
+.rx-why--metro h2,.rx-why--metro h3{color:var(--rx-ink)}
+.rx-why--metro .rx-why-item p{color:color-mix(in oklab, var(--rx-ink) 75%, transparent)}
+.rx-why-grid{display:grid;gap:var(--rx-lg);align-items:start}
+.rx-why-items{display:grid;gap:var(--rx-md);margin-top:var(--rx-lg)}
+.rx-why-item{display:flex;gap:var(--rx-md);align-items:flex-start}
+.rx-why-item h3{margin-bottom:.2rem;font-size:var(--rx-size-base)}
+.rx-why-item p{margin:0;color:var(--rx-muted);font-size:var(--rx-size-sm)}
+.rx-why-mark{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:2.75rem;
+  height:2.75rem;
+  border-radius:min(var(--rx-radius), 14px);
+  background:var(--rx-surface);
+  color:var(--rx-primary);
+}
+.rx-why-card{
+  padding:var(--rx-lg) var(--rx-md);
+  background:var(--rx-surface);
+  border-radius:var(--rx-radius);
+  box-shadow:var(--rx-shadow);
+  text-align:center;
+}
+.rx-why-card h3{color:var(--rx-primary);margin-bottom:var(--rx-xs)}
+.rx-why-card p{color:var(--rx-muted);margin-bottom:var(--rx-md)}
+@media (min-width:768px){
+  .rx-why-grid{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:var(--rx-xl)}
+  .rx-why-items{grid-template-columns:repeat(auto-fit,minmax(15rem,1fr))}
+}
 .rx-prose p{color:var(--rx-muted);font-size:var(--rx-size-lg)}
 .rx-lede{font-size:var(--rx-size-lg);color:var(--rx-muted);max-width:var(--rx-measure)}
 

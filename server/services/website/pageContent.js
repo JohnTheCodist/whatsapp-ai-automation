@@ -350,6 +350,148 @@ function photoSection(ctx, { kinds = ['gallery'], limit = 6, heading = null, eag
     + `<div class="rx-photo-grid">${imgs}</div></section>`;
 }
 
+/** A plain check mark for the story chips — decorative, claims nothing itself. */
+const CHECK_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+  + 'stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+/** A target and a rising arrow — decorative marks for mission and vision. */
+const TARGET_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg>';
+const RISE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + '<path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/></svg>';
+
+/**
+ * "Our mission" and "Our vision", side by side.
+ *
+ * ENTIRELY THE OWNER'S OWN WORDS, and nothing at all without them. A mission
+ * statement is the one thing on a pharmacy's website that cannot be written
+ * for them even generically: it is a claim about what THIS business is for.
+ * So there is no default, no seeded example and no AI-written text reaching
+ * the page unread — these come from content.pageCopy['/about/'], the same
+ * channel the About page's heading and intro already use, written in the
+ * dashboard and saved deliberately.
+ *
+ * One card or two: a pharmacy that has written only a mission gets a mission
+ * card and no empty second column.
+ */
+function missionVisionSection(copy, metro) {
+  const cards = [
+    { key: 'mission', title: 'Our Mission', icon: TARGET_SVG, text: copy?.mission },
+    { key: 'vision', title: 'Our Vision', icon: RISE_SVG, text: copy?.vision },
+  ].filter((c) => c.text);
+  if (!cards.length) return '';
+
+  const items = cards.map((c) => `<div class="rx-mv-card rx-mv-card--${c.key}">`
+    + `<span class="rx-mv-mark">${c.icon}</span>`
+    + `<h2>${esc(c.title)}</h2><p>${esc(c.text)}</p></div>`).join('');
+
+  return `<section class="rx-block${metro ? ' rx-mv--metro' : ''}">`
+    + `<div class="rx-mv-grid">${items}</div></section>`;
+}
+
+/**
+ * "Why choose us" — the pharmacy's own reasons, beside a standing offer to
+ * answer questions.
+ *
+ * THE REASONS ARE THE OWNER'S, and there are none by default: "minimal wait
+ * times" and "free delivery" are promises about how one specific pharmacy
+ * runs, so the whole band stays off the page until somebody has written at
+ * least one (see the `whyUs` prop in blocks/definitions/content.js).
+ *
+ * The card beside them is the exception, and only because it claims nothing
+ * about this pharmacy that is not already true and already on the page: it
+ * offers the same WhatsApp (or phone) route every other section here offers,
+ * and renders at all only when there is a real number behind it.
+ *
+ * Each reason's mark comes from serviceIcon(), the same name-to-icon
+ * matcher the services grid uses, so "Free Delivery" draws the delivery
+ * mark without the owner choosing an icon — and an unrecognised phrase
+ * simply gets the general one rather than a wrong one.
+ */
+function whyChooseSection(ctx, name, whyUs, metro) {
+  const items = (Array.isArray(whyUs) ? whyUs : []).filter((w) => w?.title);
+  if (!items.length) return '';
+
+  const wa = waHref(ctx?.pharmacy?.public_whatsapp_number, `Hello ${name}, I have a question`, ctx);
+  const tel = wa ? '' : telHref(ctx?.profile?.phone, ctx);
+  const action = wa
+    ? `<a class="rx-btn rx-btn-solid" href="${esc(wa)}" rel="noopener noreferrer" target="_blank">Message us on WhatsApp</a>`
+    : (tel ? `<a class="rx-btn rx-btn-solid" href="${esc(tel)}">Call ${esc(ctx.profile.phone)}</a>` : '');
+
+  const list = items.map((w) => `<div class="rx-why-item">`
+    + `<span class="rx-why-mark">${serviceIcon(w.title)}</span>`
+    + `<div><h3>${esc(w.title)}</h3>${w.text ? `<p>${esc(w.text)}</p>` : ''}</div>`
+    + `</div>`).join('');
+
+  const aside = action
+    ? '<aside class="rx-why-card"><h3>Have Questions?</h3>'
+      + '<p>Our pharmacists are ready to help you.</p>'
+      + `${action}</aside>`
+    : '';
+
+  return `<section class="rx-block rx-why${metro ? ' rx-why--metro' : ''}">`
+    + `<div class="rx-why-grid"><div><h2>Why Choose ${esc(name)}?</h2>`
+    + `<div class="rx-why-items">${list}</div></div>${aside}</div></section>`;
+}
+
+/**
+ * "Our story" — the pharmacy's own words beside its own photograph.
+ *
+ * REPLACES the description panel and the photo grid on Metro's About page
+ * rather than adding to them: the same two facts (the owner's description,
+ * the owner's leading photo) laid out as one section instead of two stacked
+ * ones. Nothing extra is asked of the pharmacy and nothing is invented —
+ * with neither a description nor a photo on file there is no section at all.
+ *
+ * THE TRUST CHIPS ARE THE OWNER'S OWN, TYPED ONCE. They are the same
+ * `highlights` list from the homepage's About block (see
+ * blocks/definitions/content.js, which seeds none of them for exactly this
+ * reason — "Bilingual Staff" is a claim about one specific pharmacy). They
+ * arrive already extracted, so this file still receives only derived facts
+ * and never the whole site_data.
+ *
+ * The heading names the pharmacy's real area and nothing else; "with Pride"
+ * is generic sentiment, the same bar as the page's own lede, not a claim
+ * about awards, years or standing. With no area on file it says "our
+ * community" rather than guessing one.
+ */
+function storySection(ctx, profile, area, highlights) {
+  const paragraphs = String(profile?.description ?? '')
+    .split(/\n\s*\n/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const [photo] = [...assetsOfKind(ctx, 'hero'), ...assetsOfKind(ctx, 'gallery')];
+  if (!paragraphs.length && !photo) return '';
+
+  const name = ctx?.pharmacy?.name || 'The pharmacy';
+  const alt = area ? `${name}, ${area}` : name;
+  const dims = photo?.width && photo?.height ? ` width="${photo.width}" height="${photo.height}"` : '';
+  const media = photo
+    ? '<div class="rx-story-media"><div class="rx-story-frame">'
+      + `<img src="${esc(photo.url)}" alt="${esc(alt)}"${dims} loading="eager" fetchpriority="high" decoding="async">`
+      + '</div></div>'
+    : '';
+
+  // Alternating tone is rhythm, not meaning — the colour says nothing about
+  // which point matters more, the same way the services tiles alternate.
+  const chips = (Array.isArray(highlights) ? highlights : [])
+    .map((h) => h?.text)
+    .filter(Boolean)
+    .map((text, i) => `<span class="rx-story-chip ${i % 2 === 0 ? 'rx-story-chip--a' : 'rx-story-chip--b'}">`
+      + `${CHECK_SVG}${esc(text)}</span>`)
+    .join('');
+
+  const copy = '<div class="rx-story-copy">'
+    + '<span class="rx-eyebrow rx-eyebrow--pill">Our Story</span>'
+    + `<h2>Serving ${esc(area || 'our community')} with <span class="rx-heading-accent">Pride</span></h2>`
+    + paragraphs.map((t) => `<p>${esc(t)}</p>`).join('')
+    + (chips ? `<div class="rx-story-chips">${chips}</div>` : '')
+    + '</div>';
+
+  return `<section class="rx-block"><div class="rx-story-grid">${media}${copy}</div></section>`;
+}
+
 /**
  * Author and reviewer, or nothing at all.
  *
@@ -498,11 +640,23 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
         : 'More than just a pharmacy — built on trust and care.')
       : null;
     open(metroIntro);
-    parts.push(`<section class="rx-block rx-narrow"><div class="rx-panel"><p>${esc(String(p.description).replace(/\s+/g, ' ').trim())}</p></div></section>`);
-    // Eager on the first one: on an About page the photograph is the point,
-    // it is above the fold, and lazy-loading the thing a visitor came to look
-    // at makes the page feel slower than it is.
-    parts.push(photoSection(ctx, { kinds: ['hero', 'gallery'], limit: 4, eager: true }));
+    if (ctx.templateId === 'metro') {
+      // ONE section instead of two: storySection() carries the description
+      // AND the leading photograph, so pushing the panel and the grid as
+      // well would print the same words and the same picture twice.
+      parts.push(storySection(ctx, p, area, ctx.aboutHighlights));
+    } else {
+      parts.push(`<section class="rx-block rx-narrow"><div class="rx-panel"><p>${esc(String(p.description).replace(/\s+/g, ' ').trim())}</p></div></section>`);
+      // Eager on the first one: on an About page the photograph is the point,
+      // it is above the fold, and lazy-loading the thing a visitor came to look
+      // at makes the page feel slower than it is.
+      parts.push(photoSection(ctx, { kinds: ['hero', 'gallery'], limit: 4, eager: true }));
+    }
+    // Below the story, on every template — the cards render only once the
+    // owner has actually written a mission or a vision, so no template
+    // gains a section it did not have until someone types something.
+    parts.push(missionVisionSection(override, ctx.templateId === 'metro'));
+    parts.push(whyChooseSection(ctx, name, ctx.aboutWhyUs, ctx.templateId === 'metro'));
     parts.push(visitSplit(ctx, p));
     parts.push(ctaRow(ctx, `Hello ${name}`));
   } else if (page.kind === 'services') {

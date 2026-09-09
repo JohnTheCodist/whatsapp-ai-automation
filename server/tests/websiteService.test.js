@@ -199,6 +199,18 @@ test('an entry left entirely blank is dropped rather than stored as an empty ove
   assert.deepEqual(r, { ok: true, value: {} });
 });
 
+test('pageCopy stores a mission and a vision, capped like every other field', () => {
+  const r = validatePageCopy({ '/about/': { mission: '  To serve our neighbours well.  ', vision: 'To become their first call.' } });
+  assert.deepEqual(r, {
+    ok: true,
+    value: { '/about/': { mission: 'To serve our neighbours well.', vision: 'To become their first call.' } },
+  });
+
+  const tooLong = validatePageCopy({ '/about/': { mission: 'A'.repeat(601) } });
+  assert.equal(tooLong.ok, false);
+  assert.match(tooLong.error, /mission must be 600 characters or fewer/);
+});
+
 test('pageCopy rejects a key that is not a real page path', () => {
   const r = validatePageCopy({ about: { heading: 'x' } });
   assert.equal(r.ok, false);

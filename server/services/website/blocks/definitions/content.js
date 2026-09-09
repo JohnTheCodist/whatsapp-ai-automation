@@ -42,6 +42,20 @@ const about = {
       max: 6,
       of: { text: { type: 'text', max: 80, required: true } },
     },
+    // Reasons to choose THIS pharmacy — "Free Delivery: bringing meds right
+    // to your door". Rendered on the About PAGE rather than here (see
+    // pageContent.js's whyChooseSection), and seeded with nothing at all for
+    // the same reason `highlights` above is: "minimal wait times" is a
+    // promise about how one specific pharmacy runs, not a phrase a template
+    // may put in their mouth.
+    whyUs: {
+      type: 'list',
+      max: 6,
+      of: {
+        title: { type: 'text', max: 60, required: true },
+        text: { type: 'text', max: 160 },
+      },
+    },
     // Shown only once there is a real maps_url to send someone to — see
     // render(). Optional even then: a template opts in by setting this,
     // rather than every About section growing a button it never had.
@@ -60,7 +74,9 @@ const about = {
 
   // NO DEFAULT HIGHLIGHTS, for the reason in the props comment above — an
   // empty list renders nothing until the owner writes something true.
-  defaults: { heading: 'About us', highlights: [], mediaStyle: 'plain', flip: true, style: 'plain' },
+  defaults: {
+    heading: 'About us', highlights: [], whyUs: [], mediaStyle: 'plain', flip: true, style: 'plain',
+  },
   responsive: { layout: 'prose' },
 
   editor: { label: 'About the pharmacy', singleton: false, removable: true, draggable: true, icon: 'text' },

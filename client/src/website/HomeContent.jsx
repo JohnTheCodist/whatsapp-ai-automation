@@ -20,14 +20,15 @@
  * in Website content, and offering a second box for it would let the two
  * drift.
  *
- * SIMPLE LISTS GET A SECOND KIND OF ROW: a prop whose items are just ONE
- * short text field — About's `highlights` ("Bilingual Staff", one line per
- * item), not `services` or `reviews`, which have several fields per item and
- * already have their own dedicated pickers elsewhere in this app. Offering a
- * generic multi-field repeater here would either re-build those pickers
- * worse or let the same list be edited two different ways; a single-field
- * list has no such picker anywhere, so this is the only place it can be
- * edited at all short of the drag-and-drop advanced editor.
+ * SHORT LISTS GET A SECOND KIND OF ROW: a prop whose items have one or two
+ * text fields — About's `highlights` ("Bilingual Staff"), its `whyUs` (a
+ * reason and a line about it), the FAQ's question-and-answer pairs. NOT
+ * `services` or `reviews`, which have three or more fields per item and
+ * already have dedicated editors elsewhere in this app: offering a generic
+ * repeater for those would either re-build those editors worse or let the
+ * same list be edited two different ways. The one- and two-field lists have
+ * no such editor anywhere, so without this they could only be reached
+ * through the drag-and-drop advanced editor most pharmacies never open.
  *
  * BLANK MEANS "USE THIS BLOCK'S OWN DEFAULT WORDING", exactly like PageText —
  * clearing a box and saving removes the override rather than publishing an
@@ -92,22 +93,35 @@ function editableFieldsFor(definition) {
 }
 
 /**
- * The single-field lists this block instance may have written for it — see
- * the file header for why only a ONE-field list qualifies. `max` here is the
- * list's own item-count ceiling (editorManifest reuses the same `max` key
- * for a repeater's item cap that a text prop uses for its character cap).
+ * The lists this block instance may have written for it in a plain form —
+ * see the file header for where the line is drawn. One or two fields per
+ * item ("Bilingual Staff"; "Free Delivery" + a line about it; a question
+ * and its answer) is a form; `services` and `reviews` have three or more
+ * and already have editors of their own.
+ *
+ * `max` here is the list's own item-count ceiling (editorManifest reuses the
+ * same `max` key for a repeater's item cap that a text prop uses for its
+ * character cap); each item field carries its own `max` and `required`.
  */
 function simpleListFieldsFor(definition) {
   if (!definition) return [];
   return (definition.traits || [])
-    .filter((t) => t.kind === 'repeater' && !t.inherited && Array.isArray(t.itemFields) && t.itemFields.length === 1)
-    .map((t) => ({ name: t.name, itemField: t.itemFields[0], max: t.max || 12 }));
+    .filter((t) => t.kind === 'repeater' && !t.inherited
+      && Array.isArray(t.itemFields) && t.itemFields.length > 0 && t.itemFields.length <= 2)
+    .map((t) => ({ name: t.name, itemFields: t.itemFields, max: t.max || 12 }));
 }
 
-/** initialProps[name] (an array of {[itemField]: value} objects) as a plain array of strings. */
-function listAsStrings(initialProps, listField) {
+/** An empty row for a list — every sub-field present and blank. */
+function blankRow(listField) {
+  return Object.fromEntries(listField.itemFields.map((f) => [f.name, '']));
+}
+
+/** initialProps[name] as rows this form can edit: every sub-field, blank where unset. */
+function listAsRows(initialProps, listField) {
   const arr = Array.isArray(initialProps[listField.name]) ? initialProps[listField.name] : [];
-  return arr.map((item) => item?.[listField.itemField] || '');
+  return arr.map((item) => Object.fromEntries(
+    listField.itemFields.map((f) => [f.name, item?.[f.name] || '']),
+  ));
 }
 
 function SectionRow({ index, title, description, definition, initialProps, onSaved }) {
@@ -115,7 +129,7 @@ function SectionRow({ index, title, description, definition, initialProps, onSav
   const listFields = useMemo(() => simpleListFieldsFor(definition), [definition]);
   const [draft, setDraft] = useState(() => {
     const base = { ...initialProps };
-    for (const lf of listFields) base[lf.name] = listAsStrings(initialProps, lf);
+    for (const lf of listFields) base[lf.name] = listAsRows(initialProps, lf);
     return base;
   });
   const [status, setStatus] = useState('idle'); // idle | saving | saved | error
@@ -124,7 +138,7 @@ function SectionRow({ index, title, description, definition, initialProps, onSav
   const [genError, setGenError] = useState(null); // { field, message }
 
   const dirty = fields.some((f) => (draft[f.name] || '') !== (initialProps[f.name] || ''))
-    || listFields.some((lf) => JSON.stringify(draft[lf.name] || []) !== JSON.stringify(listAsStrings(initialProps, lf)));
+    || listFields.some((lf) => JSON.stringify(draft[lf.name] || []) !== JSON.stringify(listAsRows(initialProps, lf)));
 
   async function writeWithAi(fieldName) {
     setGenerating(fieldName);
@@ -143,16 +157,21 @@ function SectionRow({ index, title, description, definition, initialProps, onSav
     setStatus('saving');
     setError(null);
     try {
-      // List fields are edited here as plain strings, one per row, but the
-      // block registry stores each item as {[itemField]: value} — converted
-      // back at the last possible moment, and blank rows dropped, so a saved
-      // list can never contain an empty item nobody meant to keep.
+      // Every value trimmed, and a row dropped entirely unless each of its
+      // REQUIRED sub-fields has something in it — so a half-typed row (a
+      // question with no answer) is quietly discarded here rather than sent
+      // on to be rejected by the block contract with an error the owner did
+      // not do anything to deserve. Optional sub-fields left blank are
+      // simply omitted from the stored item.
       const toSend = { ...draft };
       for (const lf of listFields) {
         toSend[lf.name] = (draft[lf.name] || [])
-          .map((v) => v.trim())
-          .filter(Boolean)
-          .map((v) => ({ [lf.itemField]: v }));
+          .map((row) => Object.fromEntries(
+            lf.itemFields
+              .map((f) => [f.name, (row?.[f.name] || '').trim()])
+              .filter(([, v]) => v),
+          ))
+          .filter((row) => lf.itemFields.every((f) => !f.required || row[f.name]));
       }
       await onSaved(index, toSend);
       setStatus('saved');
@@ -218,19 +237,24 @@ function SectionRow({ index, title, description, definition, initialProps, onSav
               {!items.length && (
                 <p className="mt-1 text-xs text-slate-400">Nothing shown until you add one — never guessed for you.</p>
               )}
-              <div className="mt-1 space-y-1.5">
-                {items.map((value, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <input
-                      className={inputClass}
-                      value={value}
-                      onChange={(e) => setDraft((d) => {
-                        const next = [...(d[lf.name] || [])];
-                        next[i] = e.target.value.slice(0, 80);
-                        return { ...d, [lf.name]: next };
-                      })}
-                      placeholder="e.g. Bilingual Staff"
-                    />
+              <div className="mt-1 space-y-2">
+                {items.map((row, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      {lf.itemFields.map((f) => (
+                        <input
+                          key={f.name}
+                          className={inputClass}
+                          value={row?.[f.name] || ''}
+                          onChange={(e) => setDraft((d) => {
+                            const next = [...(d[lf.name] || [])];
+                            next[i] = { ...next[i], [f.name]: e.target.value.slice(0, f.max || 160) };
+                            return { ...d, [lf.name]: next };
+                          })}
+                          placeholder={lf.itemFields.length > 1 ? fieldLabel(f.name) : 'e.g. Bilingual Staff'}
+                        />
+                      ))}
+                    </div>
                     <button
                       type="button"
                       onClick={() => setDraft((d) => ({ ...d, [lf.name]: (d[lf.name] || []).filter((_, j) => j !== i) }))}
@@ -245,7 +269,7 @@ function SectionRow({ index, title, description, definition, initialProps, onSav
               {items.length < lf.max && (
                 <button
                   type="button"
-                  onClick={() => setDraft((d) => ({ ...d, [lf.name]: [...(d[lf.name] || []), ''] }))}
+                  onClick={() => setDraft((d) => ({ ...d, [lf.name]: [...(d[lf.name] || []), blankRow(lf)] }))}
                   className="mt-1.5 text-xs font-medium text-teal-700 hover:underline"
                 >
                   + Add
@@ -270,7 +294,7 @@ function SectionRow({ index, title, description, definition, initialProps, onSav
         {status === 'saved' && <span className="text-xs text-teal-700">Saved.</span>}
         {!dirty && status === 'idle' && (
           <span className="text-xs text-slate-400">
-            {fields.some((f) => initialProps[f.name]) || listFields.some((lf) => listAsStrings(initialProps, lf).length)
+            {fields.some((f) => initialProps[f.name]) || listFields.some((lf) => listAsRows(initialProps, lf).length)
               ? 'Your own wording is live here.'
               : 'Using the default wording.'}
           </span>

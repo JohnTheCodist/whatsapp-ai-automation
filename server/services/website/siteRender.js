@@ -62,6 +62,17 @@ function renderAllPages({
     trackingBase,
     pageCopy: pageCopy || {},
     templateId,
+    // The trust points the owner typed into their HOMEPAGE's About block, so
+    // the About PAGE can show the same ones without asking for them a second
+    // time. Extracted here rather than in pageContent.js so that file keeps
+    // receiving only derived facts and never the whole site_data — one place
+    // knows the block shape, and it is the one that already renders blocks.
+    aboutHighlights: (site?.blocks || [])
+      .filter((b) => b?.type === 'pharmacy.about')
+      .flatMap((b) => (Array.isArray(b?.props?.highlights) ? b.props.highlights : [])),
+    aboutWhyUs: (site?.blocks || [])
+      .filter((b) => b?.type === 'pharmacy.about')
+      .flatMap((b) => (Array.isArray(b?.props?.whyUs) ? b.props.whyUs : [])),
     // The site map, so the header block can link to the pages that exist
     // rather than to nothing. Set here because this is the only place that
     // knows the whole site.

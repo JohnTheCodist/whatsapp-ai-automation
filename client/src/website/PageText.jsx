@@ -54,6 +54,21 @@ function fieldsFor(kind) {
       placeholder: 'Uses the automatic description of what this involves',
     });
   }
+  // ONLY on the About page, because that is the only page that renders them
+  // (pageContent.js's missionVisionSection). Unlike every other box here,
+  // these have NO automatic version to fall back on: a mission statement is
+  // a claim about what this pharmacy is for, and nothing writes one for you
+  // — so the placeholder says so rather than promising a default.
+  if (kind === 'about') {
+    base.push({
+      key: 'mission', label: 'Our mission', kind: 'textarea', max: 600,
+      placeholder: 'Nothing is shown until you write this',
+    });
+    base.push({
+      key: 'vision', label: 'Our vision', kind: 'textarea', max: 600,
+      placeholder: 'Nothing is shown until you write this',
+    });
+  }
   return base;
 }
 

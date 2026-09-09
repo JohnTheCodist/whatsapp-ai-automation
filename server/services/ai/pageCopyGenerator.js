@@ -26,9 +26,13 @@
 const { chat, isConfigured, LlmUnavailable } = require('./llmClient');
 
 /** Validated server-side by validatePageCopy too — kept here as the model's own ceiling. */
-const FIELD_LIMITS = Object.freeze({ heading: 120, intro: 400, about: 600 });
+const FIELD_LIMITS = Object.freeze({
+  heading: 120, intro: 400, about: 600, mission: 600, vision: 600,
+});
 /** Aimed well under the hard cap: nothing this short reads better for being longer. */
-const FIELD_TARGETS = Object.freeze({ heading: 70, intro: 220, about: 380 });
+const FIELD_TARGETS = Object.freeze({
+  heading: 70, intro: 220, about: 380, mission: 320, vision: 320,
+});
 
 function pageDescription(kind, label) {
   switch (kind) {
@@ -58,6 +62,21 @@ function fieldInstruction(field, kind) {
       + 'describing this ONE SERVICE for a customer deciding whether to come in for it — practically, '
       + 'what happens and who it is for. Do not give medical advice, a dosage, a diagnosis, or promise a '
       + 'specific health outcome. Describe the service itself, not what it treats or cures.';
+  }
+  if (field === 'mission') {
+    return `Write this pharmacy's MISSION STATEMENT — what it is here to do for the people it serves, `
+      + `${FIELD_TARGETS.mission} characters or fewer (2 to 3 sentences). Present tense, about the work `
+      + 'itself: who it serves and what it commits to doing for them. Not a slogan, not a list of '
+      + 'services, and not a boast — no "leading", "award-winning", "number one", no claim about size, '
+      + 'ranking or how long they have been open.';
+  }
+  if (field === 'vision') {
+    return `Write this pharmacy's VISION STATEMENT — the future it is working towards, `
+      + `${FIELD_TARGETS.vision} characters or fewer (2 to 3 sentences). It should read as an aspiration `
+      + 'for its community, distinct from the mission (which is what it does TODAY). Never state the '
+      + 'aspiration as though it were already achieved, and never claim a ranking or a standing it '
+      + 'would have to have earned — "to become" and "to be" are the right shape, "we are the most '
+      + 'trusted" is not.';
   }
   return `Write the INTRODUCTION directly under the heading — the first sentence or two a visitor reads `
     + `on this page, ${FIELD_TARGETS.intro} characters or fewer. Warm, specific and useful; it may `

@@ -164,8 +164,8 @@ router.get('/', requireAuth, asyncRoute(async (req, res) => {
 router.post('/pages/copy/generate', requireAuth, requireRole('owner', 'pharmacist'), asyncRoute(async (req, res) => {
   const path = typeof req.body?.path === 'string' ? req.body.path : null;
   const field = typeof req.body?.field === 'string' ? req.body.field : null;
-  if (!path || !['heading', 'intro', 'about'].includes(field)) {
-    throw new HttpError(400, 'A valid path and field (heading, intro or about) are required.', 'INVALID_BODY');
+  if (!path || !['heading', 'intro', 'about', 'mission', 'vision'].includes(field)) {
+    throw new HttpError(400, 'A valid path and field is required.', 'INVALID_BODY');
   }
 
   const [pharmacy, profile, site] = await Promise.all([

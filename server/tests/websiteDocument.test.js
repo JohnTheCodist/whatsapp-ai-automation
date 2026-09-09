@@ -278,7 +278,7 @@ function assetMap(rows) {
   }]));
 }
 
-function renderWithPhotos(rows) {
+function renderWithPhotos(rows, extra = {}) {
   return renderAllPages({
     site: templates.cloneSeed('professional'),
     pharmacy: PHARMACY,
@@ -287,6 +287,7 @@ function renderWithPhotos(rows) {
     assets: assetMap(rows),
     assetBaseUrl: 'https://cdn.example.com',
     year: 2026,
+    ...extra,
   }).rendered;
 }
 
@@ -540,6 +541,187 @@ test('metro\'s About subheading drops the area clause entirely when none is on f
     templateId: 'metro',
   }).rendered;
   const about = pages.find((p) => p.path === '/about/').html;
-  assert.match(about, /More than just a pharmacy — built on trust and care\./);
-  assert.ok(!about.includes('community'));
+  assert.match(about, /<p class="rx-lede">More than just a pharmacy — built on trust and care\.<\/p>/);
+  // The AREA CLAUSE specifically, not the word "community" anywhere on the
+  // page: the story section's own heading legitimately falls back to
+  // "Serving our community with Pride" for the same missing-area reason.
+  assert.ok(!about.includes('we are here for the'), 'no area on file must not produce an area clause');
+});
+
+test('metro\'s About page tells the story ONCE — the description and photo are not also repeated below it', () => {
+  const pages = renderWithPhotos([{ id: 'a1', path: 'ph/1.jpg', kind: 'hero', width: 1200, height: 900 }], {
+    templateId: 'metro',
+  });
+  const about = pages.find((p) => p.path === '/about/').html;
+
+  assert.match(about, /<div class="rx-story-grid">/);
+  assert.match(about, /<h2>Serving Ikeja, Lagos with <span class="rx-heading-accent">Pride<\/span><\/h2>/);
+  assert.match(about, /<span class="rx-eyebrow rx-eyebrow--pill">Our Story<\/span>/);
+  // The photo lives in the story's own frame, so the separate grid must be
+  // gone — and the description must appear exactly once, not once in the
+  // story and again in the panel that used to carry it.
+  assert.match(about, /<div class="rx-story-frame">/);
+  assert.ok(!about.includes('<div class="rx-photo-grid">'), 'the photo grid must not repeat the story photo');
+  // The rendered PARAGRAPH, counted — the same sentence also legitimately
+  // fills the page's meta description and its og:/twitter: twins up in the
+  // head, so a whole-document count would never be 1.
+  assert.equal(
+    (about.match(/<p>A community pharmacy serving Allen Avenue since 2011\.<\/p>/g) || []).length,
+    1,
+  );
+});
+
+test('every other template\'s About page still shows the panel and the grid, untouched', () => {
+  const pages = renderWithPhotos([{ id: 'a1', path: 'ph/1.jpg', kind: 'hero', width: 1200, height: 900 }]);
+  const about = pages.find((p) => p.path === '/about/').html;
+  assert.ok(!about.includes('<div class="rx-story-grid">'));
+  assert.match(about, /<div class="rx-panel">/);
+  assert.match(about, /<div class="rx-photo-grid">/);
+});
+
+test('metro\'s story chips are the owner\'s OWN homepage highlights — never seeded, never invented', () => {
+  const bare = renderWithPhotos([{ id: 'a1', path: 'ph/1.jpg', kind: 'hero' }], { templateId: 'metro' });
+  const bareAbout = bare.find((p) => p.path === '/about/').html;
+  // The RENDERED element, not the class name — that name is also a selector
+  // in the always-inlined stylesheet, present whether or not it is used.
+  assert.ok(!bareAbout.includes('<span class="rx-story-chip'), 'no highlights typed means no chips at all');
+
+  // The same list the owner filled in on the homepage's About block.
+  const seed = templates.cloneSeed('metro');
+  seed.blocks.find((b) => b.type === 'pharmacy.about').props.highlights = [
+    { text: 'Locally Owned' },
+    { text: 'Bilingual Staff' },
+  ];
+  const withChips = renderAllPages({
+    site: seed,
+    pharmacy: PHARMACY,
+    profile: PROFILE,
+    theme: templates.getTemplate('metro').theme,
+    assets: new Map(),
+    year: 2026,
+    templateId: 'metro',
+  }).rendered;
+  const about = withChips.find((p) => p.path === '/about/').html;
+  assert.match(about, /rx-story-chip rx-story-chip--a">.*?Locally Owned<\/span>/);
+  assert.match(about, /rx-story-chip rx-story-chip--b">.*?Bilingual Staff<\/span>/);
+});
+
+test('mission and vision render only once the owner has written them — never a seeded default', () => {
+  const bare = renderWithPageCopy({}, { templateId: 'metro' });
+  const bareAbout = bare.find((p) => p.path === '/about/').html;
+  assert.ok(!bareAbout.includes('<div class="rx-mv-grid">'), 'nothing written means no section at all');
+  assert.ok(!bareAbout.includes('Our Mission'), 'and no empty card carrying the label alone');
+
+  const written = renderWithPageCopy({
+    '/about/': { mission: 'To keep our neighbours well.', vision: 'To become the first call on this street.' },
+  }, { templateId: 'metro' });
+  const about = written.find((p) => p.path === '/about/').html;
+  assert.match(about, /<div class="rx-mv-card rx-mv-card--mission">/);
+  assert.match(about, /<h2>Our Mission<\/h2><p>To keep our neighbours well\.<\/p>/);
+  assert.match(about, /<h2>Our Vision<\/h2><p>To become the first call on this street\.<\/p>/);
+});
+
+test('a mission with no vision renders one card, not an empty second column', () => {
+  const pages = renderWithPageCopy({ '/about/': { mission: 'To keep our neighbours well.' } }, { templateId: 'metro' });
+  const about = pages.find((p) => p.path === '/about/').html;
+  assert.equal((about.match(/class="rx-mv-card/g) || []).length, 1);
+  assert.ok(!about.includes('Our Vision'));
+});
+
+test('mission and vision are available to every template, not only metro — only the two-tone accent is metro\'s', () => {
+  const pages = renderWithPageCopy({ '/about/': { mission: 'To keep our neighbours well.' } });
+  const about = pages.find((p) => p.path === '/about/').html;
+  assert.match(about, /<div class="rx-mv-card rx-mv-card--mission">/, 'the cards are not gated on the template');
+  // The rendered attribute, not the bare class name — that name is also a
+  // selector in the always-inlined stylesheet, present on every page.
+  assert.ok(!about.includes('class="rx-block rx-mv--metro"'), 'only the accent-coloured variant is');
+});
+
+/** The metro seed with the owner's own "why choose us" reasons filled in. */
+function renderWithWhyUs(whyUs, overrides = {}) {
+  const seed = templates.cloneSeed('metro');
+  seed.blocks.find((b) => b.type === 'pharmacy.about').props.whyUs = whyUs;
+  return renderAllPages({
+    site: seed,
+    pharmacy: PHARMACY,
+    profile: PROFILE,
+    theme: templates.getTemplate('metro').theme,
+    assets: new Map(),
+    year: 2026,
+    templateId: 'metro',
+    ...overrides,
+  }).rendered;
+}
+
+test('"why choose us" renders only the reasons the owner wrote, and nothing at all without them', () => {
+  const none = renderWithWhyUs([]);
+  const bare = none.find((p) => p.path === '/about/').html;
+  assert.ok(!bare.includes('<section class="rx-block rx-why'), 'no reasons written means no band at all');
+  assert.ok(!bare.includes('Why Choose'), 'and not even the heading on its own');
+
+  const pages = renderWithWhyUs([
+    { title: 'Free Delivery', text: 'Bringing meds right to your door.' },
+    { title: 'Fast Service' },
+  ]);
+  const about = pages.find((p) => p.path === '/about/').html;
+  assert.match(about, /<h2>Why Choose Ikeja Family Pharmacy\?<\/h2>/);
+  assert.match(about, /<h3>Free Delivery<\/h3><p>Bringing meds right to your door\.<\/p>/);
+  // A reason with no line under it renders as the title alone, not an empty
+  // paragraph.
+  assert.match(about, /<h3>Fast Service<\/h3><\/div>/);
+});
+
+test('"why choose us" offers the same WhatsApp route the rest of the page does, and no dead card without one', () => {
+  const withWa = renderWithWhyUs([{ title: 'Free Delivery' }]);
+  const about = withWa.find((p) => p.path === '/about/').html;
+  assert.match(about, /<aside class="rx-why-card"><h3>Have Questions\?<\/h3>/);
+  assert.match(about, /wa\.me\/2348012345678/);
+
+  const noContact = renderWithWhyUs([{ title: 'Free Delivery' }], {
+    pharmacy: { name: 'Ikeja Family Pharmacy' },
+    profile: { ...PROFILE, phone: null },
+  });
+  const bare = noContact.find((p) => p.path === '/about/').html;
+  assert.match(bare, /<h3>Free Delivery<\/h3>/, 'the reasons still stand on their own');
+  assert.ok(!bare.includes('Have Questions?'), 'but no card inviting a message nothing can send');
+});
+
+test('the accent band is metro\'s; every other template gets the same reasons on a plain tint', () => {
+  const metro = renderWithWhyUs([{ title: 'Free Delivery' }]);
+  assert.match(metro.find((p) => p.path === '/about/').html, /<section class="rx-block rx-why rx-why--metro">/);
+
+  const seed = templates.cloneSeed('professional');
+  seed.blocks.find((b) => b.type === 'pharmacy.about').props.whyUs = [{ title: 'Free Delivery' }];
+  const plain = renderAllPages({
+    site: seed,
+    pharmacy: PHARMACY,
+    profile: PROFILE,
+    theme: templates.getTemplate('professional').theme,
+    assets: new Map(),
+    year: 2026,
+  }).rendered;
+  const about = plain.find((p) => p.path === '/about/').html;
+  assert.match(about, /<section class="rx-block rx-why">/);
+  assert.ok(!about.includes('rx-why rx-why--metro'));
+});
+
+test('metro\'s story stands on the description alone when the pharmacy has uploaded no photo', () => {
+  // The no-description case is unreachable from here by design: pages.js
+  // does not create /about/ at all without one, because the page would be
+  // the pharmacy's name and nothing else. So the case worth pinning is the
+  // other one — words but no picture — where the story keeps its words and
+  // simply has no frame to draw.
+  const pages = renderAllPages({
+    site: templates.cloneSeed('metro'),
+    pharmacy: PHARMACY,
+    profile: PROFILE,
+    theme: templates.getTemplate('metro').theme,
+    assets: new Map(),
+    year: 2026,
+    templateId: 'metro',
+  }).rendered;
+  const about = pages.find((p) => p.path === '/about/').html;
+  assert.match(about, /<div class="rx-story-grid">/);
+  assert.match(about, /Family run since 2014\./);
+  assert.ok(!about.includes('<div class="rx-story-frame">'), 'no photo means no frame, not an empty one');
 });

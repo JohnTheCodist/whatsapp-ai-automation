@@ -145,7 +145,13 @@ function normalizeSiteData(input) {
  * its own stricter validation a few lines below while the rest of `content`
  * does not.
  */
-const PAGE_COPY_FIELD_MAX = Object.freeze({ heading: 120, intro: 400, about: 600 });
+// `mission` and `vision` are only ever RENDERED on the About page (see
+// pageContent.js), but they are validated here like any other page-copy
+// field rather than special-cased by path: the storage shape stays one
+// rule for every page, and PageText.jsx decides which boxes to offer where.
+const PAGE_COPY_FIELD_MAX = Object.freeze({
+  heading: 120, intro: 400, about: 600, mission: 600, vision: 600,
+});
 const MAX_PAGE_COPY_PAGES = 40;
 
 function validatePageCopy(value) {
