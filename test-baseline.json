@@ -1,15 +1,15 @@
 {
   "//": "Machine-readable companion to the baseline section of AGENTS.md. scripts/check-baseline.js reads THIS file; AGENTS.md explains it to humans. Keep the two in step — they are updated in the same commit or not at all.",
-  "measuredOn": "2026-09-06",
-  "commit": "c88650e",
-  "commitSubject": "Let a pharmacist choose what is on their website, without mentioning SEO",
-  "workingTree": "photographs on the generated About and Location pages",
+  "measuredOn": "2026-09-09",
+  "commit": "4994599",
+  "commitSubject": "Let a pharmacy's own subdomain serve the shared static images it needs",
+  "workingTree": "fixing the WhatsApp-number save (client sent public_whatsapp_number, the endpoint only ever read publicWhatsappNumber) and adding coverage for it",
   "command": "node --test \"server/tests/*.test.js\"",
-  "//counts": "Floors and ceilings, not equalities. Measured 2026-09-08 WITHOUT a test database: 1485/1033/445/7 — the committed default. The 3 added since 1482/1033/442 are switchTemplate's tests in websiteService.test.js. They are the first addition in a while to move the SKIPPED ceiling (442 -> 445), and that is deliberate rather than an oversight: what they pin is which COLUMNS an UPDATE leaves alone (theme, content, published_data), which has no database-free form. See the AGENTS.md entry of the same date.",
+  "//counts": "Floors and ceilings, not equalities. Measured 2026-09-09 WITHOUT a test database: 1487/1033/447/7 — the committed default. The 2 added since 1485/1033/445 are assistantSettings.test.js's coverage of updateAssistantSettings({publicWhatsappNumber}) — the field name AND the local-0-to-234 normalisation — for the bug described in AGENTS.md's entry of the same date. Both need a database, moving the SKIPPED ceiling 445 -> 447. A third test (client/src/website/api.test.js, database-free, run under npm run test:ci not this command) pins the request BODY shape and does not affect these counts.",
   "counts": {
-    "total": 1485,
+    "total": 1487,
     "pass": 1033,
-    "skipped": 445,
+    "skipped": 447,
     "failed": 7
   },
   "//skipReason": "442 tests skip when TEST_DATABASE_URL is unset, which is the committed default (server/.env is gitignored). A skipped suite proves NOTHING. Configuring a test database turns all 442 back on: 1381 passing, 0 skipped, 4 failing. The website builder keeps as much as possible out of that gate — the block contract, the theme, the renderer, the web-address rules, image identification, the subdomain host resolver and the tracked-link rules are all database-free and always run.",

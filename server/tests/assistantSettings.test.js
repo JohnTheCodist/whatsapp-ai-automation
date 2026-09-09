@@ -132,3 +132,27 @@ test('changing the alert number clears the LID cached for the old one', { skip: 
   [row] = await db`select notify_lid from pharmacies where id = ${ctx.pharmacyId}`;
   assert.equal(row.notify_lid, null, 'a genuinely new alert number must not inherit the old one\'s LID');
 });
+
+// The website's WhatsApp number field went through a full round-trip with
+// nothing ever landing in the database: the client sent
+// public_whatsapp_number (snake_case, matching every OTHER field this
+// product's APIs use), and this function only ever recognised
+// publicWhatsappNumber — so `'publicWhatsappNumber' in fields` was false on
+// every call, the field was silently treated as "not mentioned", and a
+// pharmacy owner who filled the box in got no error and no button anywhere
+// on their site. Fixed at the one place the mismatch actually lived — see
+// client/src/website/api.js's savePublicWhatsappNumber — but the function
+// itself had no coverage for this field at all, which is how the shape drift
+// went unnoticed. These two tests are that coverage.
+test('a local Nigerian number (080…) becomes the WhatsApp international form', { skip: SKIP && skipReason }, async () => {
+  const r = await pharmacies.updateAssistantSettings(ctx.pharmacyId, { publicWhatsappNumber: '08036607553' });
+  // The trunk 0 is dropped and 234 takes its place — a wa.me link built from
+  // the stored value has to be the number that actually opens WhatsApp,
+  // never the one a Nigerian owner would say out loud.
+  assert.equal(r.public_whatsapp_number, '2348036607553');
+});
+
+test('a number already in international form is stored as-is', { skip: SKIP && skipReason }, async () => {
+  const r = await pharmacies.updateAssistantSettings(ctx.pharmacyId, { publicWhatsappNumber: '+234 803 660 7553' });
+  assert.equal(r.public_whatsapp_number, '2348036607553');
+});

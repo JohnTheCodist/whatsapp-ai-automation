@@ -24,9 +24,16 @@ not redistributed unmodified — which both source licenses explicitly permit.
 
 ## Why there are only two
 
-Six other service categories (Blood Glucose Testing, Vaccination Services,
-Medication Counselling, Health Screening, Home Delivery, Minor Ailment
-Support) were searched and rejected or came up empty:
+These two are keyed by CATEGORY now (`pill`, `heart` — see
+`servicePhotos.js`), the same category `blocks/icons.js` sorts a service
+into, so they already cover more than their original two exact service
+names: any custom-typed service that reads as medicine/prescription/refill-
+related gets the tablets photo, not just the "Prescription Refills" toggle.
+The other five categories (droplet/blood glucose, advice/counselling,
+clipboard/screening, van/delivery, syringe/vaccination) keep the drawn icon.
+
+**Round 1 (2026-09-08)** — Blood Glucose Testing, Vaccination Services,
+Medication Counselling, Health Screening, Home Delivery:
 
 - Blood glucose meter photos found were all clearly-branded consumer products
   (visible "MICROLET"/"DEX" logos) — using a specific competitor's branded
@@ -36,8 +43,24 @@ Support) were searched and rejected or came up empty:
   would misstate what's actually offered.
 - Commons' free-text search returns only scanned historical journals/books
   for "counselling", "health screening" and "delivery" as photographic
-  subjects — nothing usable came up after several search rounds.
+  subjects.
 
-Those categories keep the drawn icon (`blocks/icons.js`) instead. Adding a
-real photo for one later is a matter of dropping the file here and adding one
-line to `servicePhotos.js` — nothing else needs to change.
+**Round 2 (2026-09-09)**, after a direct request for full coverage — seven
+more query variations per remaining category (glucose test strips, lancets,
+dosage cups/spoons, blank clipboards, plain parcel boxes, unlabelled
+syringes): same outcome. Results were either more scanned 19th/early-20th-
+century journals and books (e.g. searching "clipboard form" returns decades
+of *Federal Register* volumes — the word appears in a filing procedure, not a
+photograph) or modern product photography, correctly photographed and
+licensed, but under CC-BY / CC-BY-SA — which requires a visible credit. That
+is a real, satisfiable license term in general, and a bad look specifically
+here: a stock-photo attribution under a picture of pills is not something a
+real pharmacy's customers would understand, on a business site that has no
+other credits of any kind. That's a product reason to hold the PD/CC0-only
+line, not just a licensing one, and it's why this stayed at two rather than
+loosening the bar under a second round of pressure to find more.
+
+Adding a real photo for one of the remaining five later is a matter of
+finding one that clears the same bar, dropping the file here, and adding one
+line to `servicePhotos.js`'s `PHOTOS` map, keyed by the category it belongs
+to — nothing else needs to change.

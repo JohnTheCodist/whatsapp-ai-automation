@@ -147,6 +147,29 @@ test('the subdomain form does not consult the browser at all', () => {
   expect(api.publicUrl('naspaa', 'rxnaija.com')).toBe('https://naspaa.rxnaija.com');
 });
 
+/**
+ * savePublicWhatsappNumber looked like exactly the kind of thin wrapper this
+ * file's header says isn't worth testing — until the body it sent quietly
+ * stopped matching what the server reads. It sent public_whatsapp_number
+ * (snake_case); services/pharmacies.js's updateAssistantSettings only ever
+ * recognised publicWhatsappNumber, checked with `'publicWhatsappNumber' in
+ * fields` — so the field was never "present" as far as that function could
+ * tell, the update silently kept whatever was already stored, and a pharmacy
+ * owner who filled the box in got no error and no WhatsApp button anywhere on
+ * their site. The wrapper WAS the logic; nothing else would have caught a
+ * key rename on either side.
+ */
+test('the WhatsApp number is sent camelCase, matching every other field this endpoint accepts', async () => {
+  let sentBody = null;
+  globalThis.fetch = vi.fn(async (url, opts) => {
+    sentBody = JSON.parse(opts.body);
+    return { ok: true, status: 200, json: async () => ({ pharmacy: {} }) };
+  });
+  await api.savePublicWhatsappNumber('2348036607553');
+  expect(sentBody).toEqual({ publicWhatsappNumber: '2348036607553' });
+  expect(sentBody).not.toHaveProperty('public_whatsapp_number');
+});
+
 test('no address means no URL, in either shape', () => {
   // The publish bar renders this before an address is chosen.
   globalThis.window = { location: { origin: 'https://app.rxnaija.com' } };

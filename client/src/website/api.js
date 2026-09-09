@@ -160,7 +160,15 @@ export async function savePublicWhatsappNumber(number) {
   const res = await fetch('/api/pharmacies/me/assistant', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ public_whatsapp_number: number }),
+    // camelCase, matching every other field this endpoint accepts (botName,
+    // welcomeNote, notifyPhone, replyMode — see services/pharmacies.js's
+    // updateAssistantSettings). This used to send public_whatsapp_number,
+    // which that function never recognises: `'publicWhatsappNumber' in
+    // fields` was always false, so the value was silently discarded on
+    // every save — a pharmacy could fill this in, see no error, and never
+    // get a WhatsApp button anywhere on their site. Found live: entering a
+    // number produced no button at all, with nothing telling anyone why.
+    body: JSON.stringify({ publicWhatsappNumber: number }),
   });
   const payload = await res.json().catch(() => null);
   if (!res.ok) throw new Error(payload?.error || 'Could not save your WhatsApp number.');

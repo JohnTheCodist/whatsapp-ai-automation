@@ -749,9 +749,15 @@ p:last-child{margin-bottom:0}
 @media (prefers-reduced-motion:no-preference){
   @supports (animation-timeline:view()){
     .rx-block{
-      animation:rx-rise linear both;
+      animation:rx-rise both;
       animation-timeline:view();
-      animation-range:entry 0% entry 55%;
+      animation-timing-function:var(--rx-ease);
+      /* Runs across most of the section's entry rather than finishing near
+         the top of the viewport, so the motion plays out over an ordinary
+         scroll gesture instead of resolving before the reader has caught it —
+         found live: at the old, shorter range it read as "no animation" even
+         though one was running. */
+      animation-range:entry 0% entry 85%;
     }
     /* The header is sticky and the hero is the first thing seen — neither
        should animate in. */
@@ -760,16 +766,26 @@ p:last-child{margin-bottom:0}
     /* One step finer inside the sections that are a set of things rather than
        one thing. The stagger is positional, not timed: each card animates
        against its own position in the scroll, so they arrive in order without
-       a delay chain that would still be running if the reader scrolled fast. */
-    .rx-cards>*,.rx-photo-grid>*,.rx-chips>*{
-      animation:rx-rise linear both;
+       a delay chain that would still be running if the reader scrolled fast.
+       .rx-service-grid matters most here — seven stacked cards on a phone can
+       run 3000px tall, and the single coarse rise on .rx-block below is
+       computed against the WHOLE section's own entry, so on something that
+       tall it finishes almost as soon as the top of it is visible at all.
+       That read as "there is no animation" for the single commonest section
+       on the page, which is exactly the report this fixes. */
+    .rx-cards>*,.rx-photo-grid>*,.rx-chips>*,.rx-service-grid>*{
+      animation:rx-rise both;
       animation-timeline:view();
-      animation-range:entry 0% entry 35%;
+      animation-timing-function:var(--rx-ease);
+      animation-range:entry 0% entry 65%;
     }
     /* The children animate; the section around them must not, or the two
-       compound into a double fade. */
+       compound into a double fade — and for .rx-service-grid specifically,
+       must not, or the outer one (sized to the whole grid) finishes before
+       any card's own has properly started. */
     .rx-page .rx-block:has(>.rx-cards),
-    .rx-block:has(>.rx-photo-grid){animation:none}
+    .rx-block:has(>.rx-photo-grid),
+    .rx-block:has(>.rx-service-grid){animation:none}
   }
   .rx-photo,.rx-hero-media img,.rx-split-media img{
     transition:transform 420ms var(--rx-ease);
@@ -781,14 +797,19 @@ p:last-child{margin-bottom:0}
    entered the viewport yet. With zero opacity in that state, any renderer that
    does not advance the timeline the way a scrolling browser does — a stitched
    full-page screenshot, a headless capture, a preview crawler — photographs a
-   pharmacy's website as a blank page. That happened here twice.
-   Starting at a 14px offset instead means the worst case is content sitting
-   fractionally low. It is always readable. Nothing about the reveal carries
-   information, so nothing is lost by making it unable to hide anything.
+   pharmacy's website as a blank page. That happened here twice, so opacity
+   stays out regardless of how the movement itself is tuned: the worst case
+   for a transform-only reveal is content sitting visibly low, which is
+   always readable, never blank.
+   36px and a touch of scale, not 14px translate alone — the smaller version
+   was correct but reads as "nothing is happening" at a normal scroll speed,
+   which was reported directly. Nothing about the reveal carries information,
+   so making it larger costs nothing a reduced-motion visitor would miss —
+   they never see it at all, per the query below.
    (Straight quotes and no backticks in this file: the whole sheet is a JS
    template literal, and a backtick here ends the string.) */
 @keyframes rx-rise{
-  from{transform:translateY(14px)}
+  from{transform:translateY(36px) scale(.97)}
   to{transform:none}
 }
 

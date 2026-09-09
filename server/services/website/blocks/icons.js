@@ -147,4 +147,8 @@ function serviceIcon(serviceName, explicit) {
     + ` aria-hidden="true" focusable="false">${PATHS[key]}</svg>`;
 }
 
+// iconNameFor is also servicePhotos.js's category matcher — see that file's
+// header for why sharing it, rather than each keeping its own copy, is the
+// point: an icon and a photo must never disagree about what category a
+// service is in.
 module.exports = { serviceIcon, iconNameFor, PATHS };

@@ -31,17 +31,38 @@
  * the same pattern templates.js's own preview images use, not fetched from
  * any third party at render time or at request time.
  *
- * Matched the same way icons.js matches an icon: through pages.js's own
- * service catalogue, so a photo and a page agree about what a service is.
- * No match, no photo — the caller falls back to the drawn icon.
+ * KEYED BY CATEGORY, NOT BY URL SLUG — the same category icons.js's
+ * iconNameFor already sorts a service into (pill, heart, droplet, advice,
+ * clipboard, van, syringe, shield). Sharing that function rather than
+ * re-matching against pages.js's catalogue independently means a service
+ * photo and its icon can never disagree about what a service is, and it is
+ * also what lets these two photos cover more than the two exact service
+ * names they were sourced for: any custom-typed service that resolves to
+ * "pill" (mentions refill, prescription, dispensing, medicine, medication or
+ * drug, and isn't caught by a more specific category first) gets the real
+ * tablets photograph, not just the literal "Prescription Refills" toggle.
+ * "heart" has no such keyword net in icons.js — it is reached only through
+ * pages.js's own blood-pressure-check matcher — so it widens only as far as
+ * that already does.
+ *
+ * SECOND ROUND, 2026-09-09: searched droplet (blood glucose), advice
+ * (counselling), clipboard (screening), van (delivery) and syringe
+ * (vaccination) again, seven more query variations each. Nothing cleared the
+ * bar — Commons' free corpus for these specific modern medical objects is
+ * either 19th/early-20th-century scanned journals (wrong content entirely)
+ * or modern product photography licensed CC-BY/CC-BY-SA (a visible credit
+ * requirement — see the "no attribution obligation" rule below — not a
+ * one-off gap that a few more search terms would close). Recorded here so
+ * the next attempt does not repeat the same seven queries expecting a
+ * different result; NOTICE.md carries the specifics.
  */
 
-const { catalogueFor } = require('../pages');
+const { iconNameFor } = require('./icons');
 
 const BASE = '/website-templates/services';
 
 /**
- * slug -> { src, width, height, alt }. Both files are 640×480 (4:3), q72 JPEG.
+ * category -> { src, width, height, alt }. Both files are 640×480 (4:3), q72 JPEG.
  *
  * `alt` DESCRIBES THE PHOTOGRAPH, IT DOES NOT NAME THE PHARMACY. Every other
  * image on this page — the hero, About, the gallery — gets
@@ -55,11 +76,11 @@ const BASE = '/website-templates/services';
  * unnoticed if it were wrong.
  */
 const PHOTOS = Object.freeze({
-  'prescription-refills': {
+  pill: {
     src: `${BASE}/prescription-refills.jpg`, width: 640, height: 480,
     alt: 'Prescription tablets',
   },
-  'blood-pressure-check': {
+  heart: {
     src: `${BASE}/blood-pressure-check.jpg`, width: 640, height: 480,
     alt: 'A blood pressure monitor and cuff',
   },
@@ -67,9 +88,7 @@ const PHOTOS = Object.freeze({
 
 /** A photo for this service name, or null — the caller decides the fallback. */
 function servicePhotoFor(serviceName) {
-  const entry = catalogueFor(serviceName);
-  if (!entry) return null;
-  return PHOTOS[entry.slug] || null;
+  return PHOTOS[iconNameFor(serviceName)] || null;
 }
 
 module.exports = { servicePhotoFor, PHOTOS };

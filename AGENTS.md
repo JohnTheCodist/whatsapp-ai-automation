@@ -216,9 +216,9 @@ Command:  npm test
 
 eslint    0 errors, 44 warnings          (all no-unused-vars, in tests/helpers)
 
-tests     1485
+tests     1487
 pass      1033
-skipped    445
+skipped    447
 failed       7
 ```
 
@@ -358,6 +358,29 @@ box — so without a gate a stranger can spend a weekly issuance limit that is
 counted against the entire registered domain. The gate is security-critical
 and its non-database half is exported specifically so it can be tested
 without Postgres. All 10 are database-free; the skipped ceiling did not move.
+
+**The WhatsApp number field saved nothing, silently, 2026-09-09 → measured
+1487/1033/447/7.** `client/src/website/api.js`'s `savePublicWhatsappNumber`
+sent `public_whatsapp_number` (snake_case); `updateAssistantSettings` only
+ever checks `'publicWhatsappNumber' in fields` — so the field was never
+"present" as far as that function could tell, the update quietly kept
+whatever was already stored, and a pharmacy owner who filled the box in and
+saved got no error and no WhatsApp button anywhere on their site. Every other
+field this same endpoint accepts (`botName`, `welcomeNote`, `notifyPhone`,
+`replyMode`) is camelCase; this was the one call site out of step with its
+own endpoint. Fixed at the call site, not by teaching the endpoint a second
+key shape. The 2 added tests are `assistantSettings.test.js`'s and need a
+database — they pin that `updateAssistantSettings` both recognises the field
+under its real name AND converts a local `0…` number to the `234…` form a
+wa.me link needs, which is also the second half of the report this fixes
+("the number should be 080 or 070, not require the international form" —
+`normalisePublicNumber` already did that; it was just never being reached).
+The skipped ceiling moves 445 → 447. A third test, database-free, was added
+to `client/src/website/api.test.js` and pins the request body's shape
+directly — the same file's own header says thin wrappers around fetch are not
+worth testing individually, and this one is the counterexample: the body
+shape WAS the bug, and nothing else would have caught either side renaming
+its half of the contract.
 
 `test-baseline.json` holds the machine-readable copy that `npm run test:ci`
 reads. **The two are updated in the same commit or not at all.**
