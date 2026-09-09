@@ -29,6 +29,8 @@ const { listTemplates, getTemplate, cloneSeed } = require('../services/website/t
 const { publishableArticles } = require('../services/website/health');
 const { buildPages } = require('../services/website/pages');
 const pharmacies = require('../services/pharmacies');
+const { generatePageCopy } = require('../services/ai/pageCopyGenerator');
+const { LlmUnavailable } = require('../services/ai/llmClient');
 const { renderDocument } = require('../services/website/document');
 const { renderAllPages } = require('../services/website/siteRender');
 const { editorManifest } = require('../services/website/blocks/editorManifest');
@@ -140,6 +142,64 @@ router.get('/', requireAuth, asyncRoute(async (req, res) => {
  * question a pharmacist should be able to answer before putting their own
  * name on the page.
  */
+/**
+ * POST /api/website/pages/copy/generate — draft a heading, introduction or
+ * "about this service" paragraph with AI, for one generated page.
+ *
+ * A DRAFT, exactly like POST /me/assistant/welcome-note/generate: nothing
+ * here is saved. The owner reads it, edits it if they want, and PATCHes
+ * /content themselves through the normal pageCopy save path — auto-writing
+ * something onto a page nobody approved is not a shortcut this takes.
+ *
+ * The page's kind and label are looked up server-side from the pharmacy's
+ * own buildPages() output rather than trusted from the request — the same
+ * function GET / already uses to build the list this button appears next to,
+ * so the two can never name a different page for the same path. Requesting
+ * copy for '/'(home) or a health-article path is refused for the same
+ * reason pageContent.js refuses to apply an override there: 'home' has no
+ * generated heading of this kind, and health articles are reviewed clinical
+ * content that a generic drafting tool must not touch even at the draft stage.
+ */
+router.post('/pages/copy/generate', requireAuth, requireRole('owner', 'pharmacist'), asyncRoute(async (req, res) => {
+  const path = typeof req.body?.path === 'string' ? req.body.path : null;
+  const field = typeof req.body?.field === 'string' ? req.body.field : null;
+  if (!path || !['heading', 'intro', 'about'].includes(field)) {
+    throw new HttpError(400, 'A valid path and field (heading, intro or about) are required.', 'INVALID_BODY');
+  }
+
+  const [pharmacy, profile, site] = await Promise.all([
+    pharmacies.getPharmacy(req.pharmacyId),
+    pharmacies.getProfile(req.pharmacyId),
+    website.getWebsite(req.pharmacyId),
+  ]);
+  if (!pharmacy) throw new HttpError(404, 'Pharmacy not found', 'NOT_FOUND');
+
+  const health = Array.isArray(site?.content?.health) ? site.content.health : [];
+  const page = buildPages({ pharmacy, profile, health, healthLibrary: publishableArticles() })
+    .find((p) => p.path === path);
+  if (!page || page.kind === 'home' || page.kind === 'health') {
+    throw new HttpError(404, 'No such page to draft copy for', 'NOT_FOUND');
+  }
+
+  try {
+    const text = await generatePageCopy({
+      pharmacyName: pharmacy.name,
+      area: [profile?.city, profile?.state].filter(Boolean).join(', ') || null,
+      description: profile?.description || null,
+      services: Array.isArray(profile?.services) ? profile.services.map((s) => s?.name).filter(Boolean) : [],
+      kind: page.kind,
+      label: page.label || page.nav,
+      field,
+    });
+    res.json({ text });
+  } catch (err) {
+    if (err instanceof LlmUnavailable) {
+      throw new HttpError(503, 'AI writing is not available right now. Try writing it yourself instead.', 'LLM_UNAVAILABLE');
+    }
+    throw err;
+  }
+}));
+
 router.get('/health-articles', requireAuth, asyncRoute(async (req, res) => {
   res.json({
     articles: publishableArticles().map((a) => ({

@@ -220,6 +220,20 @@ export async function previewHtml(nonce, templateId = null, pagePath = null) {
   return res.text();
 }
 
+/**
+ * Draft a heading, introduction or "about this service" paragraph with AI,
+ * for one generated page — PageText.jsx's "Write with AI" button.
+ *
+ * A DRAFT ONLY. This never saves anything — the returned text goes into the
+ * same box the owner can already type into, and only api.saveContent (the
+ * existing Save button) commits it. The server's own message explains why a
+ * 503 happened; that is why `call()`'s error handling (which passes the
+ * server's message straight through) is reused here rather than a generic
+ * "something went wrong".
+ */
+export const generatePageCopy = (path, field) =>
+  call('/pages/copy/generate', { method: 'POST', body: JSON.stringify({ path, field }) });
+
 // ---------------------------------------------------------------------
 // Images
 // ---------------------------------------------------------------------

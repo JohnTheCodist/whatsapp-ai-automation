@@ -20,6 +20,15 @@
  * mistake on page two costing whatever was already typed on page five. Each
  * page keeps its own draft, its own Save button and its own saved/error state.
  *
+ * "WRITE WITH AI" FILLS THE BOX; IT DOES NOT SAVE ANYTHING. api.generatePageCopy
+ * asks for one specific field (heading / intro / about) for one specific
+ * page and returns a DRAFT — exactly the same shape as if the owner had typed
+ * it themselves, landing in the same `draft` state, subject to the same Save
+ * button and the same "blank means automatic" rule. It is a request to write
+ * an SEO-aware first draft grounded in the pharmacy's real facts, not a
+ * generic filler generator — see services/ai/pageCopyGenerator.js for
+ * exactly what it is and is not allowed to invent.
+ *
  * `content` IS REPLACED WHOLESALE BY THE SERVER, so every save here sends the
  * pharmacy's WHOLE content object back — the same pattern HealthTopics.jsx
  * already uses for `content.health` — with only this one page's entry inside
@@ -52,9 +61,33 @@ function PageRow({ page, initial, onSaved }) {
   const [draft, setDraft] = useState(() => ({ ...initial }));
   const [status, setStatus] = useState('idle'); // idle | saving | saved | error
   const [error, setError] = useState(null);
+  // Which field is currently being drafted by AI, if any — per field rather
+  // than per page, so writing the heading does not disable the button beside
+  // the introduction.
+  const [generating, setGenerating] = useState(null);
+  const [genError, setGenError] = useState(null); // { field, message }
 
   const fields = fieldsFor(page.kind);
   const dirty = fields.some((f) => (draft[f.key] || '') !== (initial[f.key] || ''));
+
+  /**
+   * Fill one box with an AI-written draft — never saves anything on its own.
+   * The result lands in `draft` exactly as if the owner had typed it, so the
+   * existing Save button, the dirty check and the "leave blank for the
+   * automatic version" rule all apply to it unchanged.
+   */
+  async function writeWithAi(fieldKey) {
+    setGenerating(fieldKey);
+    setGenError(null);
+    try {
+      const { text } = await api.generatePageCopy(page.path, fieldKey);
+      setDraft((d) => ({ ...d, [fieldKey]: text }));
+    } catch (err) {
+      setGenError({ field: fieldKey, message: err.message });
+    } finally {
+      setGenerating(null);
+    }
+  }
 
   async function save() {
     setStatus('saving');
@@ -101,24 +134,40 @@ function PageRow({ page, initial, onSaved }) {
 
       <div className="space-y-3">
         {fields.map((f) => (
-          <label key={f.key} className="block">
-            <span className="text-xs font-medium text-slate-600">{f.label}</span>
-            {f.kind === 'textarea' ? (
-              <textarea
-                className={`${inputClass} mt-1 min-h-20`}
-                value={draft[f.key] || ''}
-                onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value.slice(0, f.max) }))}
-                placeholder={f.placeholder}
-              />
-            ) : (
-              <input
-                className={`${inputClass} mt-1`}
-                value={draft[f.key] || ''}
-                onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value.slice(0, f.max) }))}
-                placeholder={f.placeholder}
-              />
+          <div key={f.key}>
+            <label className="block">
+              <span className="text-xs font-medium text-slate-600">{f.label}</span>
+              {f.kind === 'textarea' ? (
+                <textarea
+                  className={`${inputClass} mt-1 min-h-20`}
+                  value={draft[f.key] || ''}
+                  onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value.slice(0, f.max) }))}
+                  placeholder={f.placeholder}
+                />
+              ) : (
+                <input
+                  className={`${inputClass} mt-1`}
+                  value={draft[f.key] || ''}
+                  onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value.slice(0, f.max) }))}
+                  placeholder={f.placeholder}
+                />
+              )}
+            </label>
+
+            <div className="mt-1 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => writeWithAi(f.key)}
+                disabled={generating === f.key}
+                className="text-xs font-medium text-teal-700 transition hover:underline disabled:cursor-wait disabled:opacity-50"
+              >
+                {generating === f.key ? 'Writing…' : '✨ Write with AI'}
+              </button>
+            </div>
+            {genError?.field === f.key && (
+              <p className="mt-1 text-xs text-red-700">{genError.message}</p>
             )}
-          </label>
+          </div>
         ))}
       </div>
 

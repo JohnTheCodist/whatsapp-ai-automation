@@ -62,7 +62,21 @@ async function generateWelcomeNote(facts) {
 
   const { content } = await chat({
     messages: buildPrompt(facts),
-    maxTokens: 120,
+    // NOT a guess at output length — found while building pageCopyGenerator.js
+    // (the "Write with AI" button on website page text), which had the exact
+    // same bug at a similarly small ceiling. The configured model reasons
+    // before it answers, billed against this same maxTokens, and that
+    // reasoning cost does NOT track how short the eventual answer is — a
+    // 42-character output was measured burning 1419 reasoning tokens before
+    // the model wrote a single word of its answer. At 120 this function is
+    // cut off on `finishReason: "length"` and returns an EMPTY string
+    // whenever a given pharmacy's facts happen to need more reasoning than
+    // that — reproduced directly against this function, intermittently: the
+    // same call succeeds most of the time and fails silently, with no error
+    // and no partial note, exactly the shape of bug that would show up as an
+    // occasional unexplained "the button did nothing" report. See
+    // pageCopyGenerator.js for the full measurement.
+    maxTokens: 2800,
     // Slightly warmer than the customer-facing assistant's 0.2 — this is
     // one line of marketing copy an owner will read and can reject, not a
     // factual claim to a customer.
@@ -72,6 +86,12 @@ async function generateWelcomeNote(facts) {
   // A model has no knowledge of this column's limit and no reason to respect
   // it. Enforced here rather than trusted, same as any other input this size.
   let note = content.trim().replace(/^["'“”]+|["'“”]+$/g, '');
+  // Even at a generous ceiling, a reasoning model can in principle still
+  // exhaust it before writing an answer — surfaced as a real error rather
+  // than handed back as a silently empty draft.
+  if (!note) {
+    throw new LlmUnavailable('The AI did not return any text this time. Try again, or write it yourself.');
+  }
   if (note.length > MAX_WELCOME_NOTE) note = note.slice(0, MAX_WELCOME_NOTE - 1).trimEnd() + '…';
 
   return note;
