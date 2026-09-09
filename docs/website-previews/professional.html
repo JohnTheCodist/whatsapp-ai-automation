@@ -576,15 +576,12 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
   margin-top:var(--rx-md);
 }
 
-/* ---- breadcrumbs ----
-   Furniture, not a section: it carries .rx-block for the shell and the gutter,
-   so without this it also took a full section's worth of vertical padding and
-   opened a 56px hole between the header and the page's own heading. */
-.rx-block:has(>.rx-crumbs){padding-block:var(--rx-md) 0}
-.rx-crumbs{display:flex;flex-wrap:wrap;gap:.4rem;padding:0;margin:0;list-style:none;font-size:var(--rx-size-sm);color:var(--rx-muted)}
-.rx-crumbs li+li::before{content:"/";margin-right:.4rem;color:var(--rx-line-strong)}
-.rx-crumbs a{color:var(--rx-muted);text-decoration:none}
-.rx-crumbs a:hover{color:var(--rx-primary);text-decoration:underline}
+/* No breadcrumb styles: the visible trail was removed from the generated
+   pages at the owner's request. The structured data for it stays, because it
+   describes the real URL hierarchy rather than a thing on the page.
+   (Careful with the schema type's name here — this sheet is inlined into
+   every document, so a word written in a comment is a word a test grepping
+   the HTML will find. Naming it cost a green suite once.) */
 
 /* ---- health-article furniture ---- */
 .rx-seek-care{

@@ -29,7 +29,7 @@
 const { esc, waHref, telHref, mapsHref, assetsOfKind } = require('./blocks/render');
 const { renderBlock } = require('./blocks');
 const { serviceIcon } = require('./blocks/icons');
-const { navPages, breadcrumbsFor } = require('./pages');
+const { navPages } = require('./pages');
 const { bylineFor, GENERAL_DISCLAIMER } = require('./health');
 
 /**
@@ -122,24 +122,6 @@ function header(ctx, pages, currentPath) {
     sitePages: ctx.sitePages || navPages(pages),
     currentPath,
   });
-}
-
-/**
- * Breadcrumbs as an ordered list.
- *
- * The last item is not a link. Linking the page you are already on is the
- * commonest breadcrumb mistake and it gives a crawler a self-referential edge
- * that means nothing.
- */
-function breadcrumbs(pages, path) {
-  const trail = breadcrumbsFor(pages, path);
-  if (!trail.length) return '';
-  const items = trail.map((c, i) => {
-    const last = i === trail.length - 1;
-    const label = esc(c.label);
-    return `<li>${last ? `<span aria-current="page">${label}</span>` : `<a href="${esc(c.path)}">${label}</a>`}</li>`;
-  }).join('');
-  return `<nav class="rx-block rx-narrow" aria-label="Breadcrumb"><ol class="rx-crumbs">${items}</ol></nav>`;
 }
 
 /** Phone and WhatsApp buttons, only for the numbers the pharmacy actually has. */
@@ -432,7 +414,7 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
   const p = ctx.profile || {};
   const area = areaOf(p);
   const name = ctx.pharmacy?.name || 'our pharmacy';
-  const parts = [header(ctx, allPages, page.path), breadcrumbs(allPages, page.path)];
+  const parts = [header(ctx, allPages, page.path)];
 
   /**
    * The page head.
@@ -561,5 +543,5 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
 }
 
 module.exports = {
-  renderPageBody, SERVICE_COPY, header, breadcrumbs, hoursSection, addressSection, cardGrid,
+  renderPageBody, SERVICE_COPY, header, hoursSection, addressSection, cardGrid,
 };
