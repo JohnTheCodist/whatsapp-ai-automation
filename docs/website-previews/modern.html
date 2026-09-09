@@ -4,18 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ikeja Family Pharmacy — Pharmacy in Ikeja</title>
-<meta name="description" content="A community pharmacy serving Allen Avenue since 2011. Our pharmacists dispense prescriptions, check blood pressure, and answer questions about medicines.">
+<meta name="description" content="Family run since 2014.">
 
 
 <meta property="og:type" content="website">
 <meta property="og:title" content="Ikeja Family Pharmacy — Pharmacy in Ikeja">
-<meta property="og:description" content="A community pharmacy serving Allen Avenue since 2011. Our pharmacists dispense prescriptions, check blood pressure, and answer questions about medicines.">
+<meta property="og:description" content="Family run since 2014.">
 
 <meta property="og:site_name" content="Ikeja Family Pharmacy">
 
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Ikeja Family Pharmacy — Pharmacy in Ikeja">
-<meta name="twitter:description" content="A community pharmacy serving Allen Avenue since 2011. Our pharmacists dispense prescriptions, check blood pressure, and answer questions about medicines.">
+<meta name="twitter:description" content="Family run since 2014.">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -367,6 +367,85 @@ p:last-child{margin-bottom:0}
   background:var(--rx-surface);
 }
 
+/* ---- hero layout: centred (Modern) ----
+   A full-bleed, inverted band — WHETHER OR NOT a photo exists. The modifier
+   class lives on the SECTION (.rx-pharmacy-hero), not on .rx-hero-inner —
+   that section already paints a full-bleed background (the light tint every
+   other layout uses), so the override has to sit at the same level to
+   replace it rather than colour just the centred, padded-in column a level
+   deeper and leave the tint showing all around it as an unintended frame.
+   .rx-pharmacy-hero.rx-hero--centered, not just .rx-hero--centered, so this
+   wins on specificity rather than on source order alone. The photo (if any)
+   is a dimmed cover background, painted by DOM order beneath the ::after
+   scrim rather than by an explicit z-index war, with the copy lifted onto its
+   own stacking context so it always ends up on top regardless. */
+.rx-pharmacy-hero.rx-hero--centered{position:relative;overflow:hidden;background:var(--rx-primary);color:var(--rx-on-primary)}
+.rx-hero-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.rx-pharmacy-hero.rx-hero--centered::after{content:"";position:absolute;inset:0;background:var(--rx-primary);opacity:.76}
+.rx-hero--centered .rx-hero-copy{position:relative;z-index:1;max-width:46rem;margin-inline:auto;text-align:center}
+.rx-hero--centered .rx-eyebrow,
+.rx-hero--centered h1,
+.rx-hero--centered .rx-lede{color:var(--rx-on-primary)}
+.rx-hero--centered .rx-eyebrow{opacity:.86}
+.rx-hero--centered h1{font-size:clamp(2.4rem,1.6rem + 3.6vw,4.4rem)}
+.rx-hero--centered .rx-lede{opacity:.86;margin-inline:auto}
+.rx-hero--centered .rx-cta-row{justify-content:center}
+.rx-hero--centered .rx-btn-wa{background:var(--rx-on-primary);color:var(--rx-primary);box-shadow:none}
+.rx-hero--centered .rx-btn-ghost{box-shadow:inset 0 0 0 1px color-mix(in oklab, var(--rx-on-primary) 55%, transparent);color:var(--rx-on-primary)}
+.rx-hero--centered .rx-btn-ghost:hover{background:color-mix(in oklab, var(--rx-on-primary) 16%, transparent);box-shadow:inset 0 0 0 1px var(--rx-on-primary);color:var(--rx-on-primary)}
+
+/* ---- hero layout: framed (Premium) ----
+   An asymmetric split with the photo inset in its own frame rather than
+   bleeding to the card's edge — a quieter, more considered arrangement than
+   the even diptych "split" uses. */
+.rx-hero--framed .rx-hero-media{padding:var(--rx-sm);background:var(--rx-tint);border-radius:var(--rx-radius)}
+.rx-hero--framed .rx-hero-media img{border-radius:min(calc(var(--rx-radius) - 4px), 16px);box-shadow:none}
+
+/* ---- hero layout: showcase (Metro) ----
+   A livelier split: a rotated colour panel behind the photo, and a small
+   badge inset over its corner stating the pharmacy's own opening hours (see
+   the render()'s comment on why that is a day COUNT and not an "open now"
+   claim). The eyebrow becomes a bordered pill rather than plain small caps —
+   the one purely decorative touch here, and safe precisely because it carries
+   no claim of its own to get wrong. */
+.rx-hero--showcase .rx-eyebrow{
+  display:inline-flex;
+  padding:.35rem 1rem;
+  margin-bottom:var(--rx-md);
+  border:1px solid var(--rx-line-strong);
+  border-radius:999px;
+  color:var(--rx-primary);
+}
+.rx-hero--showcase .rx-hero-media{position:relative}
+.rx-hero--showcase .rx-hero-media::before{
+  content:"";
+  position:absolute;
+  inset:-.75rem;
+  background:var(--rx-primary);
+  opacity:.14;
+  border-radius:var(--rx-radius);
+  transform:rotate(-3deg);
+}
+.rx-hero--showcase .rx-hero-media img{position:relative}
+.rx-hero-badge{
+  position:absolute;
+  left:.75rem;
+  bottom:.75rem;
+  display:inline-flex;
+  align-items:center;
+  gap:.5rem;
+  padding:.55rem .9rem;
+  background:var(--rx-surface);
+  border:1px solid var(--rx-line);
+  border-radius:var(--rx-radius);
+  box-shadow:var(--rx-shadow);
+  font-family:var(--rx-display);
+  font-weight:600;
+  font-size:var(--rx-size-xs);
+  color:var(--rx-ink);
+}
+.rx-hero-badge svg{flex:0 0 auto;color:var(--rx-primary)}
+
 /* ---- section heads ---- */
 .rx-head{margin-bottom:var(--rx-lg);max-width:var(--rx-measure)}
 .rx-head p{color:var(--rx-muted)}
@@ -521,7 +600,13 @@ p:last-child{margin-bottom:0}
 .rx-panels{display:grid;gap:var(--rx-sm);margin-top:var(--rx-md)}
 .rx-panel{padding:var(--rx-md);border:1px solid var(--rx-line);border-radius:var(--rx-radius);background:var(--rx-surface)}
 .rx-panel h3{margin-bottom:.35rem}
-.rx-panel p{margin:0;color:var(--rx-muted)}
+/* NOT margin:0 — that was fine while .rx-panel only ever held one paragraph
+   (an FAQ answer, where the existing p:last-child rule already zeroes the
+   trailing margin), but this class is now also used for prose sections with
+   several paragraphs (a health-article section, a service's two-part
+   description), and margin:0 there ran every paragraph into the next with no
+   gap between them. */
+.rx-panel p{color:var(--rx-muted)}
 
 .rx-review{margin:0;padding:var(--rx-md);background:var(--rx-tint);border-radius:var(--rx-radius)}
 .rx-review blockquote{margin:0;font-size:var(--rx-size-lg);font-family:var(--rx-display);line-height:1.4}
@@ -595,6 +680,12 @@ p:last-child{margin-bottom:0}
   color:var(--rx-primary);
   margin-top:var(--rx-md);
 }
+
+/* ---- pharmacist CTA: statement variant (Premium) ----
+   A quieter, more considered close than the plain paragraph — a tinted band
+   with a narrower, centred measure, closer to a pull-quote than a prompt. */
+.rx-pharmacistCta--statement{background:var(--rx-tint)}
+.rx-pharmacistCta--statement .rx-narrow{max-width:34rem;text-align:center}
 
 /* No breadcrumb styles: the visible trail was removed from the generated
    pages at the owner's request. The structured data for it stays, because it
@@ -674,8 +765,12 @@ p:last-child{margin-bottom:0}
   .rx-menu{display:none}
   .rx-stack-768,.rx-split{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .rx-hero-inner{grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:var(--rx-xl)}
-  /* One column, whatever the width: there is no second thing to put in it. */
-  .rx-hero-inner.rx-hero--type{grid-template-columns:minmax(0,1fr)}
+  /* One column, whatever the width: there is no second thing to put in it —
+     "centered"'s background photo is absolutely positioned, not a grid item,
+     so without this override a single grid child would be stretched into
+     just the FIRST of the two columns above rather than spanning the centre. */
+  .rx-hero-inner.rx-hero--type,
+  .rx-hero--centered .rx-hero-inner{grid-template-columns:minmax(0,1fr)}
   .rx-block.rx-pharmacy-hero:has(.rx-hero--type){padding-block:calc(var(--rx-2xl) * 1.15)}
   /* The alternation that makes this a Split Studio rather than a stack of
      rows: the flipped block puts its media first on desktop and keeps the
@@ -827,13 +922,13 @@ p:last-child{margin-bottom:0}
   .rx-pharmacy-footer a,.rx-footer-address,.rx-footer-legal{color:#000}
   .rx-block{padding:1rem 0;break-inside:avoid}
 }</style>
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"Pharmacy","name":"Ikeja Family Pharmacy","address":{"@type":"PostalAddress","streetAddress":"12 Allen Avenue","addressLocality":"Ikeja","addressRegion":"Lagos","addressCountry":"NG"},"telephone":"08012345678","description":"A community pharmacy serving Allen Avenue since 2011. Our pharmacists dispense prescriptions, check blood pressure, and answer questions about medicines.","hasMap":"https://maps.google.com/?q=ikeja"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Pharmacy","name":"Ikeja Family Pharmacy","address":{"@type":"PostalAddress","streetAddress":"12 Allen Avenue","addressLocality":"Ikeja","addressRegion":"Lagos","addressCountry":"NG"},"telephone":"08012345678","description":"Family run since 2014.","hasMap":"https://maps.google.com/?q=ikeja"}</script>
 
 
 
 </head>
 <body>
-<header class="rx-block rx-pharmacy-header"><div class="rx-header-inner"><a class="rx-brand rx-brand-name" href="/">Ikeja Family Pharmacy</a><nav class="rx-nav" aria-label="Main"><a href="/about/">About</a><a href="/services/">Services</a><a href="/location/">Location</a><a href="/contact/">Contact</a></nav><a class="rx-btn rx-btn-wa rx-header-cta" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Chat on WhatsApp</a><details class="rx-menu"><summary aria-label="Menu"><span class="rx-menu-bars" aria-hidden="true"></span>Menu</summary><div class="rx-menu-panel"><a href="/about/">About</a><a href="/services/">Services</a><a href="/location/">Location</a><a href="/contact/">Contact</a><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Chat on WhatsApp</a></div></details></div></header><section class="rx-block rx-pharmacy-hero"><div class="rx-hero-inner rx-hero--type"><div class="rx-hero-copy"><span class="rx-eyebrow">Pharmacy in Ikeja, Lagos</span><h1>Medicines, fast — just message us</h1><p class="rx-lede">Tell us what you need on WhatsApp. We will confirm what is in stock and have it ready.</p><div class="rx-cta-row"><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678?text=Hello%2C%20I%20have%20a%20question%20about%20my%20medication." rel="noopener noreferrer" target="_blank">Message us now</a><a class="rx-btn rx-btn-ghost" href="https://maps.google.com/?q=ikeja" rel="noopener noreferrer" target="_blank">Get directions</a></div></div></div></section><section class="rx-block rx-pharmacy-whatsappCta"><a class="rx-btn rx-btn-wa rx-btn-band" href="https://wa.me/2348012345678?text=Hello%2C%20I%20would%20like%20to%20ask%20about%20a%20medicine." rel="noopener noreferrer" target="_blank">Ask about a medicine</a></section><section class="rx-block rx-pharmacy-services"><div class="rx-head"><h2>How we can help</h2></div><ul class="rx-service-grid"><li class="rx-service-card"><div class="rx-service-visual"><img class="rx-service-photo" src="/website-templates/services/prescription-refills.jpg" alt="Prescription tablets" width="640" height="480" loading="lazy" decoding="async"></div><div class="rx-service-body"><h3>Prescription Refills</h3></div></li><li class="rx-service-card"><div class="rx-service-visual"><img class="rx-service-photo" src="/website-templates/services/blood-pressure-check.jpg" alt="A blood pressure monitor and cuff" width="640" height="480" loading="lazy" decoding="async"></div><div class="rx-service-body"><h3>Blood Pressure Checks</h3></div></li><li class="rx-service-card"><div class="rx-service-visual"><span class="rx-service-icon"><svg class="rx-svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.6c0 0 6 6.3 6 10.1a6 6 0 0 1-12 0c0-3.8 6-10.1 6-10.1Z"/></svg></span></div><div class="rx-service-body"><h3>Blood Glucose Testing</h3></div></li><li class="rx-service-card"><div class="rx-service-visual"><span class="rx-service-icon"><svg class="rx-svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 14.4A2.6 2.6 0 0 1 17.4 17H9.2L4.5 20.2V6.6A2.6 2.6 0 0 1 7.1 4h10.3A2.6 2.6 0 0 1 20 6.6Z"/><path d="M12.2 8.2v5M9.7 10.7h5"/></svg></span></div><div class="rx-service-body"><h3>Medication Counselling</h3></div></li></ul></section><section class="rx-block rx-pharmacy-about"><div class="rx-prose"><h2>Who we are</h2><p>A community pharmacy serving Allen Avenue since 2011. Our pharmacists dispense prescriptions, check blood pressure, and answer questions about medicines.</p></div></section><section class="rx-block rx-pharmacy-openingHours"><div class="rx-split rx-split--top"><div class="rx-split-copy"><h2>When we are open</h2></div><dl class="rx-hours"><div class="rx-hours-row"><dt>Monday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Tuesday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Wednesday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Thursday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Friday</dt><dd>8:00 am – 8:00 pm</dd></div><div class="rx-hours-row"><dt>Saturday</dt><dd>9:00 am – 6:00 pm</dd></div><div class="rx-hours-row"><dt>Sunday</dt><dd>Closed</dd></div></dl></div></section><section class="rx-block rx-pharmacy-location"><div class="rx-split-copy"><h2>Where to find us</h2><address class="rx-address"><p>12 Allen Avenue, Ikeja, Lagos</p><p class="rx-landmark">Near the Computer Village bus stop</p></address><a class="rx-btn rx-btn-ghost" href="https://maps.google.com/?q=ikeja" rel="noopener noreferrer" target="_blank">Get directions</a></div></section><footer class="rx-block rx-pharmacy-footer"><div class="rx-footer-inner"><p class="rx-footer-name">Ikeja Family Pharmacy</p><p class="rx-footer-address">12 Allen Avenue, Ikeja, Lagos</p><ul class="rx-footer-contact"><li><a href="tel:08012345678">08012345678</a></li><li><a href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">WhatsApp</a></li></ul><nav aria-label="Footer"><ul class="rx-footer-nav"><li><a href="/about/">About</a></li><li><a href="/services/">Services</a></li><li><a href="/location/">Location</a></li><li><a href="/contact/">Contact</a></li></ul></nav><p class="rx-footer-legal">© 2026 Ikeja Family Pharmacy</p></div></footer>
+<header class="rx-block rx-pharmacy-header"><div class="rx-header-inner"><a class="rx-brand rx-brand-name" href="/">Ikeja Family Pharmacy</a><a class="rx-btn rx-btn-wa rx-header-cta" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Chat on WhatsApp</a><details class="rx-menu"><summary aria-label="Menu"><span class="rx-menu-bars" aria-hidden="true"></span>Menu</summary><div class="rx-menu-panel"><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Chat on WhatsApp</a></div></details></div></header><section class="rx-block rx-pharmacy-hero rx-hero--centered"><div class="rx-hero-inner"><div class="rx-hero-copy"><span class="rx-eyebrow">Pharmacy in Ikeja, Lagos</span><h1>Medicines, fast — just message us</h1><p class="rx-lede">Tell us what you need on WhatsApp. We will confirm what is in stock and have it ready.</p><div class="rx-cta-row"><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678?text=Hello%2C%20I%20have%20a%20question%20about%20my%20medication." rel="noopener noreferrer" target="_blank">Message us now</a><a class="rx-btn rx-btn-ghost" href="https://maps.google.com/?q=ikeja" rel="noopener noreferrer" target="_blank">Get directions</a></div></div></div></section><section class="rx-block rx-pharmacy-whatsappCta"><a class="rx-btn rx-btn-wa rx-btn-band" href="https://wa.me/2348012345678?text=Hello%2C%20I%20would%20like%20to%20ask%20about%20a%20medicine." rel="noopener noreferrer" target="_blank">Ask about a medicine</a></section><section class="rx-block rx-pharmacy-services"><div class="rx-head"><h2>How we can help</h2></div><div class="rx-cards"><div class="rx-card"><span class="rx-card-mark"><svg class="rx-svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g transform="rotate(-45 12 12)"><rect x="2.5" y="8.5" width="19" height="7" rx="3.5"/><path d="M12 8.5v7"/></g></svg></span><span class="rx-card-body"><span class="rx-card-title">Prescriptions</span></span></div></div></section><section class="rx-block rx-pharmacy-about"><div class="rx-prose"><h2>Who we are</h2><p>Family run since 2014.</p></div></section><section class="rx-block rx-pharmacy-openingHours"><div class="rx-split rx-split--top"><div class="rx-split-copy"><h2>When we are open</h2></div><dl class="rx-hours"><div class="rx-hours-row"><dt>Monday</dt><dd>8:00 am – 8:00 pm</dd></div></dl></div></section><section class="rx-block rx-pharmacy-location"><div class="rx-split-copy"><h2>Where to find us</h2><address class="rx-address"><p>12 Allen Avenue, Ikeja, Lagos</p></address><a class="rx-btn rx-btn-ghost" href="https://maps.google.com/?q=ikeja" rel="noopener noreferrer" target="_blank">Get directions</a></div></section><footer class="rx-block rx-pharmacy-footer"><div class="rx-footer-inner"><p class="rx-footer-name">Ikeja Family Pharmacy</p><p class="rx-footer-address">12 Allen Avenue, Ikeja, Lagos</p><ul class="rx-footer-contact"><li><a href="tel:08012345678">08012345678</a></li><li><a href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">WhatsApp</a></li></ul><p class="rx-footer-legal">© 2026 Ikeja Family Pharmacy</p></div></footer>
 <a class="rx-fab" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank" aria-label="Chat with us on WhatsApp"><svg class="rx-fab-glyph" viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true" focusable="false"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2Zm0 18.15h-.01a8.2 8.2 0 0 1-4.19-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.25-8.24 2.2 0 4.27.86 5.83 2.42a8.2 8.2 0 0 1 2.41 5.83c0 4.54-3.7 8.23-8.24 8.23Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.24-.64.8-.78.97-.14.16-.29.18-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.13-.15.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.4-.42-.56-.43h-.47c-.17 0-.43.06-.66.31-.23.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28Z"/></svg><span class="rx-fab-label">Chat with us</span></a>
 </body>
 </html>

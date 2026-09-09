@@ -378,6 +378,154 @@ test('reviews are never fabricated by a default', () => {
 });
 
 // =====================================================================
+// LAYOUT VARIANTS — what makes one template read differently from another
+// =====================================================================
+
+const CTX_WITH_PHOTO = Object.freeze({
+  ...CTX,
+  assets: new Map([
+    ['11111111-1111-1111-1111-111111111111', { kind: 'hero', width: 1200, height: 900, storage_path: 'shop.jpg' }],
+  ]),
+});
+
+test('the centred hero is a full-bleed band on the SECTION, not just its inner column', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.hero', version: 1, props: { heading: 'Fast help', layout: 'centered' } },
+    CTX,
+  );
+  // The modifier class must sit beside rx-pharmacy-hero on the same element —
+  // see stylesheet.js's comment on exactly why one level deeper is a bug (it
+  // was, once, in this branch).
+  assert.match(html, /class="rx-block rx-pharmacy-hero rx-hero--centered"/);
+  assert.ok(!html.includes('rx-hero-media'), 'centred never uses the side-by-side media wrapper');
+});
+
+test('the centred hero uses a photo as a dimmed background, not a side-by-side picture', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.hero', version: 1, props: { heading: 'Fast help', layout: 'centered' } },
+    CTX_WITH_PHOTO,
+  );
+  assert.match(html, /<img class="rx-hero-bg"/);
+  assert.ok(!html.includes('rx-hero-media'), 'a photo must not push centred back into the split shape');
+});
+
+test('the framed hero only applies when there is a photo to frame', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.hero', version: 1, props: { heading: 'Considered care', layout: 'framed' } },
+    CTX,
+  );
+  assert.ok(!html.includes('rx-hero--framed'), 'nothing to frame with no photo');
+  assert.match(html, /rx-hero--type/, 'falls back to the same typographic centre as split with no photo');
+});
+
+test('the framed hero insets the photo once one exists', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.hero', version: 1, props: { heading: 'Considered care', layout: 'framed' } },
+    CTX_WITH_PHOTO,
+  );
+  assert.match(html, /rx-hero--framed/);
+  assert.match(html, /rx-hero-media/);
+});
+
+test('the showcase hero only applies when there is a photo', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.hero', version: 1, props: { heading: 'Fast care', layout: 'showcase' } },
+    CTX,
+  );
+  assert.ok(!html.includes('rx-hero--showcase'), 'nothing to showcase with no photo');
+  assert.match(html, /rx-hero--type/, 'falls back to the same typographic centre as split with no photo');
+});
+
+test('the showcase hero states how many days a week the pharmacy is open, never "open now"', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.hero', version: 1, props: { heading: 'Fast care', layout: 'showcase' } },
+    CTX_WITH_PHOTO,
+  );
+  assert.match(html, /rx-hero--showcase/);
+  // CTX's profile sets two days: one open (mon), one explicitly closed (sun).
+  assert.match(html, /Open 1 day a week/);
+  assert.ok(!/open now/i.test(html), 'a statically-published page must never claim a live status');
+});
+
+test('the showcase hero omits the badge entirely with no opening hours set, rather than inventing one', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.hero', version: 1, props: { heading: 'Fast care', layout: 'showcase' } },
+    { ...CTX_WITH_PHOTO, profile: { ...CTX_WITH_PHOTO.profile, opening_hours: [] } },
+  );
+  assert.match(html, /rx-hero--showcase/, 'the layout itself still applies');
+  assert.ok(!html.includes('rx-hero-badge'), 'no hours means no claim about hours');
+});
+
+test('an unset hero layout renders exactly as "split" does — the default is backward compatible', () => {
+  const unset = blocks.renderBlock({ type: 'pharmacy.hero', version: 1, props: { heading: 'X' } }, CTX_WITH_PHOTO);
+  const explicit = blocks.renderBlock(
+    { type: 'pharmacy.hero', version: 1, props: { heading: 'X', layout: 'split' } },
+    CTX_WITH_PHOTO,
+  );
+  assert.equal(unset, explicit);
+});
+
+test('services\' "rows" layout reuses the index page\'s own card, not a new component', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.services', version: 1, props: { services: [{ name: 'Prescriptions' }], layout: 'rows' } },
+    CTX,
+  );
+  assert.match(html, /class="rx-cards"/);
+  assert.match(html, /class="rx-card"/);
+  assert.ok(!html.includes('rx-service-grid'), 'rows must not also emit the photo-card grid');
+});
+
+test('services with no layout set still renders the photo-card grid', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.services', version: 1, props: { services: [{ name: 'Prescriptions' }] } },
+    CTX,
+  );
+  assert.match(html, /rx-service-grid/);
+});
+
+test('the pharmacist CTA\'s "statement" variant carries its own modifier class', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.pharmacistCta', version: 1, props: { heading: 'Ask us', variant: 'statement' } },
+    CTX,
+  );
+  assert.match(html, /rx-pharmacistCta--statement/);
+});
+
+test('the plain pharmacist CTA (the default) carries no statement class', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.pharmacistCta', version: 1, props: { heading: 'Ask us' } },
+    CTX,
+  );
+  assert.ok(!html.includes('rx-pharmacistCta--statement'));
+});
+
+test('Modern, Premium and Metro actually request the layouts that differentiate them', () => {
+  // A test, not just a code review, so a future edit that quietly drops the
+  // layout override back to the shared default fails loudly instead of
+  // shipping templates that look the same as each other again.
+  const modernHero = templates.getTemplate('modern').seed.blocks.find((b) => b.type === 'pharmacy.hero');
+  const modernServices = templates.getTemplate('modern').seed.blocks.find((b) => b.type === 'pharmacy.services');
+  assert.equal(modernHero.props.layout, 'centered');
+  assert.equal(modernServices.props.layout, 'rows');
+
+  const premiumHero = templates.getTemplate('premium').seed.blocks.find((b) => b.type === 'pharmacy.hero');
+  const premiumCta = templates.getTemplate('premium').seed.blocks.find((b) => b.type === 'pharmacy.pharmacistCta');
+  assert.equal(premiumHero.props.layout, 'framed');
+  assert.equal(premiumCta.props.variant, 'statement');
+
+  const metroHero = templates.getTemplate('metro').seed.blocks.find((b) => b.type === 'pharmacy.hero');
+  assert.equal(metroHero.props.layout, 'showcase');
+
+  // Professional and Family are the baseline hero — no override, so they
+  // stay whatever the shared default is rather than pinning a value here
+  // that would need updating every time the default itself changed.
+  const proHero = templates.getTemplate('professional').seed.blocks.find((b) => b.type === 'pharmacy.hero');
+  const familyHero = templates.getTemplate('family').seed.blocks.find((b) => b.type === 'pharmacy.hero');
+  assert.equal(proHero.props.layout, undefined);
+  assert.equal(familyHero.props.layout, undefined);
+});
+
+// =====================================================================
 // INHERITANCE — the anti-divergence mechanism
 // =====================================================================
 

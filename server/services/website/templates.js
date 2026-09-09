@@ -14,10 +14,14 @@
  * drift from it. A template that seeded them would be handing every new
  * pharmacy a stale copy of somebody's data on day one.
  *
- * The props that ARE set here are editorial: a heading, a section title. They
- * are what makes Professional read differently from Modern.
+ * The props that ARE set here are editorial: a heading, a section title, and
+ * — for the blocks that offer one — a `layout`/`variant` choice. Composition,
+ * copy and layout together are what make Professional read differently from
+ * Modern rather than "the same page in different colours": the theme block
+ * below carries the colour, and it is deliberately not the only thing that
+ * changes between templates.
  *
- * ADDING TEMPLATE 4 THROUGH 10: one entry in TEMPLATES. No change to the
+ * ADDING TEMPLATE 5 THROUGH 10: one entry in TEMPLATES. No change to the
  * builder, the block registry, the renderer, the API or the schema.
  * templateIntegrity in websiteService.test.js validates every seed against
  * the block registry, so a template referencing a block that does not exist
@@ -27,10 +31,6 @@
  * VERSIONS ARE A PROMISE. A site stores template_id + template_version and a
  * CLONE of the seed. Bumping `version` here never touches a site somebody
  * already published; it only changes what the next pharmacy starts from.
- *
- * PHASE 2 SCOPE: Professional is complete. Modern and Premium arrive in
- * Phase 3 with the guided generator, which is when their editorial voice can
- * be written against real screens rather than guessed at.
  */
 
 const { validateBlock } = require('./blocks');
@@ -103,12 +103,13 @@ const TEMPLATES = [
           heading: 'Medicines, fast — just message us',
           subheading: 'Tell us what you need on WhatsApp. We will confirm what is in stock and have it ready.',
           primaryCtaLabel: 'Message us now',
+          layout: 'centered',
         }),
         b('pharmacy.whatsappCta', 1, {
           label: 'Ask about a medicine',
           style: 'band',
         }),
-        b('pharmacy.services', 1, { heading: 'How we can help' }),
+        b('pharmacy.services', 1, { heading: 'How we can help', layout: 'rows' }),
         b('pharmacy.about', 1, { heading: 'Who we are' }),
         b('pharmacy.reviews', 1, { heading: 'What our customers say' }),
         b('pharmacy.openingHours', 1, { heading: 'When we are open' }),
@@ -136,17 +137,97 @@ const TEMPLATES = [
           heading: 'Expert pharmacy care, close to home',
           subheading: 'Qualified pharmacists you can talk to, and the medicines you need without the wait.',
           primaryCtaLabel: 'Speak to our team',
+          layout: 'framed',
         }),
         b('pharmacy.about', 1, { heading: 'Our pharmacy' }),
         b('pharmacy.pharmacistCta', 1, {
           heading: 'Not sure what you need?',
           description: 'Our pharmacists answer questions every day. Ask us before you buy — there is no charge for advice.',
           buttonLabel: 'Ask a pharmacist',
+          variant: 'statement',
         }),
         b('pharmacy.services', 1, { heading: 'Services' }),
         b('pharmacy.openingHours', 1, { heading: 'Opening hours' }),
         b('pharmacy.location', 1, { heading: 'Visit us' }),
         b('pharmacy.contact', 1, { heading: 'Get in touch' }),
+        b('pharmacy.footer', 1),
+      ],
+    },
+  },
+
+  {
+    id: 'family',
+    version: 1,
+    name: 'Family',
+    description: 'Warm and reassuring. For pharmacies that lead with care.',
+    preview: '/website-templates/family.webp',
+    theme: { palette: 'clay', font: 'humanist', corners: 'round' },
+    seed: {
+      // Leads with the relationship rather than the transaction: About and
+      // "ask us anything" sit ABOVE Services, and reviews — real trust from
+      // real customers — come before the practical hours/location block
+      // rather than after it. Reuses the same split hero as Professional;
+      // the warmth here comes from the palette, the rounded corners and the
+      // order, not from a fourth hero shape.
+      blocks: [
+        b('pharmacy.header', 1),
+        b('pharmacy.hero', 1, {
+          heading: 'Care that feels like family',
+          subheading: 'A friendly face, time to listen, and the medicines you need — every time you visit.',
+          primaryCtaLabel: 'Talk to us on WhatsApp',
+        }),
+        b('pharmacy.about', 1, { heading: 'Getting to know you' }),
+        b('pharmacy.pharmacistCta', 1, {
+          heading: 'Have a question? We are here.',
+          description: 'No question is too small. Message us any time and we will make time for you.',
+          buttonLabel: 'Ask us anything',
+        }),
+        b('pharmacy.services', 1, { heading: 'How we care for you' }),
+        b('pharmacy.reviews', 1, { heading: 'Loved by the families we serve' }),
+        b('pharmacy.openingHours', 1, { heading: 'When you can visit' }),
+        b('pharmacy.location', 1, { heading: 'Come say hello' }),
+        b('pharmacy.whatsappCta', 1, {
+          heading: 'Need anything at all?',
+          description: 'We would love to hear from you — message us on WhatsApp any time.',
+          label: 'Message us on WhatsApp',
+          style: 'band',
+        }),
+        b('pharmacy.footer', 1),
+      ],
+    },
+  },
+
+  {
+    id: 'metro',
+    version: 1,
+    name: 'Metro',
+    description: 'Bright and energetic. For a busy pharmacy that serves its whole neighbourhood.',
+    preview: '/website-templates/metro.webp',
+    theme: { palette: 'blue', font: 'bold', corners: 'round' },
+    seed: {
+      // Services leads, straight after the hero — a busy neighbourhood
+      // pharmacy's website earning its keep by showing the full range of
+      // what it does before it asks for anything. Reviews sit right after,
+      // while that impression is still fresh, ahead of the practical
+      // hours/location block.
+      blocks: [
+        b('pharmacy.header', 1),
+        b('pharmacy.hero', 1, {
+          heading: 'Fast care, right in your neighbourhood',
+          subheading: 'Prescriptions, vaccinations and friendly advice — all in one stop, with no long wait.',
+          primaryCtaLabel: 'Chat With Us Now',
+          layout: 'showcase',
+        }),
+        b('pharmacy.services', 1, { heading: 'Everything Your Health Needs' }),
+        b('pharmacy.reviews', 1, { heading: 'What Our Neighbours Say' }),
+        b('pharmacy.openingHours', 1, { heading: 'Hours' }),
+        b('pharmacy.location', 1, { heading: 'Find Us' }),
+        b('pharmacy.whatsappCta', 1, {
+          heading: 'Need something today?',
+          description: 'Message us on WhatsApp and we will tell you what we have before you travel.',
+          label: 'Message Us on WhatsApp',
+          style: 'band',
+        }),
         b('pharmacy.footer', 1),
       ],
     },

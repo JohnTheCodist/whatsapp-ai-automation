@@ -207,12 +207,16 @@ test('rendering a document is deterministic', () => {
 });
 
 // =====================================================================
-// TEMPLATES — all three
+// TEMPLATES
 // =====================================================================
 
-test('all three templates are registered and distinct', () => {
+test('every registered template is one of the ones this suite knows about', () => {
+  // Named explicitly, not just counted — a typo'd id or an accidental
+  // duplicate registration should fail this loudly rather than pass because
+  // the length still matched. Extend this list in the same commit that adds
+  // a template to templates.js.
   const ids = templates.TEMPLATES.map((t) => t.id);
-  assert.deepEqual(ids.sort(), ['modern', 'premium', 'professional']);
+  assert.deepEqual(ids.sort(), ['family', 'metro', 'modern', 'premium', 'professional']);
 });
 
 test('each template carries a valid theme of its own', () => {

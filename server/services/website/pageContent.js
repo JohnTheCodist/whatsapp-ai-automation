@@ -202,7 +202,7 @@ function hoursSection(profile, heading = 'Opening hours', { wrap = true } = {}) 
     return `<div class="rx-hours-row"><span>${label}</span><span>${when}</span></div>`;
   }).filter(Boolean).join('');
   if (!rows) return '';
-  const inner = `<h2>${esc(heading)}</h2><div class="rx-hours">${rows}</div>`;
+  const inner = `<div class="rx-panel"><h2>${esc(heading)}</h2><div class="rx-hours">${rows}</div></div>`;
   return wrap ? `<section class="rx-block rx-narrow">${inner}</section>` : inner;
 }
 
@@ -215,8 +215,8 @@ function addressSection(ctx, heading = 'Where to find us', { wrap = true } = {})
     : '';
   const landmark = ctx.profile?.landmark
     ? `<p class="rx-landmark">${esc(ctx.profile.landmark)}</p>` : '';
-  const inner = `<h2>${esc(heading)}</h2>`
-    + `<address class="rx-address">${esc(line)}</address>${landmark}${map}`;
+  const inner = `<div class="rx-panel"><h2>${esc(heading)}</h2>`
+    + `<address class="rx-address">${esc(line)}</address>${landmark}${map}</div>`;
   return wrap ? `<section class="rx-block rx-narrow">${inner}</section>` : inner;
 }
 
@@ -400,7 +400,7 @@ function relatedSection(article, allPages) {
       + `</ul>`);
   }
   if (!blocks.length) return '';
-  return `<section class="rx-block rx-narrow">${blocks.join('')}</section>`;
+  return `<section class="rx-block rx-narrow"><div class="rx-panel">${blocks.join('')}</div></section>`;
 }
 
 /**
@@ -454,7 +454,7 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
 
   if (page.kind === 'about') {
     open(null);
-    parts.push(`<section class="rx-block rx-narrow"><p>${esc(String(p.description).replace(/\s+/g, ' ').trim())}</p></section>`);
+    parts.push(`<section class="rx-block rx-narrow"><div class="rx-panel"><p>${esc(String(p.description).replace(/\s+/g, ' ').trim())}</p></div></section>`);
     // Eager on the first one: on an About page the photograph is the point,
     // it is above the fold, and lazy-loading the thing a visitor came to look
     // at makes the page feel slower than it is.
@@ -472,17 +472,17 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
     // The pharmacy's own words first, then generic procedure only when the
     // service is one we can identify.
     if (page.description) {
-      parts.push(`<section class="rx-block rx-narrow"><p>${esc(page.description)}</p></section>`);
+      parts.push(`<section class="rx-block rx-narrow"><div class="rx-panel"><p>${esc(page.description)}</p></div></section>`);
     }
     if (override.about) {
       // The owner's own paragraph REPLACES the canned procedure text
       // entirely, rather than sitting alongside it — a page should say one
       // thing about what a service involves, not the generic version and
       // then the owner's correction to it.
-      parts.push(`<section class="rx-block rx-narrow"><h2>About this service</h2><p>${esc(override.about)}</p></section>`);
+      parts.push(`<section class="rx-block rx-narrow"><div class="rx-panel"><h2>About this service</h2><p>${esc(override.about)}</p></div></section>`);
     } else if (copy) {
-      parts.push(`<section class="rx-block rx-narrow"><h2>What this involves</h2><p>${esc(copy.involves)}</p>`
-        + `<h2>What to expect</h2><p>${esc(copy.expect)}</p></section>`);
+      parts.push(`<section class="rx-block rx-narrow"><div class="rx-panel"><h2>What this involves</h2><p>${esc(copy.involves)}</p>`
+        + `<h2>What to expect</h2><p>${esc(copy.expect)}</p></div></section>`);
     }
     parts.push(visitSplit(ctx, p, { hoursHeading: 'When you can come in' }));
     parts.push(ctaRow(ctx, `Hello ${name}, I would like to ask about ${page.label}`));
@@ -529,9 +529,9 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
       const paras = (section.paragraphs || [])
         .map((t) => `<p>${esc(t)}</p>`).join('');
       parts.push(
-        '<section class="rx-block rx-narrow">'
+        '<section class="rx-block rx-narrow"><div class="rx-panel">'
         + `<h2>${esc(section.heading)}</h2>` + paras
-        + '</section>',
+        + '</div></section>',
       );
     }
 

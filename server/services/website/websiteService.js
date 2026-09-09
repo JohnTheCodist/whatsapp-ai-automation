@@ -298,8 +298,8 @@ async function createWebsite(pharmacyId, { templateId } = {}) {
   const seed = cloneSeed(template.id);
 
   // The template's theme comes across with its composition. Choosing "Modern"
-  // and getting the default palette would make the three templates feel like
-  // one template with the sections reordered — the look is most of what
+  // and getting the default palette would make the templates feel like the
+  // same page with the sections reordered — the look is most of what
   // distinguishes them. Validated on the way in like any other theme, so a
   // typo in a template cannot write a palette that does not exist.
   const themeCheck = validateTheme(template.theme);

@@ -1,74 +1,40 @@
-/**
- * The published stylesheet, generated from a resolved theme.
- *
- * WHY GENERATED AND NOT A STATIC FILE
- * The published page's CSP is `default-src 'none'` with `style-src 'self'
- * 'unsafe-inline'`, and the page must be self-contained — one document, no
- * external stylesheet to fetch on a slow mobile connection, nothing to 404 if
- * an asset path ever changes. So the CSS is inlined into the document, and
- * since it carries the pharmacy's theme it has to be produced per site.
- *
- * WHY THE OWNER CANNOT WRITE ANY OF IT
- * Every value below comes from theme.js's resolved output, which is six
- * palettes, four type pairings and three radii. There is no path from owner
- * input to a CSS declaration except through those enums and the single
- * validated hex — so no amount of editing can produce a broken layout, an
- * unreadable button, or a `}` that escapes into the rest of the sheet.
- *
- * MOBILE FIRST, and not as a slogan. The base rules are the phone layout,
- * because that is what a customer in Lagos opens a pharmacy's website on. The
- * media queries add the desktop arrangement on top, so a narrow screen runs
- * the fewest rules and never has to undo a desktop assumption.
- *
- * NO JAVASCRIPT EXISTS ON THESE PAGES, and that governs the whole design.
- * The mobile menu is a <details> element, the reveals are CSS scroll-driven
- * animations that degrade to "already visible" where unsupported, and nothing
- * here waits on a script to become usable. A pharmacy website that needs
- * JavaScript to show its opening hours is a pharmacy website that fails on
- * the connection most of its customers actually have.
- *
- * (Straight quotes in comments, never backticks: this file is one JS template
- * literal and a backtick would close the string.)
- */
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ikeja Family Pharmacy — Pharmacy in Ikeja</title>
+<meta name="description" content="Family run since 2014.">
 
-const { resolveTheme } = require('./theme');
 
-/**
- * A modest, fixed spacing scale.
- *
- * Fixed rather than themeable on purpose: rhythm is the difference between a
- * page that looks designed and one that looks assembled, and it is not a
- * decision a pharmacy owner has any reason to want to make. Exported because
- * it is the page's rhythm, and anything that lays out around this sheet needs
- * the same numbers rather than its own.
- */
-const SPACE = {
-  xs: '.5rem',
-  sm: '.75rem',
-  md: '1.25rem',
-  lg: '2rem',
-  xl: '3.5rem',
-};
+<meta property="og:type" content="website">
+<meta property="og:title" content="Ikeja Family Pharmacy — Pharmacy in Ikeja">
+<meta property="og:description" content="Family run since 2014.">
 
-function stylesheet(storedTheme) {
-  const t = resolveTheme(storedTheme);
+<meta property="og:site_name" content="Ikeja Family Pharmacy">
 
-  return `
-/* Hallmark · macrostructure: Split Studio · genre: editorial
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Ikeja Family Pharmacy — Pharmacy in Ikeja">
+<meta name="twitter:description" content="Family run since 2014.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700&amp;family=Inter:wght@400;500;600&display=swap">
+<style>/* Hallmark · macrostructure: Split Studio · genre: editorial
  * theme: RxNaija theme contract (locked — 6 palettes, 4 pairings, 3 radii)
  * nav: N1b brand-links-CTA · footer: Ft5 statement · enrichment: pharmacy photography
  * pre-emit critique: P5 H5 E4 S5 R4 V4
  */
 :root{
-  --rx-primary:${t.primary};
-  --rx-on-primary:${t.onPrimary};
-  --rx-ink:${t.ink};
-  --rx-muted:${t.muted};
-  --rx-surface:${t.surface};
-  --rx-soft:${t.soft};
-  --rx-radius:${t.radius};
-  --rx-display:${t.fontDisplay};
-  --rx-text:${t.fontText};
+  --rx-primary:#b45309;
+  --rx-on-primary:#ffffff;
+  --rx-ink:#431407;
+  --rx-muted:#57534e;
+  --rx-surface:#fffbf5;
+  --rx-soft:#fff7ed;
+  --rx-radius:999px;
+  --rx-display:'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --rx-text:'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
   /* Derived, never chosen. A hairline and a wash that belong to whichever
      palette is active — a fixed grey would be wrong on five of the six.
@@ -92,11 +58,11 @@ function stylesheet(storedTheme) {
   /* 4pt rhythm. The two large steps are what separate SECTIONS; everything
      smaller is inside one. */
   --rx-2xs:.25rem;
-  --rx-xs:${SPACE.xs};
-  --rx-sm:${SPACE.sm};
-  --rx-md:${SPACE.md};
-  --rx-lg:${SPACE.lg};
-  --rx-xl:${SPACE.xl};
+  --rx-xs:.5rem;
+  --rx-sm:.75rem;
+  --rx-md:1.25rem;
+  --rx-lg:2rem;
+  --rx-xl:3.5rem;
   --rx-2xl:clamp(3.5rem,2.2rem + 6vw,6rem);
 
   --rx-shell:72rem;
@@ -955,8 +921,14 @@ p:last-child{margin-bottom:0}
   .rx-pharmacy-footer{background:none;color:#000;border-top:1px solid #000}
   .rx-pharmacy-footer a,.rx-footer-address,.rx-footer-legal{color:#000}
   .rx-block{padding:1rem 0;break-inside:avoid}
-}
-`.trim();
-}
+}</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Pharmacy","name":"Ikeja Family Pharmacy","address":{"@type":"PostalAddress","streetAddress":"12 Allen Avenue","addressLocality":"Ikeja","addressRegion":"Lagos","addressCountry":"NG"},"telephone":"08012345678","description":"Family run since 2014.","hasMap":"https://maps.google.com/?q=ikeja"}</script>
 
-module.exports = { stylesheet, SPACE };
+
+
+</head>
+<body>
+<header class="rx-block rx-pharmacy-header"><div class="rx-header-inner"><a class="rx-brand rx-brand-name" href="/">Ikeja Family Pharmacy</a><a class="rx-btn rx-btn-wa rx-header-cta" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Chat on WhatsApp</a><details class="rx-menu"><summary aria-label="Menu"><span class="rx-menu-bars" aria-hidden="true"></span>Menu</summary><div class="rx-menu-panel"><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">Chat on WhatsApp</a></div></details></div></header><section class="rx-block rx-pharmacy-hero"><div class="rx-hero-inner rx-hero--type"><div class="rx-hero-copy"><span class="rx-eyebrow">Pharmacy in Ikeja, Lagos</span><h1>Care that feels like family</h1><p class="rx-lede">A friendly face, time to listen, and the medicines you need — every time you visit.</p><div class="rx-cta-row"><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678?text=Hello%2C%20I%20have%20a%20question%20about%20my%20medication." rel="noopener noreferrer" target="_blank">Talk to us on WhatsApp</a><a class="rx-btn rx-btn-ghost" href="https://maps.google.com/?q=ikeja" rel="noopener noreferrer" target="_blank">Get directions</a></div></div></div></section><section class="rx-block rx-pharmacy-about"><div class="rx-prose"><h2>Getting to know you</h2><p>Family run since 2014.</p></div></section><section class="rx-block rx-pharmacy-pharmacistCta"><div class="rx-narrow"><h2>Have a question? We are here.</h2><p>No question is too small. Message us any time and we will make time for you.</p><a class="rx-btn rx-btn-wa" href="https://wa.me/2348012345678?text=Hello%2C%20please%20may%20I%20speak%20to%20a%20pharmacist%3F" rel="noopener noreferrer" target="_blank">Ask us anything</a></div></section><section class="rx-block rx-pharmacy-services"><div class="rx-head"><h2>How we care for you</h2></div><ul class="rx-service-grid"><li class="rx-service-card"><div class="rx-service-visual"><img class="rx-service-photo" src="/website-templates/services/prescription-refills.jpg" alt="Prescription tablets" width="640" height="480" loading="lazy" decoding="async"></div><div class="rx-service-body"><h3>Prescriptions</h3></div></li></ul></section><section class="rx-block rx-pharmacy-openingHours"><div class="rx-split rx-split--top"><div class="rx-split-copy"><h2>When you can visit</h2></div><dl class="rx-hours"><div class="rx-hours-row"><dt>Monday</dt><dd>8:00 am – 8:00 pm</dd></div></dl></div></section><section class="rx-block rx-pharmacy-location"><div class="rx-split-copy"><h2>Come say hello</h2><address class="rx-address"><p>12 Allen Avenue, Ikeja, Lagos</p></address><a class="rx-btn rx-btn-ghost" href="https://maps.google.com/?q=ikeja" rel="noopener noreferrer" target="_blank">Get directions</a></div></section><section class="rx-block rx-pharmacy-whatsappCta"><div class="rx-narrow"><h2>Need anything at all?</h2><p>We would love to hear from you — message us on WhatsApp any time.</p><a class="rx-btn rx-btn-wa rx-btn-band" href="https://wa.me/2348012345678?text=Hello%2C%20I%20would%20like%20to%20ask%20about%20a%20medicine." rel="noopener noreferrer" target="_blank">Message us on WhatsApp</a></div></section><footer class="rx-block rx-pharmacy-footer"><div class="rx-footer-inner"><p class="rx-footer-name">Ikeja Family Pharmacy</p><p class="rx-footer-address">12 Allen Avenue, Ikeja, Lagos</p><ul class="rx-footer-contact"><li><a href="tel:08012345678">08012345678</a></li><li><a href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank">WhatsApp</a></li></ul><p class="rx-footer-legal">© 2026 Ikeja Family Pharmacy</p></div></footer>
+<a class="rx-fab" href="https://wa.me/2348012345678" rel="noopener noreferrer" target="_blank" aria-label="Chat with us on WhatsApp"><svg class="rx-fab-glyph" viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true" focusable="false"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2Zm0 18.15h-.01a8.2 8.2 0 0 1-4.19-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.25-8.24 2.2 0 4.27.86 5.83 2.42a8.2 8.2 0 0 1 2.41 5.83c0 4.54-3.7 8.23-8.24 8.23Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.24-.64.8-.78.97-.14.16-.29.18-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.13-.15.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.4-.42-.56-.43h-.47c-.17 0-.43.06-.66.31-.23.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28Z"/></svg><span class="rx-fab-label">Chat with us</span></a>
+</body>
+</html>

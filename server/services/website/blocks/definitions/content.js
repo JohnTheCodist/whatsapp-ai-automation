@@ -98,9 +98,12 @@ const services = {
         icon: { type: 'enum', values: ['pill', 'syringe', 'delivery', 'test', 'advice', 'baby', 'heart'] },
       },
     },
+    // 'rows' reuses the compact icon-and-text row already built for the
+    // /services/ index page — see render() below.
+    layout: { type: 'enum', values: ['cards', 'rows'] },
   },
 
-  defaults: { heading: 'What we offer' },
+  defaults: { heading: 'What we offer', layout: 'cards' },
   responsive: { layout: 'grid', columns: { base: 1, 640: 2, 1024: 3 } },
 
   editor: { label: 'Services', singleton: false, removable: true, draggable: true, icon: 'grid' },
@@ -111,12 +114,30 @@ const services = {
     const list = props.services || [];
     if (!list.length) return '';
 
-    // EVERY service gets a real visual, not only the ones with an explicit
-    // icon set — a photo where one exists and can be shown honestly (see
-    // servicePhotos.js for the bar that has to clear), the drawn mark
-    // otherwise. Both are matched from the name the owner typed, through the
-    // same catalogue that decides the service's URL, so the visual and the
-    // page agree about what the service is.
+    const head = props.heading
+      ? `<div class="rx-head"><h2>${esc(props.heading)}</h2></div>`
+      : '';
+
+    // ROWS: the exact compact row already built for the /services/ index
+    // page — .rx-cards/.rx-card, not a new component — for a template whose
+    // hero has already made the page's one big visual statement and does not
+    // need a second one immediately below it.
+    if (props.layout === 'rows') {
+      const items = list.map((s) => {
+        const desc = s.description ? `<p>${esc(s.description)}</p>` : '';
+        return `<div class="rx-card"><span class="rx-card-mark">${serviceIcon(s.name, s.icon)}</span>`
+          + `<span class="rx-card-body"><span class="rx-card-title">${esc(s.name)}</span>${desc}</span></div>`;
+      }).join('');
+      return section(this.id, `${head}<div class="rx-cards">${items}</div>`);
+    }
+
+    // CARDS (the default). EVERY service gets a real visual, not only the
+    // ones with an explicit icon set — a photo where one exists and can be
+    // shown honestly (see servicePhotos.js for the bar that has to clear),
+    // the drawn mark otherwise. Both are matched from the name the owner
+    // typed, through the same catalogue that decides the service's URL, so
+    // the visual and the page agree about what the service is. auto-fill
+    // lets the grid hold any count without a stray half-empty row at the end.
     const items = list.map((s) => {
       const photo = servicePhotoFor(s.name);
       const visual = photo
@@ -129,15 +150,6 @@ const services = {
         + `<div class="rx-service-body"><h3>${esc(s.name)}</h3>${desc}</div>`
         + `</li>`;
     }).join('');
-
-    // A card grid, not the hairline rows this used to be. A pharmacy's
-    // service count is still not ours to choose — three in a row, four
-    // wrapping to a second — but a card carries a picture and a row does
-    // not, and auto-fill lets the grid hold any count without a stray
-    // half-empty row at the end.
-    const head = props.heading
-      ? `<div class="rx-head"><h2>${esc(props.heading)}</h2></div>`
-      : '';
     return section(this.id, `${head}<ul class="rx-service-grid">${items}</ul>`);
   },
 };
