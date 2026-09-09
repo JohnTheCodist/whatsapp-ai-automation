@@ -29,6 +29,7 @@ import PhotoUpload from './PhotoUpload.jsx';
 import ServicesPicker from './ServicesPicker.jsx';
 import HealthTopics from './HealthTopics.jsx';
 import PageText from './PageText.jsx';
+import HomeContent from './HomeContent.jsx';
 
 function Field({ label, hint, children }) {
   return (
@@ -258,6 +259,16 @@ export default function WebsiteContent({ site, pages, onSaved, onNavigate }) {
           onToggle={() => toggle('health')}
         >
           <HealthTopics site={site} onSaved={() => onSaved?.()} />
+        </Row>
+
+        <Row
+          label="Homepage content"
+          summary="Rewrite the heading, subheading and button text on your homepage"
+          actionLabel="Edit →"
+          expanded={open === 'homeContent'}
+          onToggle={() => toggle('homeContent')}
+        >
+          <HomeContent site={site} onSaved={() => onSaved?.()} />
         </Row>
 
         <Row

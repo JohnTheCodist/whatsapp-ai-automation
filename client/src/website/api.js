@@ -234,6 +234,18 @@ export async function previewHtml(nonce, templateId = null, pagePath = null) {
 export const generatePageCopy = (path, field) =>
   call('/pages/copy/generate', { method: 'POST', body: JSON.stringify({ path, field }) });
 
+/**
+ * Draft a heading, subheading, description or button label with AI, for one
+ * field on one homepage section — HomeContent.jsx's "Write with AI" button.
+ *
+ * `blockIndex` is the block's position in `site.site_data.blocks`, not its
+ * type — the server looks up that exact block on the caller's own site and
+ * refuses a field that is not a real, writable text prop on it. A DRAFT ONLY:
+ * saving still goes through api.saveSiteData, same as a typed edit.
+ */
+export const generateHomeCopy = (blockIndex, field) =>
+  call('/home/copy/generate', { method: 'POST', body: JSON.stringify({ blockIndex, field }) });
+
 // ---------------------------------------------------------------------
 // Images
 // ---------------------------------------------------------------------

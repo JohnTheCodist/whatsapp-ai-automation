@@ -30,13 +30,14 @@ const { publishableArticles } = require('../services/website/health');
 const { buildPages } = require('../services/website/pages');
 const pharmacies = require('../services/pharmacies');
 const { generatePageCopy } = require('../services/ai/pageCopyGenerator');
+const { generateBlockCopy } = require('../services/ai/blockCopyGenerator');
 const { LlmUnavailable } = require('../services/ai/llmClient');
 const { renderDocument } = require('../services/website/document');
 const { renderAllPages } = require('../services/website/siteRender');
 const { editorManifest } = require('../services/website/blocks/editorManifest');
 const { themeOptions } = require('../services/website/blocks/theme');
 const { baseDomain } = require('../services/website/publicSite');
-const { renderBlock } = require('../services/website/blocks');
+const { renderBlock, getBlock } = require('../services/website/blocks');
 const { stylesheet } = require('../services/website/blocks/stylesheet');
 
 const router = express.Router();
@@ -190,6 +191,71 @@ router.post('/pages/copy/generate', requireAuth, requireRole('owner', 'pharmacis
       kind: page.kind,
       label: page.label || page.nav,
       field,
+    });
+    res.json({ text });
+  } catch (err) {
+    if (err instanceof LlmUnavailable) {
+      throw new HttpError(503, 'AI writing is not available right now. Try writing it yourself instead.', 'LLM_UNAVAILABLE');
+    }
+    throw err;
+  }
+}));
+
+/**
+ * POST /api/website/home/copy/generate — draft the text for one editable
+ * field on one section (block) of the pharmacy's own homepage.
+ *
+ * A DRAFT, exactly like /pages/copy/generate — nothing here is saved. The
+ * owner reads it, edits it if they want, and saves it themselves through the
+ * normal site_data save path (PUT /site), which HomeContent.jsx already
+ * calls for a typed edit.
+ *
+ * blockIndex NAMES A POSITION IN THE PHARMACY'S OWN site_data, not a block
+ * type — so this can only ever draft text for a section that pharmacy
+ * actually has, in the actual version it actually has, the same defence
+ * /pages/copy/generate applies by looking up the path in the pharmacy's own
+ * buildPages() rather than trusting a kind/label the client asserts.
+ *
+ * THE FIELD MUST BE A REAL, WRITABLE, TEXT PROP ON THAT BLOCK — checked
+ * against the block registry rather than assumed from the request. A prop
+ * with a `from` binding (the About block's description, inherited from the
+ * pharmacy profile) is refused: that text is not this block's to invent, it
+ * is edited in Website content, and AI-drafting it here would be a second,
+ * divergent way to change the same fact.
+ */
+router.post('/home/copy/generate', requireAuth, requireRole('owner', 'pharmacist'), asyncRoute(async (req, res) => {
+  const blockIndex = Number.isInteger(req.body?.blockIndex) ? req.body.blockIndex : null;
+  const field = typeof req.body?.field === 'string' ? req.body.field : null;
+  if (blockIndex === null || blockIndex < 0 || !field) {
+    throw new HttpError(400, 'A valid blockIndex and field are required.', 'INVALID_BODY');
+  }
+
+  const [pharmacy, profile, site] = await Promise.all([
+    pharmacies.getPharmacy(req.pharmacyId),
+    pharmacies.getProfile(req.pharmacyId),
+    website.getWebsite(req.pharmacyId),
+  ]);
+  if (!pharmacy) throw new HttpError(404, 'Pharmacy not found', 'NOT_FOUND');
+
+  const block = site?.site_data?.blocks?.[blockIndex];
+  if (!block) throw new HttpError(404, 'No such section on your homepage', 'NOT_FOUND');
+
+  const definition = getBlock(block.type, block.version);
+  const spec = definition?.props?.[field];
+  if (!definition || !spec || spec.type !== 'text' || spec.from) {
+    throw new HttpError(400, 'This field cannot be written by AI.', 'FIELD_NOT_WRITABLE');
+  }
+
+  try {
+    const text = await generateBlockCopy({
+      pharmacyName: pharmacy.name,
+      area: [profile?.city, profile?.state].filter(Boolean).join(', ') || null,
+      description: profile?.description || null,
+      services: Array.isArray(profile?.services) ? profile.services.map((s) => s?.name).filter(Boolean) : [],
+      blockLabel: definition.editor?.label || definition.name,
+      blockDescription: definition.description,
+      field,
+      max: spec.max,
     });
     res.json({ text });
   } catch (err) {
