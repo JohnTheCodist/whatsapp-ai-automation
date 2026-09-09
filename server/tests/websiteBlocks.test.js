@@ -443,8 +443,27 @@ test('the showcase hero states how many days a week the pharmacy is open, never 
   );
   assert.match(html, /rx-hero--showcase/);
   // CTX's profile sets two days: one open (mon), one explicitly closed (sun).
-  assert.match(html, /Open 1 day a week/);
+  assert.match(html, /1 Day a Week/);
   assert.ok(!/open now/i.test(html), 'a statically-published page must never claim a live status');
+});
+
+test('the showcase hero always appends the pharmacy\'s real, bound name after the heading, highlighted', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.hero', version: 1, props: { heading: 'Fast, Friendly Care at', layout: 'showcase' } },
+    CTX_WITH_PHOTO,
+  );
+  assert.match(html, /<h1>Fast, Friendly Care at <span class="rx-hero-highlight">Ikeja Family Pharmacy<\/span><\/h1>/);
+});
+
+test('every other hero layout leaves the heading exactly as typed, with no name appended', () => {
+  for (const layout of [undefined, 'split', 'centered', 'framed']) {
+    const html = blocks.renderBlock(
+      { type: 'pharmacy.hero', version: 1, props: { heading: 'Fast, Friendly Care at', layout } },
+      CTX_WITH_PHOTO,
+    );
+    assert.match(html, /<h1>Fast, Friendly Care at<\/h1>/, `layout ${layout}`);
+    assert.ok(!html.includes('rx-hero-highlight'), `layout ${layout} must not append a name`);
+  }
 });
 
 test('the showcase hero omits the badge entirely with no opening hours set, rather than inventing one', () => {
@@ -483,6 +502,150 @@ test('services with no layout set still renders the photo-card grid', () => {
   assert.match(html, /rx-service-grid/);
 });
 
+test('services\' "tiles" layout alternates the icon chip colour and marks no card as a photo card', () => {
+  const html = blocks.renderBlock(
+    {
+      type: 'pharmacy.services',
+      version: 1,
+      props: { services: [{ name: 'Prescriptions' }, { name: 'Consultations' }, { name: 'Delivery' }], layout: 'tiles' },
+    },
+    CTX,
+  );
+  assert.match(html, /rx-service-tile rx-tile-a/);
+  assert.match(html, /rx-service-tile rx-tile-b/);
+  assert.ok(!html.includes('rx-service-grid'), 'tiles must not also emit the photo-card grid');
+  assert.ok(!html.includes('rx-cards'), 'tiles must not also emit the rows list');
+});
+
+test('services\' "band" style colours the section, and the eyebrow becomes a solid pill', () => {
+  const html = blocks.renderBlock(
+    {
+      type: 'pharmacy.services',
+      version: 1,
+      props: { services: [{ name: 'Prescriptions' }], layout: 'tiles', style: 'band', eyebrow: 'Our Services' },
+    },
+    CTX,
+  );
+  assert.match(html, /class="rx-block rx-pharmacy-services rx-services--band"/);
+  assert.match(html, /<span class="rx-eyebrow">Our Services<\/span>/);
+});
+
+test('services without "band" style carries no colour-band class, even with an eyebrow set', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.services', version: 1, props: { services: [{ name: 'Prescriptions' }], layout: 'tiles', eyebrow: 'Our Services' } },
+    CTX,
+  );
+  assert.ok(!html.includes('rx-services--band'));
+});
+
+test('a heading and its accent are two independent props, not a split of one string', () => {
+  const withAccent = blocks.renderBlock(
+    { type: 'pharmacy.services', version: 1, props: { services: [{ name: 'X' }], heading: 'Comprehensive', headingAccent: 'Care for You' } },
+    CTX,
+  );
+  assert.match(withAccent, /<h2>Comprehensive <span class="rx-heading-accent">Care for You<\/span><\/h2>/);
+
+  const withoutAccent = blocks.renderBlock(
+    { type: 'pharmacy.services', version: 1, props: { services: [{ name: 'X' }], heading: 'What we offer' } },
+    CTX,
+  );
+  assert.match(withoutAccent, /<h2>What we offer<\/h2>/);
+  assert.ok(!withoutAccent.includes('rx-heading-accent'));
+});
+
+test('about renders no trust highlights by default, and only real ones once the owner adds them', () => {
+  const bare = blocks.renderBlock({ type: 'pharmacy.about', version: 1, props: { description: 'We are a pharmacy.' } }, CTX);
+  assert.ok(!bare.includes('rx-about-highlights'), 'nothing invented in place of the owner\'s own trust points');
+
+  const withHighlights = blocks.renderBlock(
+    {
+      type: 'pharmacy.about',
+      version: 1,
+      props: { description: 'We are a pharmacy.', highlights: [{ text: 'Bilingual Staff' }, { text: '' }, { text: 'Free Delivery' }] },
+    },
+    CTX,
+  );
+  assert.match(withHighlights, /<li><span class="rx-check"[^>]*>.*?<\/span>Bilingual Staff<\/li>/);
+  assert.match(withHighlights, /Free Delivery/);
+  // The blank entry must be dropped, not rendered as an empty row.
+  assert.equal((withHighlights.match(/<li>/g) || []).length, 2);
+});
+
+test('about\'s directions button appears only with a real maps link AND a template that opted in', () => {
+  const noButtonLabel = blocks.renderBlock(
+    { type: 'pharmacy.about', version: 1, props: { description: 'We are a pharmacy.' } },
+    CTX,
+  );
+  assert.ok(!noButtonLabel.includes('rx-btn-solid'), 'a template that never set buttonLabel gets no button');
+
+  const withButton = blocks.renderBlock(
+    { type: 'pharmacy.about', version: 1, props: { description: 'We are a pharmacy.', buttonLabel: 'Get Directions' } },
+    CTX,
+  );
+  assert.match(withButton, /rx-btn-solid/);
+  assert.match(withButton, /Get Directions/);
+
+  const noMapsUrl = blocks.renderBlock(
+    { type: 'pharmacy.about', version: 1, props: { description: 'We are a pharmacy.', buttonLabel: 'Get Directions' } },
+    { ...CTX, profile: { ...CTX.profile, maps_url: null } },
+  );
+  assert.ok(!noMapsUrl.includes('rx-btn-solid'), 'a button pointed nowhere must not render even if a label was set');
+});
+
+test('about\'s framed media style and flip:false both apply only with a second photo present', () => {
+  // About takes the SECOND photo (the hero has already taken the first) —
+  // CTX_WITH_PHOTO only has one, correctly leaving About in its no-photo
+  // prose branch; this test needs two.
+  const ctxTwoPhotos = {
+    ...CTX,
+    assets: new Map([
+      ['11111111-1111-1111-1111-111111111111', { kind: 'hero', width: 1200, height: 900, storage_path: 'a.jpg' }],
+      ['22222222-2222-2222-2222-222222222222', { kind: 'gallery', width: 800, height: 600, storage_path: 'b.jpg' }],
+    ]),
+  };
+  const framed = blocks.renderBlock(
+    { type: 'pharmacy.about', version: 1, props: { description: 'We are a pharmacy.', mediaStyle: 'framed', flip: false } },
+    ctxTwoPhotos,
+  );
+  assert.match(framed, /rx-split-media--framed/);
+  assert.ok(!framed.includes('rx-split--flip'), 'flip:false must not carry the flip class');
+
+  const defaultFlip = blocks.renderBlock(
+    { type: 'pharmacy.about', version: 1, props: { description: 'We are a pharmacy.' } },
+    ctxTwoPhotos,
+  );
+  assert.match(defaultFlip, /rx-split--flip/, 'an unset flip must keep the existing default behaviour');
+  assert.ok(!defaultFlip.includes('rx-split-media--framed'));
+});
+
+test('about\'s "tint" style carries its own class; the default carries none', () => {
+  const tinted = blocks.renderBlock(
+    { type: 'pharmacy.about', version: 1, props: { description: 'We are a pharmacy.', style: 'tint' } },
+    CTX,
+  );
+  assert.match(tinted, /class="rx-block rx-pharmacy-about rx-pharmacy-about--tint"/);
+
+  const plain = blocks.renderBlock(
+    { type: 'pharmacy.about', version: 1, props: { description: 'We are a pharmacy.' } },
+    CTX,
+  );
+  assert.ok(!plain.includes('rx-pharmacy-about--tint'));
+});
+
+test('a services subheading or eyebrow centres the section head; heading alone does not', () => {
+  const plain = blocks.renderBlock(
+    { type: 'pharmacy.services', version: 1, props: { services: [{ name: 'X' }], heading: 'What we offer' } },
+    CTX,
+  );
+  assert.ok(!plain.includes('rx-head--center'));
+
+  const withSub = blocks.renderBlock(
+    { type: 'pharmacy.services', version: 1, props: { services: [{ name: 'X' }], heading: 'What we offer', subheading: 'A short line.' } },
+    CTX,
+  );
+  assert.match(withSub, /rx-head--center/);
+});
+
 test('the pharmacist CTA\'s "statement" variant carries its own modifier class', () => {
   const html = blocks.renderBlock(
     { type: 'pharmacy.pharmacistCta', version: 1, props: { heading: 'Ask us', variant: 'statement' } },
@@ -497,6 +660,159 @@ test('the plain pharmacist CTA (the default) carries no statement class', () => 
     CTX,
   );
   assert.ok(!html.includes('rx-pharmacistCta--statement'));
+});
+
+test('pharmacist CTA\'s "phone" ctaType calls the pharmacy\'s own real number, never buttonLabel', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.pharmacistCta', version: 1, props: { heading: 'Transfer today', ctaType: 'phone', buttonLabel: 'Ignored' } },
+    CTX,
+  );
+  assert.match(html, /href="tel:08012345678"/);
+  assert.match(html, /Call 08012345678/);
+  assert.ok(!html.includes('Ignored'), 'buttonLabel must not leak into the phone button\'s text');
+  assert.ok(!html.includes('rx-btn-wa') || !html.includes('wa.me'), 'phone mode must not also build a WhatsApp link');
+});
+
+test('pharmacist CTA\'s "phone" ctaType renders no button — never a dead one — with no phone on the profile', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.pharmacistCta', version: 1, props: { ctaType: 'phone' } },
+    { ...CTX, profile: { ...CTX.profile, phone: null } },
+  );
+  assert.ok(!html.includes('rx-btn'), 'no phone means no button, though the heading/description defaults may still show');
+
+  const bothMissing = blocks.renderBlock(
+    { type: 'pharmacy.pharmacistCta', version: 1, props: { heading: '', description: '', ctaType: 'phone' } },
+    { ...CTX, profile: { ...CTX.profile, phone: null } },
+  );
+  assert.equal(bothMissing, '', 'with no copy AND no working button, the section renders nothing at all');
+});
+
+test('pharmacist CTA\'s default ctaType (whatsapp) is unchanged by adding the phone option', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.pharmacistCta', version: 1, props: { heading: 'Ask us', buttonLabel: 'Ask a pharmacist', message: 'Hi' } },
+    CTX,
+  );
+  assert.match(html, /wa\.me/);
+  assert.match(html, /Ask a pharmacist/);
+});
+
+test('pharmacist CTA\'s "banner" layout is a horizontal strip, never narrowed like the stacked default', () => {
+  const banner = blocks.renderBlock(
+    { type: 'pharmacy.pharmacistCta', version: 1, props: { heading: 'Transfer today', ctaType: 'phone', layout: 'banner' } },
+    CTX,
+  );
+  assert.match(banner, /class="rx-block rx-pharmacy-pharmacistCta rx-pharmacistCta--banner"/);
+  assert.match(banner, /rx-pharmacistCta-banner-inner/);
+  assert.ok(!banner.includes('rx-narrow'));
+
+  const stacked = blocks.renderBlock(
+    { type: 'pharmacy.pharmacistCta', version: 1, props: { heading: 'Transfer today', ctaType: 'phone' } },
+    CTX,
+  );
+  assert.match(stacked, /rx-narrow/);
+  assert.ok(!stacked.includes('rx-pharmacistCta--banner'));
+});
+
+test('FAQ renders nothing without at least one real question and answer', () => {
+  const empty = blocks.renderBlock({ type: 'pharmacy.faq', version: 1, props: {} }, CTX);
+  assert.equal(empty, '');
+
+  const partial = blocks.renderBlock(
+    { type: 'pharmacy.faq', version: 1, props: { faqs: [{ question: 'Do you deliver?' }] } },
+    CTX,
+  );
+  assert.equal(partial, '', 'a question with no answer must not render either');
+});
+
+test('FAQ renders each real question as a native details/summary disclosure, needing no JavaScript', () => {
+  const html = blocks.renderBlock(
+    {
+      type: 'pharmacy.faq',
+      version: 1,
+      props: {
+        eyebrow: 'Common Questions',
+        faqs: [
+          { question: 'Do you offer delivery?', answer: 'Yes, within Ikeja.' },
+          { question: 'Do you take insurance?', answer: 'Ask us on WhatsApp.' },
+        ],
+      },
+    },
+    CTX,
+  );
+  assert.equal((html.match(/<details class="rx-faq-item">/g) || []).length, 2);
+  assert.match(html, /<summary>Do you offer delivery\?/);
+  assert.match(html, /Yes, within Ikeja\./);
+  assert.match(html, /<span class="rx-eyebrow rx-eyebrow--outline">Common Questions<\/span>/);
+});
+
+test('location\'s "cards" layout builds the map from the pharmacy\'s own address fields, never from mapsUrl', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.location', version: 1, props: { layout: 'cards', phoneCtaLabel: 'Call Us Now' } },
+    CTX,
+  );
+  assert.match(html, /class="rx-visit-map"><iframe src="[^"]*maps\.google\.com\/maps\?q=12%20Allen%20Avenue/);
+  // CTX's own mapsUrl is a plain https://maps.google.com/?q=ikeja link, not
+  // an embeddable one — the query string proves the embed used the address
+  // fields, not that URL passed through unchanged.
+  assert.ok(!html.includes('output=embed">https://maps.google.com/?q=ikeja'));
+});
+
+test('location\'s "cards" layout colours each card by what it IS, not by its position', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.location', version: 1, props: { layout: 'cards', phoneCtaLabel: 'Call Us Now' } },
+    CTX,
+  );
+  assert.match(html, /rx-visit-card rx-visit-card--address/);
+  assert.match(html, /rx-visit-card rx-visit-card--phone/);
+  assert.match(html, /rx-visit-card rx-visit-card--hours/);
+  assert.match(html, /Call Us Now/);
+});
+
+test('location\'s "cards" layout groups consecutive identical days into one range, never merging a gap', () => {
+  const html = blocks.renderBlock(
+    { type: 'pharmacy.location', version: 1, props: { layout: 'cards' } },
+    {
+      ...CTX,
+      profile: {
+        ...CTX.profile,
+        opening_hours: [
+          { day: 'mon', open: '10:00', close: '18:00', closed: false },
+          { day: 'tue', open: '10:00', close: '18:00', closed: false },
+          { day: 'wed', open: '10:00', close: '18:00', closed: false },
+          { day: 'thu', open: '10:00', close: '18:00', closed: false },
+          { day: 'fri', open: '10:00', close: '18:00', closed: false },
+          { day: 'sat', closed: true },
+          { day: 'sun', closed: true },
+        ],
+      },
+    },
+  );
+  assert.match(html, /Mon – Fri/);
+  assert.match(html, /10:00 am – 6:00 pm/);
+  assert.match(html, /Sat – Sun/);
+  assert.match(html, /rx-visit-hours-closed">Closed/);
+});
+
+test('location\'s "cards" layout omits the phone card with no phone, and the whole section with nothing at all', () => {
+  const noPhone = blocks.renderBlock(
+    { type: 'pharmacy.location', version: 1, props: { layout: 'cards' } },
+    { ...CTX, profile: { ...CTX.profile, phone: null } },
+  );
+  assert.ok(!noPhone.includes('rx-visit-card--phone'));
+  assert.match(noPhone, /rx-visit-card--address/, 'address and hours must still render');
+
+  const nothing = blocks.renderBlock(
+    { type: 'pharmacy.location', version: 1, props: { layout: 'cards' } },
+    { ...CTX, profile: { address_line: null, city: null, state: null, phone: null, opening_hours: [] } },
+  );
+  assert.equal(nothing, '');
+});
+
+test('an unset location layout renders exactly as "split" did before "cards" existed', () => {
+  const unset = blocks.renderBlock({ type: 'pharmacy.location', version: 1, props: {} }, CTX);
+  const explicit = blocks.renderBlock({ type: 'pharmacy.location', version: 1, props: { layout: 'split' } }, CTX);
+  assert.equal(unset, explicit);
+  assert.ok(!unset.includes('rx-visit-grid'));
 });
 
 test('Modern, Premium and Metro actually request the layouts that differentiate them', () => {

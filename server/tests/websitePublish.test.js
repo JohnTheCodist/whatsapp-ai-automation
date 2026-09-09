@@ -173,6 +173,19 @@ test('the published CSP forbids script entirely', () => {
   assert.match(csp, /form-action 'none'/);
 });
 
+test('frame-src exists ONLY for the location map embed, scoped to exactly the two hosts it needs', () => {
+  // GOLDEN-005c's own guard is a catch-all host router; this is the other
+  // direction — once a frame IS allowed at all, it must not quietly become
+  // allowed for more than the one thing it was added for. Named exactly,
+  // not with a wildcard, so a future "just allow *.google.com" edit fails
+  // this test rather than widen it silently.
+  const csp = publicSite.publicCsp();
+  const match = /frame-src ([^;]+)/.exec(csp);
+  assert.ok(match, 'frame-src must be present for the map embed to render at all');
+  const hosts = match[1].trim().split(/\s+/);
+  assert.deepEqual(hosts.sort(), ['https://maps.google.com', 'https://www.google.com'].sort());
+});
+
 // =====================================================================
 // DATABASE
 // =====================================================================

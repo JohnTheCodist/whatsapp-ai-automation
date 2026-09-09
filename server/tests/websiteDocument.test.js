@@ -467,3 +467,79 @@ test('an unmentioned page renders with no trace of pageCopy at all', () => {
   const contact = pages.find((p) => p.path === '/contact/').html;
   assert.match(contact, /<h1>Contact Ikeja Family Pharmacy<\/h1>/);
 });
+
+// =====================================================================
+// GENERATED PAGES ON THE METRO TEMPLATE
+// =====================================================================
+
+// A class NAME is also a CSS SELECTOR in the shared, always-inlined
+// stylesheet, so a bare `.includes('rx-page-head--metro')` is true on every
+// page regardless of whether that page actually uses the class — exactly
+// the "<img>" hazard this file's stylesheet already carries a warning about,
+// one level up. These check the actual rendered element instead.
+const METRO_PAGE_HEAD = /<section class="rx-block rx-page-head rx-page-head--metro">/;
+const NAME_ACCENT_SPAN = /<span class="rx-name-accent">/;
+
+test('a non-metro template\'s generated pages are completely unaffected by templateId existing at all', () => {
+  const withoutId = renderWithPageCopy({});
+  const withUnrelatedId = renderWithPageCopy({}, { templateId: 'professional' });
+  const about1 = withoutId.find((p) => p.path === '/about/').html;
+  const about2 = withUnrelatedId.find((p) => p.path === '/about/').html;
+  assert.equal(about1, about2);
+  assert.doesNotMatch(about1, METRO_PAGE_HEAD);
+  assert.ok(!about1.includes('>Your Community Pharmacy<'), 'the metro badge text must not appear off-template');
+});
+
+test('metro\'s generated pages get the coloured band, and the pharmacy\'s own name is highlighted where the heading ends with it', () => {
+  const pages = renderWithPageCopy({}, { templateId: 'metro' });
+  const about = pages.find((p) => p.path === '/about/').html;
+  assert.match(about, METRO_PAGE_HEAD);
+  assert.match(about, /<span class="rx-eyebrow rx-eyebrow--outline">Your Community Pharmacy<\/span>/);
+  assert.match(about, /<h1>About <span class="rx-name-accent">Ikeja Family Pharmacy<\/span><\/h1>/);
+
+  const contact = pages.find((p) => p.path === '/contact/').html;
+  assert.match(contact, /<h1>Contact <span class="rx-name-accent">Ikeja Family Pharmacy<\/span><\/h1>/);
+});
+
+test('metro\'s name highlight is a suffix match, not a guess — a heading that does not end with the name is left exactly as it was', () => {
+  const pages = renderWithPageCopy({}, { templateId: 'metro' });
+  // "Find us in Ikeja, Lagos" does not end with the pharmacy's name.
+  const location = pages.find((p) => p.path === '/location/').html;
+  assert.doesNotMatch(location, NAME_ACCENT_SPAN);
+  assert.match(location, /<h1>Find us in Ikeja, Lagos<\/h1>/);
+
+  // An owner override that does not end with the name must not be forced
+  // into one, or split incorrectly.
+  const overridden = renderWithPageCopy({ '/about/': { heading: 'Meet Our Team' } }, { templateId: 'metro' });
+  const about = overridden.find((p) => p.path === '/about/').html;
+  assert.doesNotMatch(about, NAME_ACCENT_SPAN);
+  assert.match(about, /<h1>Meet Our Team<\/h1>/);
+});
+
+test('metro\'s About page gets a real subheading with no pageCopy override; no other template\'s About page gains one', () => {
+  const metro = renderWithPageCopy({}, { templateId: 'metro' });
+  const metroAbout = metro.find((p) => p.path === '/about/').html;
+  assert.match(metroAbout, /More than just a pharmacy — we are here for the Ikeja, Lagos community, built on trust and care\./);
+
+  const professional = renderWithPageCopy({});
+  const proAbout = professional.find((p) => p.path === '/about/').html;
+  assert.ok(
+    !proAbout.includes('<p class="rx-lede">'),
+    'the plain About page head must still carry no lede at all, exactly as before this existed',
+  );
+});
+
+test('metro\'s About subheading drops the area clause entirely when none is on file, rather than guessing one', () => {
+  const pages = renderAllPages({
+    site: templates.cloneSeed('metro'),
+    pharmacy: PHARMACY,
+    profile: { ...PROFILE, city: null, state: null },
+    theme: templates.getTemplate('metro').theme,
+    assets: new Map(),
+    year: 2026,
+    templateId: 'metro',
+  }).rendered;
+  const about = pages.find((p) => p.path === '/about/').html;
+  assert.match(about, /More than just a pharmacy — built on trust and care\./);
+  assert.ok(!about.includes('community'));
+});

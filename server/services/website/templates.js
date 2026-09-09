@@ -203,7 +203,11 @@ const TEMPLATES = [
     name: 'Metro',
     description: 'Bright and energetic. For a busy pharmacy that serves its whole neighbourhood.',
     preview: '/website-templates/metro.webp',
-    theme: { palette: 'blue', font: 'bold', corners: 'round' },
+    // 'soft', not 'round': the reference's cards and buttons are gently
+    // rounded rectangles, not pills. 'round' looked right on Family's small
+    // buttons but turned this template's larger hero photo into a stadium
+    // shape — checked directly, not assumed.
+    theme: { palette: 'blue', font: 'bold', corners: 'soft' },
     seed: {
       // Services leads, straight after the hero — a busy neighbourhood
       // pharmacy's website earning its keep by showing the full range of
@@ -213,15 +217,57 @@ const TEMPLATES = [
       blocks: [
         b('pharmacy.header', 1),
         b('pharmacy.hero', 1, {
-          heading: 'Fast care, right in your neighbourhood',
+          // A LEAD-IN PHRASE, not a complete headline — the showcase hero
+          // layout always appends the pharmacy's own real name after this,
+          // highlighted (see actions.js's hero render()), so this reads as
+          // "Fast, Friendly Care at Ikeja Family Pharmacy" once rendered.
+          heading: 'Fast, Friendly Care at',
           subheading: 'Prescriptions, vaccinations and friendly advice — all in one stop, with no long wait.',
           primaryCtaLabel: 'Chat With Us Now',
           layout: 'showcase',
         }),
-        b('pharmacy.services', 1, { heading: 'Everything Your Health Needs' }),
+        b('pharmacy.services', 1, {
+          eyebrow: 'Our Services',
+          heading: 'Comprehensive',
+          headingAccent: 'Care for You',
+          subheading: 'We offer a wide range of pharmaceutical services tailored to meet the needs of everyone who walks through our door.',
+          layout: 'tiles',
+          style: 'band',
+        }),
+        b('pharmacy.about', 1, {
+          heading: 'About',
+          // Only ever appears once the pharmacy has its own real maps link
+          // set — see the block's own render() — so this generic, factual
+          // label is safe to seed even though `highlights` deliberately is
+          // not: a working directions button is never a false claim.
+          buttonLabel: 'Get Directions',
+          mediaStyle: 'framed',
+          flip: false,
+          style: 'tint',
+        }),
         b('pharmacy.reviews', 1, { heading: 'What Our Neighbours Say' }),
-        b('pharmacy.openingHours', 1, { heading: 'Hours' }),
-        b('pharmacy.location', 1, { heading: 'Find Us' }),
+        b('pharmacy.pharmacistCta', 1, {
+          heading: 'Ready to Transfer Your Prescription?',
+          description: 'It\'s easy! Give us a call and we\'ll handle the rest.',
+          ctaType: 'phone',
+          layout: 'banner',
+        }),
+        b('pharmacy.faq', 1, {
+          eyebrow: 'Common Questions',
+          heading: 'Frequently Asked Questions',
+          subheading: 'Common questions about our services and policies.',
+          // NO DEFAULT QUESTIONS — see the block's own defaults/comment for
+          // why. This section renders nothing at all until the owner writes
+          // their own real answers, the same as Reviews above.
+        }),
+        // Hours live in the location cards below, not as a separate
+        // section — the reference this template is built from shows them
+        // once, beside the address and phone, not twice on the same page.
+        b('pharmacy.location', 1, {
+          heading: 'Visit Us',
+          phoneCtaLabel: 'Call Us Now',
+          layout: 'cards',
+        }),
         b('pharmacy.whatsappCta', 1, {
           heading: 'Need something today?',
           description: 'Message us on WhatsApp and we will tell you what we have before you travel.',

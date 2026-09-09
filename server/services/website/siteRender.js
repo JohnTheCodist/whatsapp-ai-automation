@@ -44,6 +44,12 @@ function renderAllPages({
   // its URL, its structured data) is still entirely derived from the
   // profile, exactly as before this existed.
   pageCopy = {},
+  // Which template the OWNER'S HOMEPAGE is built from — read by pageContent.js
+  // so a generated page can (optionally) pick up that template's visual
+  // language instead of the plain default every template got before Metro.
+  // Never used to change what a page IS (its URL, its facts) — only how the
+  // same derived content is dressed, exactly like theme already does.
+  templateId = null,
 } = {}) {
   const pages = buildPages({ pharmacy, profile, health, healthLibrary });
 
@@ -55,6 +61,7 @@ function renderAllPages({
     year: year ?? null,
     trackingBase,
     pageCopy: pageCopy || {},
+    templateId,
     // The site map, so the header block can link to the pages that exist
     // rather than to nothing. Set here because this is the only place that
     // knows the whole site.

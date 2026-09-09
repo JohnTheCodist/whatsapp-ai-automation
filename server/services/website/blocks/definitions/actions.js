@@ -115,9 +115,23 @@ const hero = {
         : '',
     ].filter(Boolean).join('');
 
+    const layout = ['centered', 'framed', 'showcase'].includes(props.layout) ? props.layout : 'split';
+
+    // SHOWCASE'S heading is the owner's lead-in phrase with the pharmacy's
+    // REAL, BOUND name always appended and highlighted after it — not a
+    // string match against free text, which would only fire for the rare
+    // owner whose own custom heading happens to already end with their own
+    // name. Reading ctx.pharmacy.name directly means this is correct for
+    // every pharmacy on this template from the moment it is created,
+    // exactly like every other bound value in this file — never a guess,
+    // never something the heading prop's own text has to happen to contain.
+    const heading = layout === 'showcase' && props.heading && ctx?.pharmacy?.name
+      ? `${esc(props.heading)} <span class="rx-hero-highlight">${esc(ctx.pharmacy.name)}</span>`
+      : (props.heading ? esc(props.heading) : '');
+
     const copy = [
       eyebrow,
-      props.heading ? `<h1>${esc(props.heading)}</h1>` : '',
+      heading ? `<h1>${heading}</h1>` : '',
       props.subheading ? `<p class="rx-lede">${esc(props.subheading)}</p>` : '',
       buttons ? `<div class="rx-cta-row">${buttons}</div>` : '',
     ].filter(Boolean).join('');
@@ -132,8 +146,6 @@ const hero = {
     const dims = photo && photo.width && photo.height
       ? ` width="${photo.width}" height="${photo.height}"`
       : '';
-
-    const layout = ['centered', 'framed', 'showcase'].includes(props.layout) ? props.layout : 'split';
 
     // CENTRED: a full-bleed, inverted colour band — WHETHER OR NOT a photo
     // exists. A photo becomes a dimmed cover background behind the text
@@ -185,10 +197,17 @@ const hero = {
     if (layout === 'showcase' && media) {
       const hours = Array.isArray(ctx?.profile?.opening_hours) ? ctx.profile.opening_hours : [];
       const openDays = hours.filter((h) => h && !h.closed).length;
+      // Two lines — a small label over a bold value — rather than "Open
+      // weekdays": this pharmacy's open days might not BE weekdays, and a day
+      // COUNT is the one honest thing a static page can say about hours that
+      // stays true no matter which days they actually are or when the page
+      // happens to be viewed.
       const badge = openDays > 0
         ? `<div class="rx-hero-badge">`
-          + `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 3"></path></svg>`
-          + `Open ${openDays} day${openDays === 1 ? '' : 's'} a week</div>`
+          + `<span class="rx-hero-badge-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 3"></path></svg></span>`
+          + `<span class="rx-hero-badge-text"><span class="rx-hero-badge-label">Hours</span>`
+          + `<span class="rx-hero-badge-value">${openDays} Day${openDays === 1 ? '' : 's'} a Week</span></span>`
+          + `</div>`
         : '';
       const showcaseMedia = `<div class="rx-hero-media">`
         + `<img src="${esc(photo.url)}" alt="${esc(alt)}"${dims} loading="eager" fetchpriority="high" decoding="async" />`
@@ -276,6 +295,16 @@ const pharmacistCta = {
     // narrower, centred measure — for a template whose voice is "expert and
     // established" rather than "act now". See render() below.
     variant: { type: 'enum', values: ['plain', 'statement'] },
+    // 'banner' is a full-width horizontal strip, text on one side and the
+    // button on the other — a different SHAPE from 'stacked', independent of
+    // variant/ctaType. See render() and the matching CSS.
+    layout: { type: 'enum', values: ['stacked', 'banner'] },
+    // 'phone' swaps the WhatsApp button for a real tel: link — see render().
+    // buttonLabel is ignored in that mode: the button always reads "Call
+    // {the pharmacy's own number}", the same wording the hero's own phone
+    // fallback already uses, so the number shown is never stale or
+    // configurable into saying something the link itself does not do.
+    ctaType: { type: 'enum', values: ['whatsapp', 'phone'] },
   },
 
   defaults: {
@@ -284,6 +313,8 @@ const pharmacistCta = {
     buttonLabel: 'Ask a pharmacist',
     message: 'Hello, please may I speak to a pharmacist?',
     variant: 'plain',
+    layout: 'stacked',
+    ctaType: 'whatsapp',
   },
 
   responsive: { layout: 'centered' },
@@ -293,17 +324,37 @@ const pharmacistCta = {
   a11y: 'Uses <h2> so it sits under the hero\'s <h1> in the document outline rather than competing with it.',
 
   render(props, ctx) {
-    const wa = waHref(props.whatsappNumber, props.message, ctx);
-    const inner = [
+    let cta = '';
+    if (props.ctaType === 'phone') {
+      const tel = telHref(ctx?.profile?.phone, ctx);
+      cta = (tel && ctx?.profile?.phone)
+        ? `<a class="rx-btn rx-btn-solid" href="${esc(tel)}">Call ${esc(ctx.profile.phone)}</a>`
+        : '';
+    } else {
+      const wa = waHref(props.whatsappNumber, props.message, ctx);
+      cta = (wa && props.buttonLabel)
+        ? `<a class="rx-btn rx-btn-wa" href="${esc(wa)}" rel="noopener noreferrer" target="_blank">${esc(props.buttonLabel)}</a>`
+        : '';
+    }
+
+    const copy = [
       props.heading ? `<h2>${esc(props.heading)}</h2>` : '',
       props.description ? `<p>${esc(props.description)}</p>` : '',
-      wa && props.buttonLabel
-        ? `<a class="rx-btn rx-btn-wa" href="${esc(wa)}" rel="noopener noreferrer" target="_blank">${esc(props.buttonLabel)}</a>`
-        : '',
     ].filter(Boolean).join('');
-    if (!inner) return '';
-    const className = props.variant === 'statement' ? 'rx-pharmacistCta--statement' : undefined;
-    return section(this.id, `<div class="rx-narrow">${inner}</div>`, { className });
+    if (!copy && !cta) return '';
+
+    const statement = props.variant === 'statement' ? ' rx-pharmacistCta--statement' : '';
+
+    // BANNER: a full-width horizontal strip — text on one side, the button
+    // on the other — rather than the stacked, centred column every other
+    // variant uses. Never narrowed to .rx-narrow's 44rem: the strip is
+    // meant to use the whole shell width.
+    if (props.layout === 'banner') {
+      const className = `rx-pharmacistCta--banner${statement}`;
+      return section(this.id, `<div class="rx-pharmacistCta-banner-inner"><div>${copy}</div>${cta}</div>`, { className });
+    }
+
+    return section(this.id, `<div class="rx-narrow">${copy}${cta}</div>`, { className: statement.trim() || undefined });
   },
 };
 

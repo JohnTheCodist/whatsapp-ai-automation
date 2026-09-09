@@ -108,6 +108,21 @@ function stylesheet(storedTheme) {
   /* Shadows are barely there on purpose. A pharmacy website that leans on
      drop shadows to separate its sections is a website with no other idea. */
   --rx-shadow:0 1px 2px rgba(15,23,42,.04),0 8px 24px -12px rgba(15,23,42,.14);
+
+  /* A FIXED decorative accent, not a themed one. The six curated palettes
+     are each a single hue with everything else derived from it — the
+     locked contract theme.js documents ("no free-form CSS, no colour
+     picker"). This is the one place a second colour appears at all, and it
+     is deliberately NOT part of that contract: it is baked into the
+     showcase hero's own decorative flourishes (a highlight behind a word, a
+     shape behind a photo, a badge accent), never offered as something an
+     owner picks, and never used for anything that carries meaning — a
+     button's actual colour is still var(--rx-primary) throughout. Present
+     in every site's stylesheet regardless of template, same as every other
+     layout-variant rule in this file — the stylesheet is shared and not
+     tree-shaken per template, so an unused custom property here costs
+     nothing on a site that never renders showcase. */
+  --rx-accent:#f5c518;
 }
 
 *,*::before,*::after{box-sizing:border-box}
@@ -166,6 +181,18 @@ p:last-child{margin-bottom:0}
   color:var(--rx-primary);
   margin:0 0 var(--rx-xs);
 }
+/* A bordered pill rather than plain small caps — FAQ's own badge (Metro).
+   Unlike the hero's showcase pill or services' band pill, this one carries
+   no ancestor-scoped colour override: it is applied as its own class
+   wherever a block wants this exact look, rather than being reskinned by
+   whatever section happens to contain it. */
+.rx-eyebrow--outline{
+  display:inline-flex;
+  margin-bottom:var(--rx-md);
+  padding:.35rem 1.1rem;
+  border:1.5px solid var(--rx-primary);
+  border-radius:999px;
+}
 
 /* ---- the page spine ----
    Every section shares one gutter and one max width, so the page reads as one
@@ -194,6 +221,30 @@ p:last-child{margin-bottom:0}
 /* The page head on a generated page: eyebrow, h1, lede — same left edge. */
 .rx-page-head .rx-lede{max-width:44rem}
 .rx-page-head h1{margin-bottom:var(--rx-xs)}
+
+/* ---- generated-page head: metro ----
+   Every generated page (About, Services, Location, Contact…) opens with this
+   coloured, centred band instead of the plain default above, for a pharmacy
+   on the Metro template — see pageContent.js's open(). The dot texture and
+   colour band match the homepage's own showcase/band sections; duplicated
+   rather than shared as a class because this section lives in a different
+   file (pageContent.js, not the block registry) with its own render path. */
+.rx-page-head--metro{
+  background:var(--rx-primary);
+  background-image:radial-gradient(circle, color-mix(in oklab, var(--rx-on-primary) 30%, transparent) 1.5px, transparent 1.5px);
+  background-size:20px 20px;
+  color:var(--rx-on-primary);
+  text-align:center;
+}
+.rx-page-head--metro>div{max-width:44rem;margin-inline:auto}
+.rx-page-head--metro .rx-eyebrow--outline{border-color:var(--rx-accent);color:var(--rx-accent)}
+.rx-page-head--metro h1,
+.rx-page-head--metro .rx-lede{color:var(--rx-on-primary);max-width:none;margin-inline:auto}
+.rx-page-head--metro .rx-lede{opacity:.9}
+/* The pharmacy's own name, coloured within a heading that happens to end
+   with it — see pageContent.js's highlightOwnName() for when this applies
+   and when it plainly does not. */
+.rx-name-accent{color:var(--rx-accent)}
 .rx-prose p{color:var(--rx-muted);font-size:var(--rx-size-lg)}
 .rx-lede{font-size:var(--rx-size-lg);color:var(--rx-muted);max-width:var(--rx-measure)}
 
@@ -216,6 +267,58 @@ p:last-child{margin-bottom:0}
   aspect-ratio:4/5;
   object-fit:cover;
   background:var(--rx-tint);
+}
+/* FRAMED (Metro's About): the photo inset in a white card of its own rather
+   than bleeding to the split's edge — the same idea as the hero's "framed"
+   layout, one section down. */
+.rx-split-media--framed{
+  padding:var(--rx-sm);
+  background:var(--rx-surface);
+  border:1px solid var(--rx-line);
+  border-radius:var(--rx-radius);
+  box-shadow:var(--rx-shadow);
+}
+.rx-split-media--framed img{border-radius:min(calc(var(--rx-radius) - 4px), 16px);background:var(--rx-tint)}
+
+/* ---- about: tint style + trust highlights (Metro) ----
+   A soft neutral wash behind the whole section, for rhythm against the
+   hero's tint and the services band above and below it — derived from the
+   fixed accent at low strength rather than a THIRD unrelated colour, so
+   this template still reads as built from exactly two colours (primary and
+   accent), just at different strengths. */
+.rx-pharmacy-about--tint{background:color-mix(in oklab, var(--rx-accent) 10%, var(--rx-surface))}
+.rx-pharmacy-about--tint h2{position:relative;padding-bottom:var(--rx-sm)}
+.rx-pharmacy-about--tint h2::after{
+  content:"";
+  position:absolute;
+  left:0;
+  bottom:0;
+  width:3.5rem;
+  height:3px;
+  border-radius:2px;
+  background:var(--rx-primary);
+}
+.rx-about-highlights{list-style:none;padding:0;margin:var(--rx-md) 0;display:grid;gap:var(--rx-xs)}
+.rx-about-highlights li{
+  display:flex;
+  align-items:center;
+  gap:var(--rx-sm);
+  padding:.85rem 1rem;
+  background:var(--rx-surface);
+  border:1px solid var(--rx-line);
+  border-radius:var(--rx-radius);
+  font-weight:600;
+}
+.rx-check{
+  display:inline-flex;
+  flex:0 0 auto;
+  align-items:center;
+  justify-content:center;
+  width:1.75rem;
+  height:1.75rem;
+  border-radius:50%;
+  background:var(--rx-primary);
+  color:var(--rx-on-primary);
 }
 
 /* ---- buttons ----
@@ -436,53 +539,144 @@ p:last-child{margin-bottom:0}
 .rx-hero--framed .rx-hero-media img{border-radius:min(calc(var(--rx-radius) - 4px), 16px);box-shadow:none}
 
 /* ---- hero layout: showcase (Metro) ----
-   A livelier split: a rotated colour panel behind the photo, and a small
-   badge inset over its corner stating the pharmacy's own opening hours (see
-   the render()'s comment on why that is a day COUNT and not an "open now"
-   claim). The eyebrow becomes a bordered pill rather than plain small caps —
-   the one purely decorative touch here, and safe precisely because it carries
-   no claim of its own to get wrong. */
+   Built from a reference screenshot of a bright, badge-heavy pharmacy site
+   the user asked to be matched closely — the TONE, SHAPES and the two-colour
+   treatment were reproduced; the site's own name, address and copy were not.
+
+   The pill eyebrow, the highlighted word in the headline and the two
+   rotated panels behind the photo are all purely decorative — none of them
+   states a fact, which is what allows the one fixed, non-themed colour
+   (--rx-accent) to appear here at all. The badge is the one part that DOES
+   state something, and it is built to stay true: see the render()'s comment
+   on why it is a day COUNT rather than an "open now" claim. */
 .rx-hero--showcase .rx-eyebrow{
   display:inline-flex;
+  align-items:center;
+  gap:.5rem;
   padding:.35rem 1rem;
   margin-bottom:var(--rx-md);
-  border:1px solid var(--rx-line-strong);
+  background:var(--rx-surface);
+  border:1.5px solid var(--rx-accent);
   border-radius:999px;
   color:var(--rx-primary);
 }
+.rx-hero--showcase .rx-eyebrow::before{
+  content:"";
+  flex:0 0 auto;
+  width:.5rem;
+  height:.5rem;
+  border-radius:50%;
+  background:var(--rx-accent);
+}
+/* The rotated highlight behind the pharmacy's own name — see render()'s
+   comment on why the name is always appended here rather than string-matched
+   out of the heading. min(...) keeps it a rounded box even under the "round"
+   corner theme, which this template also uses for buttons and cards — a
+   999px radius here would turn the whole word into a pill. */
+.rx-hero-highlight{
+  display:inline-block;
+  padding:.05em .3em;
+  background:var(--rx-accent);
+  color:var(--rx-ink);
+  border-radius:min(var(--rx-radius), 8px);
+  transform:rotate(-1.2deg);
+}
 .rx-hero--showcase .rx-hero-media{position:relative}
+/* Two panels, not one — opposite rotation and opposite colour, the way the
+   reference fans two photographs out from behind the real one. Both sit
+   BEHIND the image: the image gets an explicit z-index rather than relying
+   on DOM order, because ::after is generated after the photo element and would
+   otherwise paint on top of it and hide the photo entirely. */
 .rx-hero--showcase .rx-hero-media::before{
   content:"";
   position:absolute;
   inset:-.75rem;
-  background:var(--rx-primary);
-  opacity:.14;
+  background:var(--rx-accent);
+  opacity:.55;
   border-radius:var(--rx-radius);
-  transform:rotate(-3deg);
+  transform:rotate(-4deg);
 }
-.rx-hero--showcase .rx-hero-media img{position:relative}
+.rx-hero--showcase .rx-hero-media::after{
+  content:"";
+  position:absolute;
+  inset:-.5rem;
+  background:var(--rx-primary);
+  opacity:.18;
+  border-radius:var(--rx-radius);
+  transform:rotate(3deg);
+}
+.rx-hero--showcase .rx-hero-media img{position:relative;z-index:1}
+/* The badge hangs PARTLY below the photo's own bottom edge, like the
+   reference — safe because nothing between here and the page root clips
+   overflow on this axis (body only clips horizontally, for the unrelated
+   reason above). */
 .rx-hero-badge{
   position:absolute;
-  left:.75rem;
-  bottom:.75rem;
+  left:1.25rem;
+  bottom:-1rem;
+  z-index:2;
   display:inline-flex;
   align-items:center;
-  gap:.5rem;
-  padding:.55rem .9rem;
-  background:var(--rx-surface);
-  border:1px solid var(--rx-line);
-  border-radius:var(--rx-radius);
+  gap:.7rem;
+  padding:.65rem 1.1rem;
+  background:var(--rx-primary);
+  border-radius:min(var(--rx-radius), 14px);
   box-shadow:var(--rx-shadow);
-  font-family:var(--rx-display);
-  font-weight:600;
-  font-size:var(--rx-size-xs);
+}
+.rx-hero-badge-icon{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:1.9rem;
+  height:1.9rem;
+  border-radius:50%;
+  background:var(--rx-accent);
   color:var(--rx-ink);
 }
-.rx-hero-badge svg{flex:0 0 auto;color:var(--rx-primary)}
+.rx-hero-badge-text{display:flex;flex-direction:column;line-height:1.25}
+.rx-hero-badge-label{
+  color:var(--rx-on-primary);
+  opacity:.78;
+  font-size:var(--rx-size-xs);
+  text-transform:uppercase;
+  letter-spacing:.06em;
+}
+.rx-hero-badge-value{
+  color:var(--rx-on-primary);
+  font-family:var(--rx-display);
+  font-weight:700;
+  font-size:var(--rx-size-sm);
+  white-space:nowrap;
+}
+/* The two hero buttons read as one solid pair, gold and blue, rather than
+   this design's usual solid-plus-outline — .rx-btn-ghost is normally the
+   quiet outline button everywhere else on the page; here specifically it
+   becomes the second solid colour. */
+.rx-hero--showcase .rx-btn-wa{background:var(--rx-accent);color:var(--rx-ink);box-shadow:none}
+.rx-hero--showcase .rx-btn-ghost{background:var(--rx-primary);color:var(--rx-on-primary);box-shadow:none}
+.rx-hero--showcase .rx-btn-ghost:hover{background:var(--rx-primary);color:var(--rx-on-primary);box-shadow:none}
 
 /* ---- section heads ---- */
 .rx-head{margin-bottom:var(--rx-lg);max-width:var(--rx-measure)}
 .rx-head p{color:var(--rx-muted)}
+/* Centred rather than the usual left edge — used only when a section head
+   carries an eyebrow badge or a supporting line (see services' render()),
+   which is what makes a centred statement read as composed rather than as
+   text that forgot to align with everything else on the page. */
+.rx-head--center{margin-inline:auto;text-align:center;max-width:40rem}
+/* The trailing part of a heading, styled apart from the rest — see the
+   services block's headingAccent prop. Coloured and underlined rather than
+   boxed: the boxed treatment is the hero's highlighted NAME specifically,
+   and using it for an arbitrary editorial phrase here too would read as the
+   same kind of claim ("this is important data") when it is really just a
+   stylistic emphasis on plain marketing copy. */
+.rx-heading-accent{
+  color:var(--rx-accent);
+  text-decoration:underline;
+  text-decoration-thickness:.08em;
+  text-underline-offset:.12em;
+}
 
 /* ---- services (the home-page block) ----
    A card grid, with a picture. It used to be hairline rows with a small
@@ -546,6 +740,71 @@ p:last-child{margin-bottom:0}
 .rx-service-icon svg{width:44%;height:44%;max-width:88px;max-height:88px;transition:transform 420ms var(--rx-ease)}
 .rx-service-card:hover .rx-service-icon svg{transform:scale(1.08)}
 .rx-svg{display:block}
+
+/* ---- services: tiles layout (Metro) ----
+   A small icon CHIP over a title and description, unlike the big photo-led
+   visual .rx-service-card uses above — for a template whose hero has
+   already made the page's one big visual statement. The chip alternates
+   blue/gold down the grid purely as rhythm; the colour carries no meaning
+   about the service itself, same as the icon shape never has. */
+.rx-service-tiles{
+  display:grid;
+  gap:var(--rx-md);
+  padding:0;
+  margin:var(--rx-md) 0 0;
+  list-style:none;
+  grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));
+}
+.rx-service-tile{
+  position:relative;
+  overflow:hidden;
+  padding:var(--rx-md);
+  background:var(--rx-surface);
+  border-radius:var(--rx-radius);
+  color:var(--rx-ink);
+}
+/* A folded-corner detail, drawn with a clip-path rather than an image —
+   purely decorative, so it costs nothing to render and nothing to invent. */
+.rx-service-tile::after{
+  content:"";
+  position:absolute;
+  top:0;
+  right:0;
+  width:1.75rem;
+  height:1.75rem;
+  background:var(--rx-tint);
+  clip-path:polygon(100% 0, 0 0, 100% 100%);
+}
+.rx-service-tile-icon{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:3rem;
+  height:3rem;
+  margin-bottom:var(--rx-sm);
+  border-radius:min(var(--rx-radius), 14px);
+}
+.rx-service-tile-icon svg{width:55%;height:55%}
+.rx-tile-a .rx-service-tile-icon{background:var(--rx-primary);color:var(--rx-on-primary)}
+.rx-tile-b .rx-service-tile-icon{background:var(--rx-accent);color:var(--rx-ink)}
+.rx-service-tile h3{margin-bottom:.25rem}
+.rx-service-tile p{color:var(--rx-muted);margin:0;font-size:var(--rx-size-sm)}
+
+/* ---- services: band style (Metro) ----
+   A full-bleed colour band behind the whole section, tiles included — the
+   tiles (and .rx-service-card, for the same reason) keep their own white
+   background regardless, so they read as white cards laid over the band
+   without needing an override of their own. */
+.rx-services--band{background:var(--rx-primary);color:var(--rx-on-primary)}
+.rx-services--band .rx-head p{color:var(--rx-on-primary);opacity:.86}
+.rx-services--band .rx-eyebrow{
+  display:inline-flex;
+  background:var(--rx-accent);
+  color:var(--rx-ink);
+  border:none;
+  padding:.35rem 1.1rem;
+  border-radius:999px;
+}
 
 /* The old marker, kept because a site published before the icon set exists
    still has blocks that emit it. */
@@ -647,6 +906,31 @@ p:last-child{margin-bottom:0}
 .rx-review figcaption{color:var(--rx-muted);font-weight:600;margin-top:var(--rx-xs);font-size:var(--rx-size-sm)}
 .rx-rating{margin:0 0 var(--rx-xs);color:var(--rx-primary);letter-spacing:.1em}
 
+/* ---- FAQ (Metro) ----
+   Native <details>/<summary> — expand and collapse with no JavaScript, on a
+   page whose CSP is script-src 'none'. The default disclosure triangle is
+   hidden and a drawn chevron takes its place, rotated open with a plain CSS
+   transform rather than a second icon. */
+.rx-pharmacy-faq{background:var(--rx-tint)}
+.rx-faq-list{display:grid;gap:var(--rx-sm);margin-top:var(--rx-lg);max-width:44rem;margin-inline:auto}
+.rx-faq-item{background:var(--rx-surface);border:1px solid var(--rx-line);border-radius:var(--rx-radius);overflow:hidden}
+.rx-faq-item summary{
+  list-style:none;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:var(--rx-md);
+  min-height:44px;
+  padding:1rem 1.25rem;
+  cursor:pointer;
+  font-family:var(--rx-display);
+  font-weight:600;
+}
+.rx-faq-item summary::-webkit-details-marker{display:none}
+.rx-faq-chevron{flex:0 0 auto;color:var(--rx-muted);transition:transform var(--rx-dur) var(--rx-ease)}
+.rx-faq-item[open] .rx-faq-chevron{transform:rotate(180deg)}
+.rx-faq-item p{margin:0;padding:0 1.25rem 1.25rem;color:var(--rx-muted)}
+
 /* ---- photographs ----
    A feature image with supporting ones beside it, not four identical tiles.
    Falls back to a plain even grid when there is only one photo, so a pharmacy
@@ -702,6 +986,59 @@ p:last-child{margin-bottom:0}
 }
 .rx-label{font-weight:600;min-width:6.5rem;color:var(--rx-muted);font-size:var(--rx-size-sm)}
 
+/* ---- location: cards layout + map (Metro) ----
+   Three cards beside a real embedded map — see the block's own render() for
+   why an embed exists here at all and what it is and is not built from. */
+.rx-visit-grid{display:grid;gap:var(--rx-lg);margin-top:var(--rx-lg)}
+.rx-visit-cards{display:grid;gap:var(--rx-md);align-content:start}
+.rx-visit-card{
+  display:flex;
+  gap:var(--rx-md);
+  padding:var(--rx-md);
+  background:var(--rx-tint);
+  border-inline-start:4px solid var(--rx-primary);
+  border-radius:var(--rx-radius);
+}
+/* Coloured by what the card IS, not by its position in the list — a
+   pharmacy with no phone number set still gets the right colour on its
+   address and hours cards, in whichever order those happen to render. */
+.rx-visit-card--phone{border-inline-start-color:var(--rx-accent)}
+.rx-visit-card-icon{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:2.75rem;
+  height:2.75rem;
+  border-radius:min(var(--rx-radius), 14px);
+  background:var(--rx-primary);
+  color:var(--rx-on-primary);
+}
+.rx-visit-card--phone .rx-visit-card-icon{background:var(--rx-accent);color:var(--rx-ink)}
+.rx-visit-card h3{margin-bottom:.25rem;font-size:var(--rx-size-base)}
+.rx-visit-card address,.rx-visit-card p{margin:0;color:var(--rx-muted);font-style:normal}
+.rx-visit-card .rx-btn{margin-top:var(--rx-sm)}
+.rx-visit-hours{display:grid;gap:.35rem;margin-top:.25rem}
+.rx-visit-hours-row{display:flex;justify-content:space-between;align-items:baseline;gap:var(--rx-sm)}
+.rx-visit-hours-row span:first-child{color:var(--rx-ink)}
+.rx-visit-hours-value{
+  padding:.15rem .6rem;
+  border-radius:999px;
+  background:color-mix(in oklab, var(--rx-accent) 30%, transparent);
+  font-weight:600;
+  font-size:var(--rx-size-sm);
+  white-space:nowrap;
+}
+/* The one fixed, non-palette colour in this file, and deliberately so:
+   "Closed" reads as a stop sign in every curated palette this system has,
+   not just the ones where red would otherwise clash. */
+.rx-visit-hours-closed{background:color-mix(in oklab, #ef4444 18%, transparent);color:#b91c1c}
+.rx-visit-map{border-radius:var(--rx-radius);overflow:hidden;min-height:22rem;background:var(--rx-tint)}
+.rx-visit-map iframe{width:100%;height:100%;min-height:22rem;border:0;display:block}
+@media (min-width:768px){
+  .rx-visit-grid{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr)}
+}
+
 /* ---- the closing WhatsApp band ----
    The page's last word. Inverted, so it reads as an ending rather than as one
    more section. */
@@ -720,6 +1057,30 @@ p:last-child{margin-bottom:0}
    with a narrower, centred measure, closer to a pull-quote than a prompt. */
 .rx-pharmacistCta--statement{background:var(--rx-tint)}
 .rx-pharmacistCta--statement .rx-narrow{max-width:34rem;text-align:center}
+
+/* ---- pharmacist CTA: banner layout (Metro) ----
+   A full-width horizontal strip — text on one side, the button on the
+   other — rather than the stacked, centred column every other layout uses.
+   The dot texture is a plain repeating radial-gradient, not an image: it
+   costs nothing to render and there is nothing to source or invent. */
+.rx-pharmacistCta--banner{
+  background:var(--rx-primary);
+  background-image:radial-gradient(circle, color-mix(in oklab, var(--rx-on-primary) 30%, transparent) 1.5px, transparent 1.5px);
+  background-size:20px 20px;
+  color:var(--rx-on-primary);
+}
+.rx-pharmacistCta-banner-inner{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:space-between;
+  gap:var(--rx-md);
+}
+.rx-pharmacistCta-banner-inner h2,
+.rx-pharmacistCta-banner-inner p{color:var(--rx-on-primary)}
+.rx-pharmacistCta-banner-inner p{opacity:.86;margin:0}
+.rx-pharmacistCta--banner .rx-btn-solid,
+.rx-pharmacistCta--banner .rx-btn-wa{background:var(--rx-accent);color:var(--rx-ink);box-shadow:none;flex:0 0 auto}
 
 /* No breadcrumb styles: the visible trail was removed from the generated
    pages at the owner's request. The structured data for it stays, because it

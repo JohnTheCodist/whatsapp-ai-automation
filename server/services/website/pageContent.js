@@ -100,6 +100,23 @@ function areaOf(profile) {
 }
 
 /**
+ * Colours the pharmacy's own name gold where a generated page's heading
+ * happens to END WITH it ("About {name}", "Contact {name}") — a suffix
+ * match, not an always-append the way the homepage hero's showcase layout
+ * does it. These headings are computed per page kind (some end with the
+ * name, some do not — "Find us in {area}" never does) and an owner can
+ * override any of them with their own text that may not either, so this has
+ * to degrade gracefully: no match, no highlight, the heading renders exactly
+ * as it already did.
+ */
+function highlightOwnName(heading, name) {
+  const text = String(heading ?? '');
+  const idx = name ? text.length - name.length : -1;
+  if (idx < 0 || text.slice(idx) !== name) return esc(text);
+  return `${esc(text.slice(0, idx))}<span class="rx-name-accent">${esc(name)}</span>`;
+}
+
+/**
  * The site header — THE SAME BLOCK THE HOME PAGE USES, not a copy of it.
  *
  * This file used to build its own: a brand link and a <nav>, and nothing
@@ -445,6 +462,21 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
   const open = (intro) => {
     const heading = override.heading || page.h1;
     const lede = override.intro || intro;
+
+    // METRO'S OWN PAGE-HEAD: a coloured band instead of the plain default —
+    // see the block-level version of this same idea in blocks/definitions
+    // for the homepage hero/services. Every other template's generated pages
+    // are completely unaffected: ctx.templateId is only ever 'metro' for a
+    // pharmacy that actually chose this template.
+    if (ctx.templateId === 'metro') {
+      parts.push(`<section class="rx-block rx-page-head rx-page-head--metro"><div>`
+        + `<span class="rx-eyebrow rx-eyebrow--outline">Your Community Pharmacy</span>`
+        + `<h1>${highlightOwnName(heading, ctx?.pharmacy?.name)}</h1>`
+        + (lede ? `<p class="rx-lede">${esc(lede)}</p>` : '')
+        + `</div></section>`);
+      return;
+    }
+
     parts.push(`<section class="rx-block rx-page-head"><div>`
       + `<span class="rx-eyebrow">${esc(page.nav || name)}</span>`
       + `<h1>${esc(heading)}</h1>`
@@ -453,7 +485,19 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
   };
 
   if (page.kind === 'about') {
-    open(null);
+    // Metro's About page carries a real subheading even with no pageCopy
+    // override — every other template's About page still opens with NO
+    // lede at all, exactly as before this existed. The line itself is
+    // generic aspiration, not a claim about this specific pharmacy (no
+    // hours, no certifications, no headcount) — the same bar every other
+    // piece of seeded copy in this file already holds to — and the area
+    // clause is dropped entirely rather than guessed when none is on file.
+    const metroIntro = ctx.templateId === 'metro'
+      ? (area
+        ? `More than just a pharmacy — we are here for the ${area} community, built on trust and care.`
+        : 'More than just a pharmacy — built on trust and care.')
+      : null;
+    open(metroIntro);
     parts.push(`<section class="rx-block rx-narrow"><div class="rx-panel"><p>${esc(String(p.description).replace(/\s+/g, ' ').trim())}</p></div></section>`);
     // Eager on the first one: on an About page the photograph is the point,
     // it is above the fold, and lazy-loading the thing a visitor came to look

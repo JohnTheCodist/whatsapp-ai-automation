@@ -18,8 +18,16 @@
  * `from` binding. A bound prop — the About block's description, inherited
  * from the pharmacy profile — is never offered here: that fact is edited once,
  * in Website content, and offering a second box for it would let the two
- * drift. A list prop (services, reviews, opening hours) is never offered
- * here either; those already have their own editors.
+ * drift.
+ *
+ * SIMPLE LISTS GET A SECOND KIND OF ROW: a prop whose items are just ONE
+ * short text field — About's `highlights` ("Bilingual Staff", one line per
+ * item), not `services` or `reviews`, which have several fields per item and
+ * already have their own dedicated pickers elsewhere in this app. Offering a
+ * generic multi-field repeater here would either re-build those pickers
+ * worse or let the same list be edited two different ways; a single-field
+ * list has no such picker anywhere, so this is the only place it can be
+ * edited at all short of the drag-and-drop advanced editor.
  *
  * BLANK MEANS "USE THIS BLOCK'S OWN DEFAULT WORDING", exactly like PageText —
  * clearing a box and saving removes the override rather than publishing an
@@ -83,15 +91,40 @@ function editableFieldsFor(definition) {
     .map((t) => ({ name: t.name, max: t.max || 200 }));
 }
 
+/**
+ * The single-field lists this block instance may have written for it — see
+ * the file header for why only a ONE-field list qualifies. `max` here is the
+ * list's own item-count ceiling (editorManifest reuses the same `max` key
+ * for a repeater's item cap that a text prop uses for its character cap).
+ */
+function simpleListFieldsFor(definition) {
+  if (!definition) return [];
+  return (definition.traits || [])
+    .filter((t) => t.kind === 'repeater' && !t.inherited && Array.isArray(t.itemFields) && t.itemFields.length === 1)
+    .map((t) => ({ name: t.name, itemField: t.itemFields[0], max: t.max || 12 }));
+}
+
+/** initialProps[name] (an array of {[itemField]: value} objects) as a plain array of strings. */
+function listAsStrings(initialProps, listField) {
+  const arr = Array.isArray(initialProps[listField.name]) ? initialProps[listField.name] : [];
+  return arr.map((item) => item?.[listField.itemField] || '');
+}
+
 function SectionRow({ index, title, description, definition, initialProps, onSaved }) {
   const fields = useMemo(() => editableFieldsFor(definition), [definition]);
-  const [draft, setDraft] = useState(() => ({ ...initialProps }));
+  const listFields = useMemo(() => simpleListFieldsFor(definition), [definition]);
+  const [draft, setDraft] = useState(() => {
+    const base = { ...initialProps };
+    for (const lf of listFields) base[lf.name] = listAsStrings(initialProps, lf);
+    return base;
+  });
   const [status, setStatus] = useState('idle'); // idle | saving | saved | error
   const [error, setError] = useState(null);
   const [generating, setGenerating] = useState(null);
   const [genError, setGenError] = useState(null); // { field, message }
 
-  const dirty = fields.some((f) => (draft[f.name] || '') !== (initialProps[f.name] || ''));
+  const dirty = fields.some((f) => (draft[f.name] || '') !== (initialProps[f.name] || ''))
+    || listFields.some((lf) => JSON.stringify(draft[lf.name] || []) !== JSON.stringify(listAsStrings(initialProps, lf)));
 
   async function writeWithAi(fieldName) {
     setGenerating(fieldName);
@@ -110,7 +143,18 @@ function SectionRow({ index, title, description, definition, initialProps, onSav
     setStatus('saving');
     setError(null);
     try {
-      await onSaved(index, draft);
+      // List fields are edited here as plain strings, one per row, but the
+      // block registry stores each item as {[itemField]: value} — converted
+      // back at the last possible moment, and blank rows dropped, so a saved
+      // list can never contain an empty item nobody meant to keep.
+      const toSend = { ...draft };
+      for (const lf of listFields) {
+        toSend[lf.name] = (draft[lf.name] || [])
+          .map((v) => v.trim())
+          .filter(Boolean)
+          .map((v) => ({ [lf.itemField]: v }));
+      }
+      await onSaved(index, toSend);
       setStatus('saved');
       setTimeout(() => setStatus((s) => (s === 'saved' ? 'idle' : s)), 2500);
     } catch (err) {
@@ -119,7 +163,7 @@ function SectionRow({ index, title, description, definition, initialProps, onSav
     }
   }
 
-  if (!fields.length) return null;
+  if (!fields.length && !listFields.length) return null;
 
   return (
     <div className="rounded-lg border border-slate-200 p-4">
@@ -165,6 +209,51 @@ function SectionRow({ index, title, description, definition, initialProps, onSav
             )}
           </div>
         ))}
+
+        {listFields.map((lf) => {
+          const items = draft[lf.name] || [];
+          return (
+            <div key={lf.name}>
+              <span className="text-xs font-medium text-slate-600">{fieldLabel(lf.name)}</span>
+              {!items.length && (
+                <p className="mt-1 text-xs text-slate-400">Nothing shown until you add one — never guessed for you.</p>
+              )}
+              <div className="mt-1 space-y-1.5">
+                {items.map((value, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input
+                      className={inputClass}
+                      value={value}
+                      onChange={(e) => setDraft((d) => {
+                        const next = [...(d[lf.name] || [])];
+                        next[i] = e.target.value.slice(0, 80);
+                        return { ...d, [lf.name]: next };
+                      })}
+                      placeholder="e.g. Bilingual Staff"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setDraft((d) => ({ ...d, [lf.name]: (d[lf.name] || []).filter((_, j) => j !== i) }))}
+                      className="shrink-0 text-xs font-medium text-slate-400 hover:text-red-700"
+                      aria-label={`Remove ${fieldLabel(lf.name)} item ${i + 1}`}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {items.length < lf.max && (
+                <button
+                  type="button"
+                  onClick={() => setDraft((d) => ({ ...d, [lf.name]: [...(d[lf.name] || []), ''] }))}
+                  className="mt-1.5 text-xs font-medium text-teal-700 hover:underline"
+                >
+                  + Add
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {status === 'error' && <p className="mt-2 text-xs text-red-700">{error}</p>}
@@ -181,7 +270,9 @@ function SectionRow({ index, title, description, definition, initialProps, onSav
         {status === 'saved' && <span className="text-xs text-teal-700">Saved.</span>}
         {!dirty && status === 'idle' && (
           <span className="text-xs text-slate-400">
-            {fields.some((f) => initialProps[f.name]) ? 'Your own wording is live here.' : 'Using the default wording.'}
+            {fields.some((f) => initialProps[f.name]) || listFields.some((lf) => listAsStrings(initialProps, lf).length)
+              ? 'Your own wording is live here.'
+              : 'Using the default wording.'}
           </span>
         )}
       </div>
@@ -220,8 +311,15 @@ export default function HomeContent({ site, onSaved }) {
       const props = { ...(block.props || {}) };
       // An entry with nothing typed is the same as no override — dropped, so
       // the block falls back to its own default (or its `from` binding)
-      // rather than an override that happens to be an empty string.
+      // rather than an override that happens to be an empty string. A list
+      // field arrives here already converted to its stored shape (see
+      // SectionRow's save()), so an empty array is this same rule applied to
+      // a list instead of a string.
       for (const [key, value] of Object.entries(fields)) {
+        if (Array.isArray(value)) {
+          if (value.length) props[key] = value; else delete props[key];
+          continue;
+        }
         const trimmed = (value || '').trim();
         if (trimmed) props[key] = trimmed; else delete props[key];
       }
@@ -250,15 +348,15 @@ export default function HomeContent({ site, onSaved }) {
       const definition = byKey.get(`${block.type}@${block.version}`);
       return { index, block, definition };
     })
-    .filter(({ definition }) => editableFieldsFor(definition).length > 0);
+    .filter(({ definition }) => editableFieldsFor(definition).length > 0 || simpleListFieldsFor(definition).length > 0);
 
   return (
     <div>
       <div className="mb-3 flex items-start justify-between gap-3">
         <p className="text-xs text-slate-500">
           Your homepage is built from the sections your template chose. Replace the heading,
-          subheading or button text on any of them below — leave a box empty to keep the
-          section's own default wording.
+          subheading or button text on any of them below, or add your own list items where a
+          section has one — leave a box empty to keep the section's own default wording.
         </p>
         <button type="button" onClick={preview} className="shrink-0 text-xs font-medium text-teal-700 hover:underline">
           Preview homepage →

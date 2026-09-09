@@ -572,6 +572,7 @@ router.get('/preview.html', requireAuth, asyncRoute(async (req, res) => {
       theme: site.theme,
       health: Array.isArray(contentForRender.health) ? contentForRender.health : [],
       pageCopy: (contentForRender.pageCopy && typeof contentForRender.pageCopy === 'object') ? contentForRender.pageCopy : {},
+      templateId: site.template_id || null,
       noindex: true,
     });
     const match = rendered.find((r) => r.path === pagePath);

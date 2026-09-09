@@ -15,6 +15,6 @@
 module.exports = [
   ...require('./chrome'),      // header, footer
   ...require('./actions'),     // hero, whatsappCta, pharmacistCta
-  ...require('./content'),     // about, services, reviews
+  ...require('./content'),     // about, services, reviews, faq
   ...require('./practical'),   // openingHours, location, contact
 ];

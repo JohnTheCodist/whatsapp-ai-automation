@@ -259,7 +259,23 @@ const SHARED_MAX_AGE_SECONDS = 300;
  *
  * `frame-ancestors 'none'` — nobody frames a pharmacy's website. Clickjacking
  * a page whose main control opens WhatsApp with a prefilled message is a real
- * attack, not a theoretical one.
+ * attack, not a theoretical one. Independent of `frame-src` below: one
+ * controls who may embed THIS page, the other controls what THIS page may
+ * embed, and loosening the second says nothing about the first.
+ *
+ * `frame-src` EXISTS ONLY FOR THE LOCATION BLOCK'S OWN MAP EMBED, and it did
+ * not exist at all until that feature did — there was no frame-src, so no
+ * iframe of any kind could render, on the reasoning that a third-party frame
+ * on a page that also serves health content was a bad trade for a picture of
+ * a street. Revisited deliberately, at the owner's explicit request after
+ * that tradeoff was raised, not loosened by default. The two hosts here are
+ * not a guess: `maps.google.com/maps?...&output=embed` (the key-less embed
+ * pharmacy websites use, since no Maps API key exists in this system) issues
+ * its OWN internal redirect to `www.google.com` before it renders anything —
+ * verified directly, including the console's own CSP-violation message
+ * naming exactly that redirect, before this second host was added. Nothing
+ * else on the public pages ever needs frame-src, so nothing wider than these
+ * two exact origins is granted.
  *
  * BUILT PER CALL rather than frozen at module load, because the storage
  * origin comes from configuration. A hardcoded host would be a stale
@@ -277,6 +293,7 @@ function publicCsp() {
     `img-src 'self' data:${origin ? ` ${origin}` : ''}`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     'font-src https://fonts.gstatic.com',
+    'frame-src https://maps.google.com https://www.google.com',
     "script-src 'none'",
     "form-action 'none'",
     "base-uri 'none'",

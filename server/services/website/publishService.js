@@ -214,6 +214,7 @@ async function publishWebsite(pharmacyId, { userId } = {}) {
     // a guided-flow answer, not part of the site structure, so it travels
     // with whichever snapshot (draft or published) is being rendered.
     pageCopy: (site.content?.pageCopy && typeof site.content.pageCopy === 'object') ? site.content.pageCopy : {},
+    templateId: site.template_id || null,
   });
 
   // published_html remains the home page, so every existing reader of that
@@ -328,6 +329,7 @@ async function rerenderPublished(pharmacyId) {
     // a guided-flow answer, not part of the site structure, so it travels
     // with whichever snapshot (draft or published) is being rendered.
     pageCopy: (site.content?.pageCopy && typeof site.content.pageCopy === 'object') ? site.content.pageCopy : {},
+    templateId: site.template_id || null,
   });
   const home = rendered.find((r) => r.path === '/');
   const html = home ? home.html : renderDocument({

@@ -31,6 +31,9 @@ const DAY_NAMES = Object.freeze({
   mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday',
   fri: 'Friday', sat: 'Saturday', sun: 'Sunday',
 });
+const SHORT_DAY_NAMES = Object.freeze({
+  mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun',
+});
 
 /** 24h "20:00" as a human "8:00 pm". Pure, so the render stays deterministic. */
 function humanTime(value) {
@@ -41,6 +44,69 @@ function humanTime(value) {
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return `${h12}:${m[2]} ${suffix}`;
 }
+
+/**
+ * Opening hours as "Mon – Fri" ranges rather than seven separate rows — used
+ * by location's own compact "visit us" card (see below), not by the full
+ * Opening hours block above, which is deliberately the un-collapsed version
+ * for whoever wants every day spelled out.
+ *
+ * A run is two or more CONSECUTIVE days (Tue then Wed, never Tue then Thu)
+ * that share the exact same value, closed or not — never days that merely
+ * happen to match out of order, which would misstate the week.
+ */
+function groupedHours(hours) {
+  const byDay = new Map((hours || []).filter((h) => h?.day).map((h) => [h.day, h]));
+  const ordered = DAY_ORDER.filter((d) => byDay.has(d));
+  const valueFor = (day) => {
+    const h = byDay.get(day);
+    const open = humanTime(h.open);
+    const close = humanTime(h.close);
+    return h.closed || !open || !close ? 'Closed' : `${open} – ${close}`;
+  };
+
+  const rows = [];
+  let i = 0;
+  while (i < ordered.length) {
+    const value = valueFor(ordered[i]);
+    let j = i;
+    while (
+      j + 1 < ordered.length
+      && DAY_ORDER.indexOf(ordered[j + 1]) === DAY_ORDER.indexOf(ordered[j]) + 1
+      && valueFor(ordered[j + 1]) === value
+    ) j += 1;
+    const label = i === j
+      ? DAY_NAMES[ordered[i]]
+      : `${SHORT_DAY_NAMES[ordered[i]]} – ${SHORT_DAY_NAMES[ordered[j]]}`;
+    rows.push({ label, value });
+    i = j + 1;
+  }
+  return rows;
+}
+
+/**
+ * A no-API-key Google Maps embed, built from the pharmacy's OWN structured
+ * address fields — never from `maps_url`. That field can be any shape a
+ * person pasted (a share link, a shortened URL, a plain search link) and
+ * there is no reliable way to turn an arbitrary one into an embeddable
+ * "output=embed" URL; a plain text search on the address the owner already
+ * typed works the same way regardless of what, if anything, they set there.
+ */
+function mapEmbedSrc(profile) {
+  const query = [profile?.address_line, profile?.city, profile?.state].filter(Boolean).join(', ');
+  return query ? `https://maps.google.com/maps?q=${encodeURIComponent(query)}&output=embed` : '';
+}
+
+const PIN_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + '<path d="M12 22s7-7.58 7-12.5A7 7 0 0 0 5 9.5C5 14.42 12 22 12 22Z"/><circle cx="12" cy="9.5" r="2.5"/></svg>';
+const PHONE_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 '
+  + '19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.362 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>';
+const CLOCK_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>';
 
 const openingHours = {
   id: 'pharmacy.openingHours',
@@ -124,9 +190,24 @@ const location = {
     landmark: { type: 'text', max: 120, from: 'profile.landmark' },
     mapsUrl: { type: 'url', from: 'profile.maps_url' },
     directionsLabel: { type: 'text', max: 40 },
+    // Everything below is only read by the 'cards' layout — see render().
+    subheading: { type: 'text', max: 240 },
+    phone: { type: 'phone', from: 'profile.phone' },
+    // Only ever appears once there is a real number to call — see render() —
+    // so this generic label is safe even though the number itself is not.
+    phoneCtaLabel: { type: 'text', max: 40 },
+    hours: { type: 'list', max: 7, from: 'profile.opening_hours', of: {
+      day: { type: 'enum', values: [...DAY_ORDER], required: true },
+      open: { type: 'text', max: 5 },
+      close: { type: 'text', max: 5 },
+      closed: { type: 'boolean' },
+    } },
+    // 'cards' is address, phone and hours as three cards beside a real map;
+    // 'split' (the default) is the original address-and-photo diptych.
+    layout: { type: 'enum', values: ['split', 'cards'] },
   },
 
-  defaults: { heading: 'Find us', directionsLabel: 'Get directions' },
+  defaults: { heading: 'Find us', directionsLabel: 'Get directions', layout: 'split' },
   responsive: { layout: 'split', stackBelow: 768 },
 
   editor: { label: 'Location', singleton: true, removable: true, draggable: true, icon: 'map-pin' },
@@ -154,13 +235,59 @@ const location = {
 
     const heading = props.heading ? `<h2>${esc(props.heading)}</h2>` : '';
 
-    // NO EMBEDDED MAP, and that is a constraint rather than an omission: the
-    // published CSP is `default-src 'none'` with no frame-src, so a Google
-    // Maps iframe would be blocked — and loosening the policy to embed a
-    // third-party frame on a page about somebody's health is a bad trade for
-    // a picture of a street. The photograph beside the address does the same
-    // job better: it is what the customer will actually be looking for when
-    // they arrive.
+    // CARDS (Metro): address, phone and hours as three cards beside a real,
+    // live map. There WAS no embedded map here at all until this layout —
+    // the published CSP had no frame-src, on the reasoning that loosening it
+    // for a third-party frame on a page that also serves health content was
+    // a bad trade for a picture of a street. Revisited deliberately, at the
+    // owner's explicit request after that tradeoff was raised: the allowance
+    // added to publicCsp() is exactly the two hosts Google's key-less
+    // embed actually needs (verified directly, including its own redirect)
+    // and nothing wider, and the map's query is built from the pharmacy's
+    // own address fields — never from `mapsUrl`, which can be any shape a
+    // person pasted and is not reliably convertible to an embed URL.
+    if (props.layout === 'cards') {
+      const area = [ctx?.profile?.city, ctx?.profile?.state].filter(Boolean).join(', ');
+      const subheading = props.subheading || (area ? `Conveniently located in ${area}.` : '');
+      const head = (heading || subheading)
+        ? `<div class="rx-head rx-head--center">${heading}${subheading ? `<p>${esc(subheading)}</p>` : ''}</div>`
+        : '';
+
+      const addressCard = (parts.length || props.landmark)
+        ? `<div class="rx-visit-card rx-visit-card--address"><span class="rx-visit-card-icon">${PIN_ICON}</span>`
+          + `<div><h3>Address</h3><address class="rx-address">${lines}</address></div></div>`
+        : '';
+
+      const tel = telHref(props.phone, ctx);
+      const phoneCard = (tel && props.phone)
+        ? `<div class="rx-visit-card rx-visit-card--phone"><span class="rx-visit-card-icon">${PHONE_ICON}</span>`
+          + `<div><h3>Phone</h3><p>${esc(props.phone)}</p>`
+          + (props.phoneCtaLabel ? `<a class="rx-btn rx-btn-solid" href="${esc(tel)}">${esc(props.phoneCtaLabel)}</a>` : '')
+          + '</div></div>'
+        : '';
+
+      const hourRows = groupedHours(props.hours);
+      const hoursCard = hourRows.length
+        ? `<div class="rx-visit-card rx-visit-card--hours"><span class="rx-visit-card-icon">${CLOCK_ICON}</span>`
+          + '<div><h3>Opening Hours</h3>'
+          + `<div class="rx-visit-hours">${hourRows.map((r) => `<div class="rx-visit-hours-row"><span>${esc(r.label)}</span>`
+            + `<span class="rx-visit-hours-value${r.value === 'Closed' ? ' rx-visit-hours-closed' : ''}">${esc(r.value)}</span></div>`).join('')}</div>`
+          + '</div></div>'
+        : '';
+
+      const cards = [addressCard, phoneCard, hoursCard].filter(Boolean).join('');
+      if (!cards) return head ? section(this.id, head) : '';
+
+      const mapSrc = mapEmbedSrc(ctx?.profile);
+      const map = mapSrc
+        ? `<div class="rx-visit-map"><iframe src="${esc(mapSrc)}" loading="lazy" `
+          + 'referrerpolicy="no-referrer-when-downgrade" title="Map"></iframe></div>'
+        : '';
+
+      return section(this.id, `${head}<div class="rx-visit-grid"><div class="rx-visit-cards">${cards}</div>${map}</div>`);
+    }
+
+    // SPLIT (the default): the address beside a photograph, unchanged.
     const [photo] = assetsOfKind(ctx, 'gallery');
     const place = [ctx?.profile?.city, ctx?.profile?.state].filter(Boolean).join(', ');
     const alt = place
