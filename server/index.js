@@ -362,7 +362,31 @@ const publicSite = require('./routes/publicSite');
 // addressFromHost returns null for app.rxnaija.com, for the bare domain,
 // for localhost, for any other domain, and for every RESERVED label — so
 // the dashboard, the marketing site and Caddy's own calls are untouched.
+//
+// ONE NAMED EXCEPTION, CHECKED FIRST, BY PATH RATHER THAN BY HOST.
+//
+// A published page can now reference /website-templates/<file> — the shared
+// service photographs in servicePhotos.js — and that path has to resolve to
+// the same file regardless of which shape a customer is reading the page on.
+// On the /p/<address> shape it already does: the request lands on
+// app.rxnaija.com, addressFromHost returns null, and it falls through to
+// express.static below untouched. On <address>.rxnaija.com it did not — the
+// guard beneath this comment answers EVERY path on that host itself, by
+// design (see GOLDEN-005c), so the image request was matched as a page,
+// found none, and got the plain-text 404 instead of the file. Found live:
+// the photos rendered in the dashboard's preview (served from app.rxnaija.com)
+// and were broken on the published subdomain.
+//
+// NAMED, NOT A PATTERN. This is the one prefix that legitimately needs to be
+// host-independent today. `startsWith('/')` or any other broad rule here
+// would be exactly the hole GOLDEN-005c exists to close, reached a different
+// way — a pharmacy's public host is meant to answer nothing but its own
+// pages, and this allowlist is the one deliberate, auditable exception to
+// that, not a general escape hatch. GOLDEN-005d asserts it stays narrow.
+const PHARMACY_HOST_STATIC_PREFIXES = ['/website-templates/'];
+
 app.use((req, res, next) => {
+  if (PHARMACY_HOST_STATIC_PREFIXES.some((prefix) => req.path.startsWith(prefix))) return next();
   if (!addressFromHost(req.hostname)) return next();
   return publicSite.hostRouter(req, res, () => publicSite.notFound(res));
 });

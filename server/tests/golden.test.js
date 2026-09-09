@@ -465,6 +465,61 @@ test('GOLDEN-005c: a pharmacy hostname never falls through to the dashboard', ()
     DEFERRING_RETURNS_IT_TO_THE_FALLBACK,
   );
 });
+
+// GOLDEN-005d — "The service photo rendered in preview and was broken on the
+// published subdomain."
+//
+// Date:       2026-09-09
+// Symptom:    /website-templates/services/*.jpg loaded fine on
+//             app.rxnaija.com (the dashboard preview) and 404'd on
+//             <address>.rxnaija.com (the published site), for a page served
+//             from the very same file.
+// Cause:      GOLDEN-005c's guard answers EVERY path on a pharmacy hostname
+//             itself, by design — a pharmacy's public host must never fall
+//             through to app internals. That is exactly right for a path
+//             nobody meant to expose, and exactly wrong for a static asset
+//             the published page itself references: the request was matched
+//             as a page lookup, found none, and got the plain-text 404
+//             instead of the file.
+// Protection: a named, narrow allowlist of path PREFIXES bypasses the guard
+//             before it runs, checked here for two things that both have to
+//             stay true — it exists and runs first, and it stays narrow.
+//             A broad version of this fix ("any path starting with /",
+//             "any path that isn't /api") would quietly reopen 005c from a
+//             different angle, so this test fails loudly if the allowlist
+//             grows a prefix short enough to swallow real pharmacy pages.
+test('GOLDEN-005d: the pharmacy-host static allowlist stays narrow', () => {
+  const fs = require('node:fs');
+  const pathMod = require('node:path');
+  const source = fs.readFileSync(pathMod.join(__dirname, '..', 'index.js'), 'utf8');
+
+  const allowlistAt = source.indexOf('PHARMACY_HOST_STATIC_PREFIXES');
+  const guardAt = source.indexOf('addressFromHost(req.hostname)');
+
+  assert.ok(allowlistAt >= 0, 'server/index.js must name the pharmacy-host static allowlist');
+  assert.ok(
+    allowlistAt < guardAt,
+    'the allowlist check must be declared, and run, before the host guard — otherwise the guard answers first',
+  );
+
+  // The declaration and the array literal, not the whole file — so a prefix
+  // added somewhere unrelated later can't accidentally satisfy this test.
+  const declaration = source.slice(allowlistAt, source.indexOf(';', allowlistAt) + 1);
+  const prefixes = [...declaration.matchAll(/'([^']*)'/g)].map((m) => m[1]);
+
+  assert.ok(prefixes.length > 0, 'the allowlist must name at least one prefix');
+  for (const prefix of prefixes) {
+    assert.ok(prefix.length > 1, `"${prefix}" is too short to be a narrow allowlist entry`);
+    assert.ok(prefix.startsWith('/'), `"${prefix}" must be an absolute path prefix`);
+    // The whole point: a real page path — a service slug, a health-article
+    // slug, the home page — must never start with an allowlisted prefix.
+    assert.ok(
+      !'/'.startsWith(prefix) && !'/about/'.startsWith(prefix) && !'/services/blood-pressure-check/'.startsWith(prefix),
+      `"${prefix}" is broad enough to match a real pharmacy page path`,
+    );
+  }
+});
+
 // GOLDEN-006 — "Every pharmacy went offline because Postgres had a bad minute."
 //
 // Date:       2026-09-06 (found by reading, before it fired)
