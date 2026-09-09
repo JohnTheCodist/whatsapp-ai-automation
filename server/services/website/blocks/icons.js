@@ -8,11 +8,21 @@
  * mean loosening the CSP of a page about somebody's health to download a
  * picture of a pill.
  *
- * WHY ICONS AND NOT PHOTOGRAPHS. A photograph of "blood pressure checks"
- * would be a stock image of somebody else's arm, on a real pharmacy's
- * website, implying it was taken there. The pharmacy's OWN photographs go in
- * the hero, About and Location; the services list gets drawn marks, which
- * claim nothing about the room they were taken in because there is no room.
+ * THE DEFAULT, STILL, IS A DRAWN MARK, NOT A PHOTOGRAPH. A photograph of
+ * "blood pressure checks" is a stock image of somebody else's arm, on a real
+ * pharmacy's website, implying it was taken there. The pharmacy's OWN
+ * photographs go in the hero, About and Location; a service the renderer
+ * cannot show a genuine photo of gets a drawn mark instead, which claims
+ * nothing about a room that does not exist.
+ *
+ * A SMALL, DELIBERATE EXCEPTION: servicePhotos.js supplies a real photograph
+ * for the handful of services where one could be sourced without that
+ * problem — properly licensed, generic (no third-party product branding, no
+ * identifiable person, no claim about a specific medical product this
+ * pharmacy may not actually stock). The services block (definitions/
+ * content.js) tries that first and falls back to the icon below when there
+ * is none. See servicePhotos.js's own header for exactly which services
+ * qualify and why most do not.
  *
  * MATCHED ON THE SERVICE THE OWNER TYPED, through pages.js's own catalogue —
  * the same matcher that decides a service's URL. So "BP check", "Blood

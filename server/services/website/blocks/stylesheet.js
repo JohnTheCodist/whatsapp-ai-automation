@@ -405,49 +405,67 @@ p:last-child{margin-bottom:0}
 .rx-head{margin-bottom:var(--rx-lg);max-width:var(--rx-measure)}
 .rx-head p{color:var(--rx-muted)}
 
-/* ---- services ----
-   NOT a row of identical shadowed cards. A hairline-ruled list that reads as
-   one considered set, and that looks deliberate whether a pharmacy offers
-   three services or nine. */
+/* ---- services (the home-page block) ----
+   A card grid, with a picture. It used to be hairline rows with a small
+   corner icon — reads fine when every row is text, and reads as "just text
+   in a card" the moment the owner expects an actual picture per service,
+   which is the whole reason a service is worth a paragraph. auto-fill lets
+   the count be anything from three to twelve without a stray half-empty row.
+*/
 .rx-grid{display:grid;gap:0;padding:0;margin:var(--rx-md) 0 0;list-style:none;border-top:1px solid var(--rx-line)}
-.rx-service{
-  padding:var(--rx-md) 0;
-  border-bottom:1px solid var(--rx-line);
-  display:flex;
+.rx-service-grid{
+  display:grid;
   gap:var(--rx-md);
-  align-items:flex-start;
-  text-decoration:none;
-  color:inherit;
-  transition:padding-inline-start var(--rx-dur) var(--rx-ease),
-             background-color var(--rx-dur) var(--rx-ease);
+  padding:0;
+  margin:var(--rx-md) 0 0;
+  list-style:none;
+  grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));
 }
-a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
-.rx-service-body{min-width:0}
-.rx-service h3{margin-bottom:.25rem;color:var(--rx-ink)}
-.rx-service p{color:var(--rx-muted);margin:0;font-size:var(--rx-size-sm)}
+.rx-service-card{
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  border:1px solid var(--rx-line);
+  /* NOT the raw token. Every other user of --rx-radius is either small (a
+     button, a 44px icon chip) or wide-and-short (.rx-card's icon-beside-text
+     row), and an unclamped 999px ("round" theme) turns either of those into
+     a deliberate, good-looking pill. This card is neither — it is roughly as
+     tall as it is wide, image stacked over text — and the SAME 999px instead
+     rounds all four corners into the middle, clipping the photo into a
+     circle with the heading floating half-hidden behind it. Found live, on
+     the Modern template, not hypothetical. Capped well below what "round"
+     asks for; sharp and soft are far under the cap and render unchanged. */
+  border-radius:min(var(--rx-radius),20px);
+  background:var(--rx-surface);
+  transition:border-color var(--rx-dur) var(--rx-ease),
+             transform var(--rx-dur) var(--rx-ease),
+             box-shadow var(--rx-dur) var(--rx-ease);
+}
+.rx-service-card:hover{border-color:var(--rx-primary);transform:translateY(-2px);box-shadow:var(--rx-shadow)}
+.rx-service-body{min-width:0;padding:var(--rx-md)}
+.rx-service-card h3{margin-bottom:.25rem;color:var(--rx-ink)}
+.rx-service-card p{color:var(--rx-muted);margin:0;font-size:var(--rx-size-sm)}
 
-/* The drawn mark beside a service. A tinted square rather than a bare glyph:
-   at 24px a single-stroke icon floating in text is a smudge, and the square
-   gives it a size and a footing so a row of them reads as a set. */
-.rx-service-mark{
-  flex:0 0 auto;
-  display:inline-flex;
+/* The visual: a real photograph where one exists (servicePhotos.js), a
+   drawn mark otherwise. Both fill the same band, so a grid mixing the two
+   — most pharmacies will have some of each — still reads as one grid rather
+   than two different components stitched together. */
+.rx-service-visual{aspect-ratio:4/3;overflow:hidden;background:var(--rx-tint)}
+.rx-service-photo{width:100%;height:100%;object-fit:cover;display:block;transition:transform 420ms var(--rx-ease)}
+.rx-service-card:hover .rx-service-photo{transform:scale(1.04)}
+.rx-service-icon{
+  display:flex;
+  width:100%;
+  height:100%;
   align-items:center;
   justify-content:center;
-  width:44px;
-  height:44px;
-  border-radius:calc(var(--rx-radius) / 1.4);
-  background:var(--rx-tint);
   color:var(--rx-primary);
-  transition:background-color var(--rx-dur) var(--rx-ease),
-             color var(--rx-dur) var(--rx-ease),
-             transform var(--rx-dur) var(--rx-ease);
 }
-.rx-service:hover .rx-service-mark{
-  background:var(--rx-primary);
-  color:var(--rx-on-primary);
-  transform:translateY(-1px);
-}
+/* Considerably larger than the 24px it was drawn at for the old inline mark
+   — this is now the whole visual a card has, not a corner accent beside
+   text, so it has to carry a card's worth of visual weight on its own. */
+.rx-service-icon svg{width:44%;height:44%;max-width:88px;max-height:88px;transition:transform 420ms var(--rx-ease)}
+.rx-service-card:hover .rx-service-icon svg{transform:scale(1.08)}
 .rx-svg{display:block}
 
 /* The old marker, kept because a site published before the icon set exists
@@ -455,10 +473,12 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
 .rx-icon{display:block;width:26px;height:3px;border-radius:2px;background:var(--rx-primary);margin-bottom:var(--rx-sm)}
 
 /* ---- cards ----
-   For INDEX pages only — /services/ and /health/ — where the list is the
-   whole page and has to carry it. The home page keeps hairline rows: a wall
-   of boxes inside a longer page is noise, and the same list in both places
-   would make neither look considered. */
+   For INDEX pages (/services/, /health/) and now also the home page's own
+   services block above. Each grew its own class rather than sharing one —
+   the index cards are a horizontal row (icon beside text, an arrow that
+   slides), the services block is vertical (photo or icon on top, text
+   below) — different enough shapes that forcing one class over both would
+   mean fighting one of them with overrides. */
 .rx-cards{display:grid;gap:var(--rx-sm)}
 .rx-card{
   display:flex;
@@ -698,13 +718,11 @@ a.rx-service:hover{padding-inline-start:var(--rx-sm);background:var(--rx-tint)}
   .rx-grid-2{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--rx-md);border-top:0}
   .rx-grid-2 .rx-review{border-bottom:0}
   .rx-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rx-service-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .rx-split{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--rx-xl)}
 }
 @media (min-width:1024px){
-  /* Services become two columns of ruled rows — still a list, still hairlines,
-     never a card wall. */
-  .rx-grid-3{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:var(--rx-xl)}
-  .rx-grid-3 .rx-service:nth-last-child(-n+2){border-bottom:0}
+  .rx-service-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
 
 /* ---- the floating WhatsApp button ----

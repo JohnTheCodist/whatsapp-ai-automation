@@ -11,6 +11,7 @@
 
 const { esc, section, assetsOfKind } = require('../render');
 const { serviceIcon } = require('../icons');
+const { servicePhotoFor } = require('../servicePhotos');
 
 const about = {
   id: 'pharmacy.about',
@@ -110,25 +111,34 @@ const services = {
     const list = props.services || [];
     if (!list.length) return '';
 
-    // EVERY service gets a mark, not only the ones with an explicit icon set.
-    // Matched from the name the owner typed, through the same catalogue that
-    // decides the service's URL — so the drawing and the page agree about
-    // what the service is. See blocks/icons.js.
+    // EVERY service gets a real visual, not only the ones with an explicit
+    // icon set — a photo where one exists and can be shown honestly (see
+    // servicePhotos.js for the bar that has to clear), the drawn mark
+    // otherwise. Both are matched from the name the owner typed, through the
+    // same catalogue that decides the service's URL, so the visual and the
+    // page agree about what the service is.
     const items = list.map((s) => {
-      const icon = `<span class="rx-service-mark">${serviceIcon(s.name, s.icon)}</span>`;
+      const photo = servicePhotoFor(s.name);
+      const visual = photo
+        ? `<img class="rx-service-photo" src="${esc(photo.src)}" alt="${esc(photo.alt)}"`
+          + ` width="${photo.width}" height="${photo.height}" loading="lazy" decoding="async">`
+        : `<span class="rx-service-icon">${serviceIcon(s.name, s.icon)}</span>`;
       const desc = s.description ? `<p>${esc(s.description)}</p>` : '';
-      return `<li class="rx-service">${icon}<div class="rx-service-body"><h3>${esc(s.name)}</h3>${desc}</div></li>`;
+      return `<li class="rx-service-card">`
+        + `<div class="rx-service-visual">${visual}</div>`
+        + `<div class="rx-service-body"><h3>${esc(s.name)}</h3>${desc}</div>`
+        + `</li>`;
     }).join('');
 
-    // A ruled list rather than a wall of shadowed cards, and the reason is
-    // that a pharmacy's service count is not ours to choose: three services
-    // in a three-column card grid is a tidy row, and four is a widow sitting
-    // alone on a second line. Hairline rows read as one deliberate set at any
-    // count, from three to twelve.
+    // A card grid, not the hairline rows this used to be. A pharmacy's
+    // service count is still not ours to choose — three in a row, four
+    // wrapping to a second — but a card carries a picture and a row does
+    // not, and auto-fill lets the grid hold any count without a stray
+    // half-empty row at the end.
     const head = props.heading
       ? `<div class="rx-head"><h2>${esc(props.heading)}</h2></div>`
       : '';
-    return section(this.id, `${head}<ul class="rx-grid rx-grid-3">${items}</ul>`);
+    return section(this.id, `${head}<ul class="rx-service-grid">${items}</ul>`);
   },
 };
 

@@ -288,22 +288,40 @@ function renderWithPhotos(rows) {
 
 const IMG = /<img[^>]*>/g;
 
-test('every image carries alt text describing the real business', () => {
+test('every image carries alt text, and none of it is invented', () => {
+  // PHOTO_PROFILE's one service ("BP check") also matches servicePhotos.js's
+  // catalogue, so the home page carries three kinds of <img> at once: the
+  // owner's own hero and gallery photos, AND a stock illustration for the
+  // service. All three need real alt text; only the first two may claim to
+  // depict this pharmacy, because only the first two actually do.
   const pages = renderWithPhotos([
     { id: 'a1', path: 'ph/1.jpg', kind: 'hero', width: 1200, height: 900 },
     { id: 'a2', path: 'ph/2.jpg', kind: 'gallery', width: 800, height: 600 },
   ]);
-  let seen = 0;
+  let seenOwnPhoto = 0;
+  let seenServicePhoto = 0;
   for (const page of pages) {
     for (const img of page.html.match(IMG) || []) {
-      seen += 1;
       assert.match(img, /alt="[^"]+"/, `${page.path}: image with no alt — ${img}`);
-      // Accurate, not invented. We know whose pharmacy it is and where; we do
-      // not know what is in the frame, and must not claim to.
-      assert.match(img, /alt="Ikeja Family Pharmacy, Ikeja, Lagos"/);
+      if (img.includes('rx-service-photo')) {
+        seenServicePhoto += 1;
+        // A stock photo of tablets did not come from this pharmacy's own
+        // camera. Claiming it did — even only in metadata a sighted visitor
+        // never reads — is the same false claim this codebase refuses to
+        // make in visible copy, and it is exactly the kind of mistake that
+        // goes unnoticed precisely because nobody sighted checks it.
+        assert.doesNotMatch(img, /alt="Ikeja Family Pharmacy, Ikeja, Lagos"/, `${page.path}: a stock photo claiming to BE the pharmacy — ${img}`);
+      } else {
+        seenOwnPhoto += 1;
+        // Accurate, not invented, for the photos that ARE the owner's own:
+        // we know whose pharmacy it is and where; we do not know what is in
+        // the frame, and must not claim to.
+        assert.match(img, /alt="Ikeja Family Pharmacy, Ikeja, Lagos"/, `${page.path}: ${img}`);
+      }
     }
   }
-  assert.ok(seen > 0, 'no images rendered at all');
+  assert.ok(seenOwnPhoto > 0, 'no owner photos rendered at all');
+  assert.ok(seenServicePhoto > 0, 'no service photo rendered — profile fixture may have drifted from servicePhotos.js\'s catalogue');
 });
 
 test('images declare width and height so the page does not shift as they load', () => {
