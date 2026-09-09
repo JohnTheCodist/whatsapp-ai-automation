@@ -28,6 +28,7 @@ import LogoUpload from './LogoUpload.jsx';
 import PhotoUpload from './PhotoUpload.jsx';
 import ServicesPicker from './ServicesPicker.jsx';
 import HealthTopics from './HealthTopics.jsx';
+import PageText from './PageText.jsx';
 
 function Field({ label, hint, children }) {
   return (
@@ -65,7 +66,7 @@ function Row({ label, summary, actionLabel, expanded, onToggle, children }) {
   );
 }
 
-export default function WebsiteContent({ site, onSaved, onNavigate }) {
+export default function WebsiteContent({ site, pages, onSaved, onNavigate }) {
   const [profile, setProfile] = useState(null);
   const [pharmacy, setPharmacy] = useState(null);
   const [status, setStatus] = useState({ state: 'loading' });
@@ -257,6 +258,16 @@ export default function WebsiteContent({ site, onSaved, onNavigate }) {
           onToggle={() => toggle('health')}
         >
           <HealthTopics site={site} onSaved={() => onSaved?.()} />
+        </Row>
+
+        <Row
+          label="Website page text"
+          summary="Rewrite the heading and opening line on any page"
+          actionLabel="Edit →"
+          expanded={open === 'pageText'}
+          onToggle={() => toggle('pageText')}
+        >
+          <PageText site={site} pages={pages} onSaved={() => onSaved?.()} />
         </Row>
       </div>
     </Panel>

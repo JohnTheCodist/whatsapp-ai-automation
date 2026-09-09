@@ -27,7 +27,10 @@ const assets = require('../services/website/assetService');
 const analytics = require('../services/website/analytics');
 const { listTemplates, getTemplate, cloneSeed } = require('../services/website/templates');
 const { publishableArticles } = require('../services/website/health');
+const { buildPages } = require('../services/website/pages');
+const pharmacies = require('../services/pharmacies');
 const { renderDocument } = require('../services/website/document');
+const { renderAllPages } = require('../services/website/siteRender');
 const { editorManifest } = require('../services/website/blocks/editorManifest');
 const { themeOptions } = require('../services/website/blocks/theme');
 const { baseDomain } = require('../services/website/publicSite');
@@ -91,12 +94,37 @@ function unwrap(result) {
  */
 router.get('/', requireAuth, asyncRoute(async (req, res) => {
   const site = await website.getWebsite(req.pharmacyId);
+
+  // The generated pages this site currently has — About, Services, one per
+  // service, Location, Contact, the health index — computed with the exact
+  // same buildPages() the renderer and the sitemap use, so the dashboard can
+  // offer "edit this page's wording" without keeping a second copy of the
+  // rules that decide which pages exist. Pure and cheap: buildPages does no
+  // I/O of its own; only reachable once a site does, since a pharmacy with
+  // no website yet has no pages to list.
+  let pages = [];
+  if (site) {
+    const [pharmacy, profile] = await Promise.all([
+      pharmacies.getPharmacy(req.pharmacyId),
+      pharmacies.getProfile(req.pharmacyId),
+    ]);
+    const health = Array.isArray(site.content?.health) ? site.content.health : [];
+    pages = buildPages({ pharmacy, profile, health, healthLibrary: publishableArticles() })
+      // 'home' is edited through the guided form or the advanced editor —
+      // it has no generated heading/intro of the kind this list is for.
+      // 'health' articles are reviewed clinical content (health.js) and must
+      // stay out of a generic page-text channel entirely, not just out of
+      // this list — see pageContent.js's own guard for the part that matters.
+      .filter((page) => page.kind !== 'home' && page.kind !== 'health')
+      .map((page) => ({ path: page.path, kind: page.kind, nav: page.nav, label: page.label || page.nav }));
+  }
+
   // The dashboard cannot work this out for itself. It is always served from
   // app.rxnaija.com, so deriving the address from window.location produces the
   // PATH form even when subdomains are live — and this is the screen that tells
   // an owner they will be printing it. Null means subdomains are not
   // configured, in which case the path form genuinely is the real address.
-  res.json({ site, publicDomain: baseDomain() || null });
+  res.json({ site, publicDomain: baseDomain() || null, pages });
 }));
 
 /**
@@ -399,22 +427,48 @@ router.get('/preview.html', requireAuth, asyncRoute(async (req, res) => {
   // mistyped query string degrades to the normal preview rather than erroring.
   const candidate = typeof req.query?.template === 'string' ? getTemplate(req.query.template) : null;
 
-  const html = renderDocument({
-    ...ctx,
-    site: candidate ? cloneSeed(candidate.id) : site.site_data,
-    // Always the pharmacy's OWN theme, never the candidate template's
-    // suggested palette. switchTemplate leaves theme untouched, so this is
-    // the only rendering that matches what committing would actually
-    // produce — showing the candidate in a colour scheme it will not keep
-    // would be a preview that lies about the result.
-    theme: site.theme,
-    // The asset map and the year come from renderContextFor above. They used
-    // to be overridden here with an empty Map, which — spread AFTER ...ctx —
-    // would now silently blank every uploaded logo in the preview while the
-    // published page showed it correctly. Exactly the kind of difference a
-    // preview must not have.
-    noindex: true,
-  });
+  // An optional GENERATED page path previews About, Services, one service
+  // page, Location, Contact or the health index instead of the home page —
+  // the pages a pharmacy composes no blocks for and could not preview at all
+  // before this, even though rewriting their heading/intro (pageCopy, see
+  // websiteService.js) is exactly the kind of change someone wants to see
+  // before it goes live. Not offered together with a candidate template: a
+  // template swap only has a new HOME page composition to show, and the
+  // client never sends both.
+  const pagePath = !candidate && typeof req.query?.page === 'string' ? req.query.page : null;
+
+  const contentForRender = (site.content && typeof site.content === 'object') ? site.content : {};
+  let html;
+  if (pagePath && pagePath !== '/') {
+    const { rendered } = renderAllPages({
+      ...ctx,
+      site: site.site_data,
+      theme: site.theme,
+      health: Array.isArray(contentForRender.health) ? contentForRender.health : [],
+      pageCopy: (contentForRender.pageCopy && typeof contentForRender.pageCopy === 'object') ? contentForRender.pageCopy : {},
+      noindex: true,
+    });
+    const match = rendered.find((r) => r.path === pagePath);
+    if (!match) throw new HttpError(404, 'No such page on this website', 'NOT_FOUND');
+    html = match.html;
+  } else {
+    html = renderDocument({
+      ...ctx,
+      site: candidate ? cloneSeed(candidate.id) : site.site_data,
+      // Always the pharmacy's OWN theme, never the candidate template's
+      // suggested palette. switchTemplate leaves theme untouched, so this is
+      // the only rendering that matches what committing would actually
+      // produce — showing the candidate in a colour scheme it will not keep
+      // would be a preview that lies about the result.
+      theme: site.theme,
+      // The asset map and the year come from renderContextFor above. They used
+      // to be overridden here with an empty Map, which — spread AFTER ...ctx —
+      // would now silently blank every uploaded logo in the preview while the
+      // published page showed it correctly. Exactly the kind of difference a
+      // preview must not have.
+      noindex: true,
+    });
+  }
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader(

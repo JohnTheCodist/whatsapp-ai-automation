@@ -67,6 +67,12 @@ export default function WebsitePanel({ onNavigate }) {
   // live. Comes from the server because the browser cannot tell — see
   // api.publicUrl.
   const [publicDomain, setPublicDomain] = useState(null);
+  // The generated pages this site currently has (About, Services, one per
+  // service, Location, Contact) — computed server-side by the exact same
+  // function the renderer and the sitemap use, so this list can never name a
+  // page that does not actually exist. See WebsiteContent's "Website page
+  // text" row, the only consumer.
+  const [pages, setPages] = useState([]);
   const [error, setError] = useState(null);
   // Bumped whenever something the preview renders has changed. See PreviewPane.
   const [nonce, setNonce] = useState(() => Date.now());
@@ -81,6 +87,7 @@ export default function WebsitePanel({ onNavigate }) {
         // Before setSite, which is what unblocks the render: the publish bar
         // must never paint a frame showing the wrong address shape.
         setPublicDomain(res.publicDomain || null);
+        setPages(Array.isArray(res.pages) ? res.pages : []);
         setSite(res.site);
       })
       .catch((err) => live && setError(err.message));
@@ -88,6 +95,21 @@ export default function WebsitePanel({ onNavigate }) {
   }, []);
 
   const refreshPreview = useCallback(() => setNonce(Date.now()), []);
+
+  // Adding or removing a service inside WebsiteContent changes which
+  // generated pages exist. Re-fetching keeps the "Website page text" editor's
+  // list in step with reality rather than whatever it was when the tab
+  // opened — simplest correct option, since the page list has no narrower
+  // endpoint of its own (see routes/website.js's GET / for why one wasn't
+  // added just for this).
+  const refreshPages = useCallback(() => {
+    api.getWebsite().then((res) => setPages(Array.isArray(res.pages) ? res.pages : [])).catch(() => {});
+  }, []);
+
+  const onContentSaved = useCallback(() => {
+    refreshPreview();
+    refreshPages();
+  }, [refreshPreview, refreshPages]);
 
   if (error) {
     return (
@@ -175,7 +197,7 @@ export default function WebsitePanel({ onNavigate }) {
         </div>
       )}
 
-      <WebsiteContent site={site} onSaved={refreshPreview} onNavigate={onNavigate} />
+      <WebsiteContent site={site} pages={pages} onSaved={onContentSaved} onNavigate={onNavigate} />
 
       <div className="flex flex-col gap-4">
         <DesignSettings theme={site.theme} onThemeChange={refreshPreview} />

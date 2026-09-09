@@ -37,6 +37,13 @@ function renderAllPages({
   // omission, and an unreviewed article therefore cannot become a page
   // through any path that forgets to filter.
   healthLibrary = publishableArticles(),
+  // The owner's own wording for a generated page's heading/intro/(for a
+  // service page) the "what this involves" paragraph, keyed by path — see
+  // websiteService.js's validatePageCopy for the shape. Applied in
+  // pageContent.js; everything else about a page (whether it exists at all,
+  // its URL, its structured data) is still entirely derived from the
+  // profile, exactly as before this existed.
+  pageCopy = {},
 } = {}) {
   const pages = buildPages({ pharmacy, profile, health, healthLibrary });
 
@@ -47,6 +54,7 @@ function renderAllPages({
     assetBaseUrl: assetBaseUrl || '',
     year: year ?? null,
     trackingBase,
+    pageCopy: pageCopy || {},
     // The site map, so the header block can link to the pages that exist
     // rather than to nothing. Set here because this is the only place that
     // knows the whole site.

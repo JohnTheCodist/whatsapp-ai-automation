@@ -417,6 +417,18 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
   const parts = [header(ctx, allPages, page.path)];
 
   /**
+   * The owner's own wording for THIS page, or nothing.
+   *
+   * NOT for 'health' pages, even though ctx.pageCopy is keyed by path and
+   * nothing here would stop it matching one — checked explicitly rather than
+   * left to whatever the caller happens to send. A health article's heading
+   * and intro are reviewed clinical copy (see health.js), and a generic
+   * rewrite channel meant for "What we can help with at our pharmacy in
+   * Ikeja" must not become a second way to edit that.
+   */
+  const override = page.kind === 'health' ? {} : (ctx.pageCopy?.[page.path] || {});
+
+  /**
    * The page head.
    *
    * Left-aligned inside the SAME shell every other section uses, rather than
@@ -424,12 +436,19 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
    * thing that reads as "unstructured" — the eye keeps re-finding the left
    * edge. The measure is applied to the lede alone, which is the only part
    * that needs one.
+   *
+   * `intro` is the GENERATED default; override.heading/override.intro, when
+   * the owner has written either, win. Falling back per-field rather than
+   * all-or-nothing means writing a custom intro does not require also
+   * retyping the heading.
    */
   const open = (intro) => {
+    const heading = override.heading || page.h1;
+    const lede = override.intro || intro;
     parts.push(`<section class="rx-block rx-page-head"><div>`
       + `<span class="rx-eyebrow">${esc(page.nav || name)}</span>`
-      + `<h1>${esc(page.h1)}</h1>`
-      + (intro ? `<p class="rx-lede">${esc(intro)}</p>` : '')
+      + `<h1>${esc(heading)}</h1>`
+      + (lede ? `<p class="rx-lede">${esc(lede)}</p>` : '')
       + `</div></section>`);
   };
 
@@ -455,7 +474,13 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
     if (page.description) {
       parts.push(`<section class="rx-block rx-narrow"><p>${esc(page.description)}</p></section>`);
     }
-    if (copy) {
+    if (override.about) {
+      // The owner's own paragraph REPLACES the canned procedure text
+      // entirely, rather than sitting alongside it — a page should say one
+      // thing about what a service involves, not the generic version and
+      // then the owner's correction to it.
+      parts.push(`<section class="rx-block rx-narrow"><h2>About this service</h2><p>${esc(override.about)}</p></section>`);
+    } else if (copy) {
       parts.push(`<section class="rx-block rx-narrow"><h2>What this involves</h2><p>${esc(copy.involves)}</p>`
         + `<h2>What to expect</h2><p>${esc(copy.expect)}</p></section>`);
     }

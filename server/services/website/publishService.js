@@ -209,6 +209,11 @@ async function publishWebsite(pharmacyId, { userId } = {}) {
     // other guided-flow answers, because that is what it is: a choice the
     // owner made in the builder, not a property of the site structure.
     health: Array.isArray(site.content?.health) ? site.content.health : [],
+    // The owner's own wording for a generated page's heading/intro/about —
+    // see websiteService.js's validatePageCopy. Read the same way health is:
+    // a guided-flow answer, not part of the site structure, so it travels
+    // with whichever snapshot (draft or published) is being rendered.
+    pageCopy: (site.content?.pageCopy && typeof site.content.pageCopy === 'object') ? site.content.pageCopy : {},
   });
 
   // published_html remains the home page, so every existing reader of that
@@ -318,6 +323,11 @@ async function rerenderPublished(pharmacyId) {
     // other guided-flow answers, because that is what it is: a choice the
     // owner made in the builder, not a property of the site structure.
     health: Array.isArray(site.content?.health) ? site.content.health : [],
+    // The owner's own wording for a generated page's heading/intro/about —
+    // see websiteService.js's validatePageCopy. Read the same way health is:
+    // a guided-flow answer, not part of the site structure, so it travels
+    // with whichever snapshot (draft or published) is being rendered.
+    pageCopy: (site.content?.pageCopy && typeof site.content.pageCopy === 'object') ? site.content.pageCopy : {},
   });
   const home = rendered.find((r) => r.path === '/');
   const html = home ? home.html : renderDocument({

@@ -382,3 +382,84 @@ test('a logo is not silently reused as a shopfront photograph', () => {
   const location = pages.find((p) => p.path === '/location/');
   assert.doesNotMatch(location.html, /<div class="rx-photo-grid"/);
 });
+
+// =====================================================================
+// pageCopy — an owner's own heading/intro/(for a service page) "about this
+// service" wording, overriding the generated default. See websiteService.js's
+// validatePageCopy for the shape this is validated to before it ever reaches
+// here; these tests are about what RENDERING does with a value already known
+// to be well-formed.
+// =====================================================================
+
+function renderWithPageCopy(pageCopy, extra = {}) {
+  return renderAllPages({
+    site: templates.cloneSeed('professional'),
+    pharmacy: PHARMACY,
+    profile: { ...PROFILE, services: [{ name: 'Blood Pressure Checks' }] },
+    theme: templates.getTemplate('professional').theme,
+    assets: new Map(),
+    assetBaseUrl: 'https://cdn.example.com',
+    year: 2026,
+    pageCopy,
+    ...extra,
+  }).rendered;
+}
+
+test('a heading override replaces the generated <h1>, and an intro override replaces the generated lede', () => {
+  const pages = renderWithPageCopy({
+    '/about/': { heading: 'Meet the Team', intro: 'Serving Allen Avenue for over a decade.' },
+  });
+  const about = pages.find((p) => p.path === '/about/').html;
+  assert.match(about, /<h1>Meet the Team<\/h1>/);
+  assert.match(about, /Serving Allen Avenue for over a decade\./);
+});
+
+test('leaving intro blank keeps the generated intro; overriding it does not require also overriding the heading', () => {
+  const pages = renderWithPageCopy({ '/location/': { heading: 'Come Say Hello' } });
+  const location = pages.find((p) => p.path === '/location/').html;
+  assert.match(location, /<h1>Come Say Hello<\/h1>/);
+  // The generated lede for /location/ names the pharmacy and area — still
+  // present, because this override only named a heading.
+  assert.match(location, /Ikeja Family Pharmacy is a community pharmacy in Ikeja, Lagos\./);
+});
+
+test('an "about" override on a service page replaces the canned copy, not alongside it', () => {
+  const pages = renderWithPageCopy({
+    '/services/blood-pressure-check/': { about: 'We use a manual cuff and note your reading in your file.' },
+  });
+  const page = pages.find((p) => p.path === '/services/blood-pressure-check/').html;
+  assert.match(page, /We use a manual cuff and note your reading in your file\./);
+  assert.doesNotMatch(page, /What this involves/);
+  assert.doesNotMatch(page, /What to expect/);
+});
+
+test('no "about" override leaves the canned copy exactly as it was', () => {
+  const pages = renderWithPageCopy({});
+  const page = pages.find((p) => p.path === '/services/blood-pressure-check/').html;
+  assert.match(page, /What this involves/);
+});
+
+test('pageCopy cannot rewrite a reviewed health article — the channel is ignored for that page kind', () => {
+  const approved = {
+    slug: 'hypertension',
+    title: 'High blood pressure: what it is and why checks matter',
+    summary: 's', status: 'approved',
+    reviewer: { name: 'Dr. Test', title: 'Pharmacist' }, reviewedAt: '2026-01-01',
+    intro: 'The real, reviewed introduction.',
+    sections: [], relatedServices: [], relatedArticles: [],
+  };
+  const pages = renderWithPageCopy(
+    { '/health/hypertension/': { heading: 'A software-written heading', intro: 'Not reviewed by anyone.' } },
+    { health: ['hypertension'], healthLibrary: [approved] },
+  );
+  const article = pages.find((p) => p.kind === 'health').html;
+  assert.match(article, new RegExp(approved.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(article, /A software-written heading/);
+  assert.doesNotMatch(article, /Not reviewed by anyone\./);
+});
+
+test('an unmentioned page renders with no trace of pageCopy at all', () => {
+  const pages = renderWithPageCopy({ '/about/': { heading: 'X' } });
+  const contact = pages.find((p) => p.path === '/contact/').html;
+  assert.match(contact, /<h1>Contact Ikeja Family Pharmacy<\/h1>/);
+});

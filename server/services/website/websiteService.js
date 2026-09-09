@@ -132,6 +132,71 @@ function normalizeSiteData(input) {
  * `content` stays a free-form object: it holds the guided flow's own working
  * answers, is never rendered directly, and its shape is still moving.
  */
+/**
+ * The owner's own wording for a generated page, keyed by the page's PATH —
+ * '/about/', '/services/blood-pressure-check/', and so on. Every field is
+ * optional and every field the owner leaves blank falls back to the
+ * generated default at render time, in pageContent.js — this only ever
+ * REPLACES specific strings, never the page's existence or its structure.
+ *
+ * The REST of `content` stays exactly as loose as normalizeContentPatch
+ * always treated it — this is a targeted shape check for the one sub-key
+ * that is now rendered rather than just stored, the same way `theme` gets
+ * its own stricter validation a few lines below while the rest of `content`
+ * does not.
+ */
+const PAGE_COPY_FIELD_MAX = Object.freeze({ heading: 120, intro: 400, about: 600 });
+const MAX_PAGE_COPY_PAGES = 40;
+
+function validatePageCopy(value) {
+  if (!isPlainObject(value)) {
+    return { ok: false, code: 'INVALID_CONTENT', error: 'content.pageCopy must be an object' };
+  }
+  const paths = Object.keys(value);
+  if (paths.length > MAX_PAGE_COPY_PAGES) {
+    return {
+      ok: false,
+      code: 'INVALID_CONTENT',
+      error: `content.pageCopy cannot name more than ${MAX_PAGE_COPY_PAGES} pages`,
+    };
+  }
+
+  const cleaned = {};
+  for (const path of paths) {
+    if (!path.startsWith('/') || !path.endsWith('/')) {
+      return { ok: false, code: 'INVALID_CONTENT', error: `"${path}" is not a website page path` };
+    }
+    const fields = value[path];
+    if (!isPlainObject(fields)) {
+      return { ok: false, code: 'INVALID_CONTENT', error: `content.pageCopy["${path}"] must be an object` };
+    }
+
+    const entry = {};
+    for (const [key, max] of Object.entries(PAGE_COPY_FIELD_MAX)) {
+      const raw = fields[key];
+      if (raw === undefined || raw === null) continue;
+      if (typeof raw !== 'string') {
+        return { ok: false, code: 'INVALID_CONTENT', error: `content.pageCopy["${path}"].${key} must be a string` };
+      }
+      const trimmed = raw.trim();
+      // A blank override is the same as no override — dropped rather than
+      // stored, so an owner who clears the box gets the generated default
+      // back rather than an empty heading.
+      if (!trimmed) continue;
+      if (trimmed.length > max) {
+        return {
+          ok: false,
+          code: 'INVALID_CONTENT',
+          error: `content.pageCopy["${path}"].${key} must be ${max} characters or fewer`,
+        };
+      }
+      entry[key] = trimmed;
+    }
+    if (Object.keys(entry).length) cleaned[path] = entry;
+  }
+  return { ok: true, value: cleaned };
+}
+
 function normalizeContentPatch(input) {
   const patch = {};
 
@@ -146,7 +211,13 @@ function normalizeContentPatch(input) {
         error: `content exceeds ${Math.floor(MAX_CONTENT_BYTES / 1024)}KB`,
       };
     }
-    patch.content = input.content;
+    let content = input.content;
+    if (content.pageCopy !== undefined) {
+      const checkedCopy = validatePageCopy(content.pageCopy);
+      if (!checkedCopy.ok) return checkedCopy;
+      content = { ...content, pageCopy: checkedCopy.value };
+    }
+    patch.content = content;
   }
 
   if (input?.theme !== undefined) {
@@ -365,6 +436,7 @@ module.exports = {
   // pure, exported for tests
   normalizeSiteData,
   normalizeContentPatch,
+  validatePageCopy,
   MAX_SITE_DATA_BYTES,
   MAX_CONTENT_BYTES,
 };

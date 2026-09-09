@@ -183,8 +183,14 @@ export async function savePublicWhatsappNumber(number) {
  * stored draft — the server renders that template's seed for this one
  * response only. Omit it for the real draft, which is every other caller.
  */
-export const previewUrl = (nonce, templateId = null) =>
-  `/api/website/preview.html?v=${nonce}${templateId ? `&template=${encodeURIComponent(templateId)}` : ''}`;
+export const previewUrl = (nonce, templateId = null, pagePath = null) =>
+  `/api/website/preview.html?v=${nonce}`
+  + (templateId ? `&template=${encodeURIComponent(templateId)}` : '')
+  // Ignored server-side when a template is also given — a template swap only
+  // has a new HOME page composition to preview, never a mismatch the caller
+  // needs to avoid: pagePath is simply not sent in that case (see
+  // TemplatePicker, the only caller that passes templateId).
+  + (pagePath ? `&page=${encodeURIComponent(pagePath)}` : '');
 
 /**
  * The preview document itself.
@@ -203,8 +209,8 @@ export const previewUrl = (nonce, templateId = null) =>
  * it is the largest thing on the screen. Fetching the HTML here puts it back
  * on the authenticated path; the caller hands the string to `srcdoc`.
  */
-export async function previewHtml(nonce, templateId = null) {
-  const res = await fetch(previewUrl(nonce, templateId));
+export async function previewHtml(nonce, templateId = null, pagePath = null) {
+  const res = await fetch(previewUrl(nonce, templateId, pagePath));
   if (!res.ok) {
     if (res.status === 401) {
       throw new Error('Your session has expired. Reload the page to see your preview.');

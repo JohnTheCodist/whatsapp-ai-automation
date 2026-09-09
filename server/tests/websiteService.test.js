@@ -45,7 +45,7 @@ const skipReason = 'TEST_DATABASE_URL not set — website record behaviour NOT v
 require('./helpers/testDb').useTestDatabase(TEST_URL);
 
 const websiteService = require('../services/website/websiteService');
-const { normalizeSiteData, normalizeContentPatch } = websiteService;
+const { normalizeSiteData, normalizeContentPatch, validatePageCopy } = websiteService;
 const templates = require('../services/website/templates');
 
 // =====================================================================
@@ -182,6 +182,61 @@ test('a content patch must carry content or theme, and each must be valid', () =
   assert.equal(normalizeContentPatch({ theme: { primary: '#0f766e' } }).code, 'INVALID_THEME',
     'a raw colour is not a theme setting — the owner picks a palette');
   assert.equal(normalizeContentPatch({ theme: { palette: 'teal' } }).ok, true);
+});
+
+// =====================================================================
+// pageCopy — an owner's own wording for a generated page. See its header
+// comment in websiteService.js for the shape and why it exists.
+// =====================================================================
+
+test('pageCopy trims whitespace, drops blank fields, and drops unknown keys', () => {
+  const r = validatePageCopy({ '/about/': { heading: '  Our Story  ', intro: '   ', bogus: 'x' } });
+  assert.deepEqual(r, { ok: true, value: { '/about/': { heading: 'Our Story' } } });
+});
+
+test('an entry left entirely blank is dropped rather than stored as an empty override', () => {
+  const r = validatePageCopy({ '/about/': { heading: '' }, '/contact/': { intro: '   ' } });
+  assert.deepEqual(r, { ok: true, value: {} });
+});
+
+test('pageCopy rejects a key that is not a real page path', () => {
+  const r = validatePageCopy({ about: { heading: 'x' } });
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'INVALID_CONTENT');
+});
+
+test('pageCopy rejects a field over its length cap, naming the field', () => {
+  const r = validatePageCopy({ '/about/': { heading: 'A'.repeat(121) } });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /heading.*120 characters or fewer/);
+});
+
+test('pageCopy rejects more pages than the cap allows', () => {
+  const many = {};
+  for (let i = 0; i < 41; i += 1) many[`/p${i}/`] = { heading: 'x' };
+  const r = validatePageCopy(many);
+  assert.equal(r.ok, false);
+});
+
+test('pageCopy rejects a non-string field value', () => {
+  const r = validatePageCopy({ '/about/': { heading: 123 } });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /must be a string/);
+});
+
+test('a content patch carrying pageCopy validates it and leaves the rest of content alone', () => {
+  const r = normalizeContentPatch({
+    content: { health: ['hypertension'], pageCopy: { '/about/': { heading: '  Hi  ' } } },
+  });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.value.content.health, ['hypertension']);
+  assert.deepEqual(r.value.content.pageCopy, { '/about/': { heading: 'Hi' } });
+});
+
+test('a content patch carrying an invalid pageCopy is rejected before anything is stored', () => {
+  const r = normalizeContentPatch({ content: { pageCopy: { 'not-a-path': { heading: 'x' } } } });
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'INVALID_CONTENT');
 });
 
 // =====================================================================
