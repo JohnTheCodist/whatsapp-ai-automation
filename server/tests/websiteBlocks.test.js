@@ -947,6 +947,31 @@ test('the editor manifest is derived from the registry, block for block', () => 
   }
 });
 
+test('every list in the manifest says what KIND each of its fields is, not just the name', () => {
+  // The simple homepage form decides from this whether a list is safe to
+  // edit as plain boxes. Without a kind per sub-field its only options are
+  // to refuse every list or to take a URL as free text — and the header's
+  // navigation carries an href, so the second one quietly lets an owner
+  // break their own menu. Asserted on the manifest rather than trusted.
+  for (const entry of editorManifest().blocks) {
+    for (const trait of entry.traits) {
+      if (trait.kind !== 'repeater') continue;
+      assert.ok(Array.isArray(trait.itemFields), `${entry.id}.${trait.name} must describe its fields`);
+      for (const field of trait.itemFields) {
+        assert.ok(field.name, `${entry.id}.${trait.name} has a field with no name`);
+        assert.ok(field.kind, `${entry.id}.${trait.name}.${field.name} must say what kind it is`);
+      }
+    }
+  }
+
+  // The case that motivated it, pinned by name: a plain-text form must be
+  // able to tell this one apart from a list of plain lines.
+  const header = editorManifest().blocks.find((b) => b.id === 'pharmacy.header');
+  const nav = header.traits.find((t) => t.name === 'navigation');
+  assert.equal(nav.itemFields.find((f) => f.name === 'href').kind, 'url');
+  assert.equal(nav.itemFields.find((f) => f.name === 'label').kind, 'text');
+});
+
 test('the manifest never ships a renderer or a default to the client', () => {
   for (const entry of editorManifest().blocks) {
     assert.equal(entry.render, undefined, 'the client must never decide what HTML a block produces');

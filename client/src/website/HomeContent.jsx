@@ -55,15 +55,30 @@ const inputClass =
 /** Human labels for the field names that actually appear across the registry. */
 const FIELD_LABELS = {
   heading: 'Heading',
+  headingAccent: 'Highlighted words in the heading',
   subheading: 'Subheading',
+  eyebrow: 'Small label above the heading',
   description: 'Description',
   label: 'Button text',
   buttonLabel: 'Button text',
   primaryCtaLabel: 'Primary button text',
   secondaryCtaLabel: 'Secondary button text',
   directionsLabel: 'Button text',
+  phoneCtaLabel: 'Call button text',
+  whatsappLabel: 'WhatsApp button text',
+  copyright: 'Copyright line',
+  // Both CTA blocks call this `message`, and it is NOT the text on the
+  // button — it is what gets typed into the customer's own WhatsApp when
+  // they tap it. Named plainly here because "Message" alone reads as the
+  // former and would be edited as such.
   message: 'Pre-filled WhatsApp message',
+  primaryCtaMessage: 'Pre-filled WhatsApp message',
   note: 'Note',
+  // Lists.
+  highlights: 'Trust points',
+  whyUs: 'Reasons to choose you',
+  faqs: 'Questions and answers',
+  reviews: 'Customer reviews',
 };
 
 /** Falls back to a humanised version of the prop name for anything not listed above. */
@@ -107,7 +122,14 @@ function simpleListFieldsFor(definition) {
   if (!definition) return [];
   return (definition.traits || [])
     .filter((t) => t.kind === 'repeater' && !t.inherited
-      && Array.isArray(t.itemFields) && t.itemFields.length > 0 && t.itemFields.length <= 2)
+      && Array.isArray(t.itemFields) && t.itemFields.length > 0 && t.itemFields.length <= 2
+      // EVERY sub-field must be plain text. The header's navigation is a
+      // label and an HREF: offering that as two plain boxes would invite an
+      // owner to hand-write a URL with nothing checking it and quietly
+      // break their own menu — which otherwise builds itself from the pages
+      // they actually have. A list with a URL, a number or a toggle in it
+      // belongs in the advanced editor, which has a real control per type.
+      && t.itemFields.every((f) => f.kind === 'text'))
     .map((t) => ({ name: t.name, itemFields: t.itemFields, max: t.max || 12 }));
 }
 

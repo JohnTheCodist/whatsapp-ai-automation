@@ -77,6 +77,12 @@ function traitsFor(definition) {
       ? {
         itemFields: Object.entries(spec.of).map(([itemName, itemSpec]) => ({
           name: itemName,
+          // The same INPUT_KIND every top-level prop is described with. A
+          // list is only safe to edit as plain boxes when every field in it
+          // IS one — the header's navigation carries an `href`, and a form
+          // that took a URL as free text would let an owner quietly point
+          // their own menu at nothing.
+          kind: INPUT_KIND[itemSpec.type] || 'text',
           required: Boolean(itemSpec.required),
           ...(itemSpec.max !== undefined ? { max: itemSpec.max } : {}),
         })),
