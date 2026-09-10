@@ -360,3 +360,7 @@ module.exports.PIN_ICON = PIN_ICON;
 module.exports.PHONE_ICON = PHONE_ICON;
 module.exports.CLOCK_ICON = CLOCK_ICON;
 module.exports.DAY_ORDER = DAY_ORDER;
+// Shared with the contact page's own map, which must be the SAME embed the
+// home page shows — one address, one pin, built the same way from the same
+// structured fields.
+module.exports.mapEmbedSrc = mapEmbedSrc;

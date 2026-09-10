@@ -170,7 +170,25 @@ test('the published CSP forbids script entirely', () => {
   assert.match(csp, /script-src 'none'/);
   assert.match(csp, /default-src 'none'/);
   assert.match(csp, /frame-ancestors 'none'/);
-  assert.match(csp, /form-action 'none'/);
+  assert.match(csp, /base-uri 'none'/);
+});
+
+test("form-action names ONLY the two WhatsApp hosts a message box submission actually touches", () => {
+  // It was 'none' until Metro's contact page gained a message box. That box
+  // is a plain GET whose one field is named "text", which is the parameter
+  // wa.me already takes — so the page still ships no JavaScript, still has
+  // no endpoint of ours to post to, and still stores nothing.
+  //
+  // BOTH hosts are required and both were checked rather than assumed:
+  // wa.me answers 302 to api.whatsapp.com, and form-action is enforced
+  // across redirects, so naming only the first blocks the submission at the
+  // hop. Named exactly, so a future "allow *.whatsapp.com" edit fails here
+  // rather than widening the policy quietly.
+  const csp = publicSite.publicCsp();
+  const match = /form-action ([^;]+)/.exec(csp);
+  assert.ok(match, 'form-action must still be present — an absent directive allows every origin');
+  const hosts = match[1].trim().split(/\s+/);
+  assert.deepEqual(hosts.sort(), ['https://api.whatsapp.com', 'https://wa.me'].sort());
 });
 
 test('frame-src exists ONLY for the location map embed, scoped to exactly the two hosts it needs', () => {

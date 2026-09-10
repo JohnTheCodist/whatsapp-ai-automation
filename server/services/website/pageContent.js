@@ -26,10 +26,12 @@
  * are fast.
  */
 
-const { esc, waHref, telHref, mapsHref, assetsOfKind } = require('./blocks/render');
+const { esc, waHref, telHref, mapsHref, whatsappUrl, assetsOfKind } = require('./blocks/render');
 const { renderBlock } = require('./blocks');
 // Drawn once, in the block that already needed them for the location cards.
-const { groupedHours, PIN_ICON, PHONE_ICON, CLOCK_ICON } = require('./blocks/definitions/practical');
+const {
+  groupedHours, mapEmbedSrc, PIN_ICON, PHONE_ICON, CLOCK_ICON,
+} = require('./blocks/definitions/practical');
 const { whatsappGlyph } = require('./blocks/icons');
 const { serviceIcon } = require('./blocks/icons');
 const { navPages } = require('./pages');
@@ -438,6 +440,57 @@ function metroContactCards(ctx, p) {
     + `<h2>${esc(c.heading)}</h2>${c.body}${c.action}</li>`).join('');
 
   return `<section class="rx-block"><ul class="rx-contact-cards">${items}</ul></section>`;
+}
+
+/**
+ * A message box beside the map — the last section of Metro's contact page.
+ *
+ * THE FORM IS A GET TO wa.me, AND THAT IS THE ENTIRE MECHANISM. Its one
+ * field is named "text", which is the parameter wa.me already takes, so
+ * submitting it opens WhatsApp addressed to the pharmacy with the visitor's
+ * words typed in. No script, no endpoint of ours, nothing stored anywhere,
+ * and no new place for a stranger's data to sit — the message goes to the
+ * number the pharmacy already answers, which is the whole product.
+ *
+ * That is why there is no Name, Phone or Email field, which the reference
+ * has: WhatsApp already carries who is writing, and a form can only pass ONE
+ * value as "text" without script to join them. Fields that go nowhere are
+ * worse than fields that are not there. There are no Privacy Policy or Terms
+ * links under it either, for the reason the footer has none.
+ *
+ * The heading only offers to be visited when there is somewhere to visit.
+ */
+function metroReachSection(ctx, p, area) {
+  const action = whatsappUrl(ctx.pharmacy?.public_whatsapp_number);
+  const mapSrc = mapEmbedSrc(p);
+  if (!action && !mapSrc) return '';
+
+  const form = action
+    ? '<form class="rx-reach-form" method="get" target="_blank" rel="noopener noreferrer" '
+      + `action="${esc(action)}">`
+      + '<label class="rx-reach-label" for="rx-reach-text">Write your message</label>'
+      + '<textarea id="rx-reach-text" name="text" rows="7" '
+      + 'placeholder="Hello, I would like to ask about&#8230;"></textarea>'
+      + '<button class="rx-btn rx-btn-wa" type="submit">Send on WhatsApp</button>'
+      + '<p class="rx-reach-note">This opens WhatsApp with your message ready to send. '
+      + 'Nothing is saved on this page.</p>'
+      + '</form>'
+    : '';
+
+  const map = mapSrc
+    ? `<div class="rx-reach-map"><iframe src="${esc(mapSrc)}" loading="lazy" `
+      + 'referrerpolicy="no-referrer-when-downgrade" title="Map"></iframe></div>'
+    : '';
+
+  const heading = map ? 'Send Us a Message or Visit Us' : 'Send Us a Message';
+  const sub = map && area
+    ? `Message us on WhatsApp, or come and find us in ${area}.`
+    : 'Message us on WhatsApp and we will reply there.';
+
+  return '<section class="rx-block rx-reach-band">'
+    + '<div class="rx-head rx-head--center"><span class="rx-eyebrow rx-eyebrow--pill">Get In Touch</span>'
+    + `<h2>${esc(heading)}</h2><p>${esc(sub)}</p></div>`
+    + `<div class="rx-reach">${form}${map}</div></section>`;
 }
 
 /**
@@ -945,6 +998,7 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
       // the address and hours they already show are exactly what visitSplit
       // renders. One of each, not two.
       parts.push(metroContactCards(ctx, p));
+      parts.push(metroReachSection(ctx, p, area));
     } else {
       parts.push(ctaRow(ctx, `Hello ${name}`));
       parts.push(visitSplit(ctx, p));

@@ -1166,3 +1166,82 @@ test('metro does not print the same thing twice — the cards REPLACE the call-t
   assert.equal([...body.matchAll(/12 Allen Avenue, Ikeja, Lagos/g)].length, 1);
   assert.equal([...body.matchAll(/href="tel:08012345678"/g)].length, 1);
 });
+
+// =====================================================================
+// THE MESSAGE BOX AND THE MAP (METRO CONTACT)
+// =====================================================================
+
+test('the message box is a plain GET to the pharmacy\'s own WhatsApp, and its one field is the parameter wa.me takes', () => {
+  const html = metroContact(PROFILE);
+  const form = html.slice(html.indexOf('<form class="rx-reach-form"'));
+  const tag = form.slice(0, form.indexOf('>') + 1);
+
+  assert.match(tag, /method="get"/);
+  assert.match(tag, /action="https:\/\/wa\.me\/2348012345678"/);
+  // No query on the action: a GET form REPLACES the query string, so anything
+  // already there would be silently dropped on submit.
+  assert.ok(!/action="[^"]*\?/.test(tag), 'the action must carry no query of its own');
+  assert.match(form, /<textarea id="rx-reach-text" name="text"/);
+
+  // The field is labelled, not placeholder-only — a placeholder disappears
+  // the moment somebody types and is not a label to a screen reader.
+  assert.match(form, /<label class="rx-reach-label" for="rx-reach-text">/);
+});
+
+test('there are no fields that would go nowhere — no name, no phone, no email, and no policy links', () => {
+  const html = metroContact(PROFILE);
+  const form = html.slice(html.indexOf('<form class="rx-reach-form"'), html.indexOf('</form>'));
+  // Exactly one field. A GET form can pass only ONE value as "text" without
+  // script to join them, so a second field would be collected and discarded.
+  assert.equal([...form.matchAll(/<(input|textarea|select)\b/g)].length, 1);
+  assert.ok(!/Privacy Policy|Terms of Service/i.test(html), 'those pages do not exist on a generated site');
+});
+
+test('the page still carries no script of its own, form or no form', () => {
+  const html = metroContact(PROFILE);
+  // The only <script> a published page has is the ld+json metadata block,
+  // which is data rather than code.
+  const scripts = [...html.matchAll(/<script([^>]*)>/g)].map((m) => m[1]);
+  assert.ok(scripts.length > 0, 'the structured data blocks are expected');
+  for (const attrs of scripts) {
+    assert.match(attrs, /type="application\/ld\+json"/, 'no executable script may appear');
+  }
+  assert.ok(!/\son[a-z]+=/i.test(html), 'and no inline event handler either');
+});
+
+test('the map is built from the structured address, never from whatever was pasted into maps_url', () => {
+  const html = metroContact({ ...PROFILE, maps_url: 'https://maps.app.goo.gl/shortened' });
+  assert.match(html, /<iframe src="https:\/\/maps\.google\.com\/maps\?q=12%20Allen%20Avenue%2C%20Ikeja%2C%20Lagos&amp;output=embed"/);
+  // The pasted link is still the directions link on the card above, where a
+  // person clicks it — it just cannot be embedded.
+  assert.match(html, /href="https:\/\/maps\.app\.goo\.gl\/shortened"/);
+});
+
+test('the heading only offers to be visited when there is somewhere to visit', () => {
+  const withMap = metroContact(PROFILE);
+  assert.match(withMap, /<h2>Send Us a Message or Visit Us<\/h2>/);
+  assert.match(withMap, /Message us on WhatsApp, or come and find us in Ikeja, Lagos\./);
+
+  const noAddress = metroContact({ ...PROFILE, address_line: null, city: null, state: null });
+  assert.match(noAddress, /<h2>Send Us a Message<\/h2>/);
+  assert.ok(!noAddress.includes('Visit Us'), 'nothing on file to visit');
+  assert.ok(!noAddress.includes('<div class="rx-reach-map">'), 'and no empty map frame');
+  // The box itself is still there, because the WhatsApp number always is.
+  assert.match(noAddress, /<form class="rx-reach-form"/);
+});
+
+test("no other template's contact page gains a form or a map", () => {
+  const html = renderAllPages({
+    site: templates.cloneSeed('family'),
+    pharmacy: PHARMACY,
+    profile: PROFILE,
+    theme: templates.getTemplate('family').theme,
+    assets: new Map(),
+    year: 2026,
+    templateId: 'family',
+  }).rendered.find((x) => x.path === '/contact/').html;
+  assert.ok(!html.includes('<form'), 'no form off-template');
+  // The rendered element, not the class name: that name is also a selector
+  // in the stylesheet every page inlines.
+  assert.ok(!html.includes('<section class=\"rx-block rx-reach-band\">'));
+});

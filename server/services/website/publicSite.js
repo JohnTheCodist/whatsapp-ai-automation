@@ -295,7 +295,19 @@ function publicCsp() {
     'font-src https://fonts.gstatic.com',
     'frame-src https://maps.google.com https://www.google.com',
     "script-src 'none'",
-    "form-action 'none'",
+    // Metro's contact page carries a message box that submits straight to
+    // WhatsApp — a GET form whose one field is named "text", which is exactly
+    // the parameter wa.me takes. That is the whole mechanism: no script, no
+    // endpoint of ours, nothing stored, and the pharmacy's existing WhatsApp
+    // number is the only destination.
+    //
+    // Both hosts are needed and BOTH WERE CHECKED rather than assumed:
+    // wa.me answers 302 to api.whatsapp.com, which answers 200. form-action
+    // is enforced across redirects, so allowing only the first host would
+    // block the submission at the hop. Verified 2026-09-10; if WhatsApp adds
+    // a hop this list is what needs updating, and the symptom will be a
+    // blocked submission rather than a silent misdirection.
+    'form-action https://wa.me https://api.whatsapp.com',
     "base-uri 'none'",
     "frame-ancestors 'none'",
   ].join('; ');

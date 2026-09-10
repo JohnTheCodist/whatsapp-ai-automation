@@ -1432,6 +1432,67 @@ p:last-child{margin-bottom:0}
 }
 .rx-contact-go:hover{text-decoration:underline}
 
+/* ---- the message box and the map (metro contact) ----
+   A tinted band, so the page ends on something other than white, and the
+   same dot texture the page head carries at a fraction of its strength.
+   The form is a plain GET to wa.me — see pageContent.js's
+   metroReachSection() for why it needs no script and stores nothing. */
+.rx-reach-band{
+  background:var(--rx-tint);
+  background-image:radial-gradient(circle, color-mix(in oklab, var(--rx-ink) 8%, transparent) 1.5px, transparent 1.5px);
+  background-size:20px 20px;
+}
+.rx-reach{display:grid;gap:var(--rx-lg);align-items:stretch}
+.rx-reach-form{
+  display:flex;
+  flex-direction:column;
+  gap:var(--rx-2xs);
+  padding:var(--rx-lg);
+  background:var(--rx-surface);
+  border:1px solid var(--rx-line);
+  border-radius:var(--rx-radius);
+  box-shadow:var(--rx-shadow);
+}
+.rx-reach-label{
+  font-family:var(--rx-display);
+  font-weight:600;
+  font-size:var(--rx-size-sm);
+}
+.rx-reach-form textarea{
+  /* Inherited, not defaulted: a bare textarea falls back to the browser's
+     monospace-ish form font and reads as a different website inside this one. */
+  font:inherit;
+  color:var(--rx-text);
+  width:100%;
+  padding:.75rem .9rem;
+  margin-bottom:var(--rx-sm);
+  background:var(--rx-surface);
+  border:1px solid var(--rx-line-strong);
+  border-radius:var(--rx-radius);
+  resize:vertical;
+  min-height:9rem;
+}
+.rx-reach-form textarea:focus-visible{
+  outline:2px solid var(--rx-primary);
+  outline-offset:1px;
+  border-color:transparent;
+}
+.rx-reach-form button{width:100%;justify-content:center}
+.rx-reach-note{
+  margin:var(--rx-sm) 0 0;
+  color:var(--rx-muted);
+  font-size:var(--rx-size-xs);
+  text-align:center;
+}
+.rx-reach-map{
+  border-radius:var(--rx-radius);
+  overflow:hidden;
+  min-height:22rem;
+  background:var(--rx-surface);
+  border:1px solid var(--rx-line);
+}
+.rx-reach-map iframe{width:100%;height:100%;min-height:22rem;border:0;display:block}
+
 /* ---- footer ----
    A statement, not four columns of links. The secondary text is a TRANSLUCENT
    WHITE rather than var(--rx-muted): --rx-muted is tuned for the light page
@@ -1573,6 +1634,7 @@ p:last-child{margin-bottom:0}
   .rx-footer-cols{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (min-width:768px){
+  .rx-reach{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:var(--rx-xl)}
   .rx-footer-cols{grid-template-columns:minmax(0,1.5fr) repeat(3,minmax(0,1fr));gap:var(--rx-xl)}
   .rx-stack-640{display:flex;flex-direction:row;align-items:center;justify-content:space-between;width:100%}
   .rx-nav{display:flex}
@@ -1743,7 +1805,7 @@ p:last-child{margin-bottom:0}
   .rx-pharmacy-footer{background:none;color:#000;border-top:1px solid #000}
   .rx-pharmacy-footer a,.rx-footer-address,.rx-footer-legal{color:#000}
   .rx-footer-blurb,.rx-footer-h,.rx-footer-links a,.rx-footer-dots a,.rx-footer-info,.rx-footer-info a{color:#000}
-  .rx-footer-mark,.rx-footer-logo{display:none}
+  .rx-footer-mark,.rx-footer-logo,.rx-reach-form,.rx-reach-map{display:none}
   .rx-footer-info li{grid-template-columns:minmax(0,1fr)}
   .rx-block{padding:1rem 0;break-inside:avoid}
 }
