@@ -502,19 +502,58 @@ test('metro\'s generated pages get the coloured band, and the pharmacy\'s own na
   assert.match(contact, /<h1>Contact <span class="rx-name-accent">Ikeja Family Pharmacy<\/span><\/h1>/);
 });
 
-test('metro\'s name highlight is a suffix match, not a guess — a heading that does not end with the name is left exactly as it was', () => {
+test('metro highlights the pharmacy\'s own AREA too, on the headings that end with it rather than with the name', () => {
+  // Widened deliberately when the Services page was built: its generated
+  // heading ends with the area, not the name, and highlighting nothing
+  // there left one page in the set visibly plainer than the rest. Both
+  // halves are facts already on the profile — this never picks words for
+  // being important-looking.
   const pages = renderWithPageCopy({}, { templateId: 'metro' });
-  // "Find us in Ikeja, Lagos" does not end with the pharmacy's name.
   const location = pages.find((p) => p.path === '/location/').html;
-  assert.doesNotMatch(location, NAME_ACCENT_SPAN);
-  assert.match(location, /<h1>Find us in Ikeja, Lagos<\/h1>/);
+  assert.match(location, /<h1>Find us in <span class="rx-name-accent">Ikeja, Lagos<\/span><\/h1>/);
 
-  // An owner override that does not end with the name must not be forced
-  // into one, or split incorrectly.
-  const overridden = renderWithPageCopy({ '/about/': { heading: 'Meet Our Team' } }, { templateId: 'metro' });
+  const services = pages.find((p) => p.path === '/services/').html;
+  assert.match(services, /<h1>Pharmacy services in <span class="rx-name-accent">Ikeja, Lagos<\/span><\/h1>/);
+});
+
+test('metro\'s highlight is a suffix match, not a guess — a heading ending with neither the name nor the area is left exactly as it was', () => {
+  const overridden = renderWithPageCopy(
+    { '/about/': { heading: 'Meet Our Team' }, '/services/': { heading: 'Everything We Do' } },
+    { templateId: 'metro' },
+  );
   const about = overridden.find((p) => p.path === '/about/').html;
   assert.doesNotMatch(about, NAME_ACCENT_SPAN);
   assert.match(about, /<h1>Meet Our Team<\/h1>/);
+
+  const services = overridden.find((p) => p.path === '/services/').html;
+  assert.doesNotMatch(services, NAME_ACCENT_SPAN);
+  assert.match(services, /<h1>Everything We Do<\/h1>/);
+});
+
+test('metro\'s page badge differs per page kind, and the head\'s call to action is only on the pages that ask for one', () => {
+  const pages = renderWithPageCopy({}, { templateId: 'metro' });
+  const badgeOn = (path) => {
+    const m = /<span class="rx-eyebrow rx-eyebrow--outline">([^<]*)<\/span>/.exec(
+      pages.find((p) => p.path === path).html,
+    );
+    return m && m[1];
+  };
+  assert.equal(badgeOn('/about/'), 'Your Community Pharmacy');
+  assert.equal(badgeOn('/services/'), 'Comprehensive Care');
+  assert.equal(badgeOn('/contact/'), 'Here To Help');
+
+  // Scoped to the head's OWN section: every page has a call to action lower
+  // down, so anything looser than this passes on all of them.
+  const headOf = (path) => {
+    const m = /<section class="rx-block rx-page-head rx-page-head--metro">([\s\S]*?)<\/section>/
+      .exec(pages.find((p) => p.path === path).html);
+    return m && m[1];
+  };
+  assert.ok(headOf('/services/').includes('rx-cta-row'), 'the services head asks for the call');
+  assert.ok(!headOf('/about/').includes('rx-cta-row'), 'the about head does not');
+  // The head's button resolves the SAME number ctaRow does, so the one at
+  // the top and the one at the bottom cannot lead somewhere different.
+  assert.match(headOf('/services/'), /href="[^"]*wa\.me\/2348012345678/);
 });
 
 test('metro\'s About page gets a real subheading with no pageCopy override; no other template\'s About page gains one', () => {

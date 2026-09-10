@@ -109,12 +109,46 @@ function areaOf(profile) {
  * to degrade gracefully: no match, no highlight, the heading renders exactly
  * as it already did.
  */
-function highlightOwnName(heading, name) {
+function highlightTrailingFact(heading, facts) {
   const text = String(heading ?? '');
-  const idx = name ? text.length - name.length : -1;
-  if (idx < 0 || text.slice(idx) !== name) return esc(text);
-  return `${esc(text.slice(0, idx))}<span class="rx-name-accent">${esc(name)}</span>`;
+  for (const fact of facts) {
+    if (!fact) continue;
+    const idx = text.length - fact.length;
+    if (idx < 0 || text.slice(idx) !== fact) continue;
+    return `${esc(text.slice(0, idx))}<span class="rx-name-accent">${esc(fact)}</span>`;
+  }
+  return esc(text);
 }
+
+/**
+ * The small badge over a generated page's heading, on Metro.
+ *
+ * Per page kind, because one line cannot be right on all of them — the
+ * reference's own About and Services pages carry different ones. Generic
+ * phrasing on purpose: none of these asserts anything a pharmacy would have
+ * to be able to back up, which is what lets them be written here at all
+ * rather than asked for. An unlisted kind falls back to the page's own name
+ * in the navigation, which is always accurate.
+ */
+const METRO_PAGE_BADGE = Object.freeze({
+  about: 'Your Community Pharmacy',
+  services: 'Comprehensive Care',
+  service: 'Comprehensive Care',
+  location: 'Come And See Us',
+  contact: 'Here To Help',
+  healthIndex: 'Health Information',
+});
+
+/**
+ * The page kinds whose Metro head carries a call to action.
+ *
+ * Not every page: the head is a place to act on a page that is ASKING for
+ * something (here is what we do — talk to us), and noise at the top of one
+ * that is answering a question. Each of these pages already ends with the
+ * same call; repeating it above the fold is the point of a landing page,
+ * not an accident.
+ */
+const METRO_HEAD_CTA = new Set(['services']);
 
 /**
  * The site header — THE SAME BLOCK THE HOME PAGE USES, not a copy of it.
@@ -601,6 +635,28 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
    * all-or-nothing means writing a custom intro does not require also
    * retyping the heading.
    */
+  /**
+   * The single button in a Metro page head.
+   *
+   * The SAME number ctaRow resolves, in the same order, so the button at the
+   * top of a page and the one at the bottom can never lead somewhere
+   * different. Labelled for what it actually does — the reference says
+   * "Schedule a Visit", which would promise an appointment system no
+   * pharmacy here has. Nothing at all when there is no number to reach.
+   */
+  const headCta = () => {
+    const wa = p.whatsapp_phone || ctx.pharmacy?.public_whatsapp_number;
+    if (wa) {
+      return `<div class="rx-cta-row"><a class="rx-btn rx-btn-wa" href="${esc(waHref(wa, `Hello ${name}`, ctx))}">`
+        + 'Message us on WhatsApp</a></div>';
+    }
+    if (p.phone) {
+      return `<div class="rx-cta-row"><a class="rx-btn rx-btn-wa" href="${esc(telHref(p.phone, ctx))}">`
+        + `Call ${esc(p.phone)}</a></div>`;
+    }
+    return '';
+  };
+
   const open = (intro) => {
     const heading = override.heading || page.h1;
     const lede = override.intro || intro;
@@ -611,10 +667,20 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
     // are completely unaffected: ctx.templateId is only ever 'metro' for a
     // pharmacy that actually chose this template.
     if (ctx.templateId === 'metro') {
+      const badge = METRO_PAGE_BADGE[page.kind] || page.nav || name;
+      // The pharmacy's own NAME or its own AREA, whichever the generated
+      // heading happens to end with — "About {name}", "Find us in {area}".
+      // Both are facts already on the profile, so the highlight lands on
+      // something true rather than on whichever words looked important.
+      // A heading that ends with neither (an owner's own override, most
+      // often) renders plainly, exactly as it would have anyway.
+      const headingHtml = highlightTrailingFact(heading, [ctx?.pharmacy?.name, area]);
+      const cta = METRO_HEAD_CTA.has(page.kind) ? headCta() : '';
       parts.push(`<section class="rx-block rx-page-head rx-page-head--metro"><div>`
-        + `<span class="rx-eyebrow rx-eyebrow--outline">Your Community Pharmacy</span>`
-        + `<h1>${highlightOwnName(heading, ctx?.pharmacy?.name)}</h1>`
+        + `<span class="rx-eyebrow rx-eyebrow--outline">${esc(badge)}</span>`
+        + `<h1>${headingHtml}</h1>`
         + (lede ? `<p class="rx-lede">${esc(lede)}</p>` : '')
+        + cta
         + `</div></section>`);
       return;
     }

@@ -207,6 +207,11 @@ p:last-child{margin-bottom:0}
 .rx-page-head--metro h1,
 .rx-page-head--metro .rx-lede{color:var(--rx-on-primary);max-width:none;margin-inline:auto}
 .rx-page-head--metro .rx-lede{opacity:.9}
+/* The head's own call to action, on the pages that carry one. Gold on the
+   band for the same reason the showcase hero's is: the primary colour is
+   the band, so a primary-coloured button on it would not be a button. */
+.rx-page-head--metro .rx-cta-row{justify-content:center;margin-top:var(--rx-lg)}
+.rx-page-head--metro .rx-btn-wa{background:var(--rx-accent);color:var(--rx-ink);box-shadow:none}
 /* The pharmacy's own name, coloured within a heading that happens to end
    with it — see pageContent.js's highlightOwnName() for when this applies
    and when it plainly does not. */
