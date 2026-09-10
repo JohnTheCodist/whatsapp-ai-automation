@@ -22,9 +22,9 @@
  */
 
 import { useState } from 'react';
-import { Panel, PanelHead } from '../DashboardKit.jsx';
-import { IconWebsite } from '../Icons.jsx';
+import { Panel } from '../DashboardKit.jsx';
 import Row from './Row.jsx';
+import SectionTitle from './SectionTitle.jsx';
 import HealthTopics from './HealthTopics.jsx';
 import PageText from './PageText.jsx';
 import HomeContent from './HomeContent.jsx';
@@ -46,11 +46,10 @@ export default function WebsiteContent({ site, pages, onSaved }) {
 
   return (
     <Panel className="p-5 sm:p-6">
-      <PanelHead Icon={IconWebsite}>Website content</PanelHead>
-      <p className="mt-1 text-sm text-slate-600">
-        Your website writes itself from your pharmacy details. Change the wording here if
-        you would rather say it your own way.
-      </p>
+      <SectionTitle
+        title="Website content"
+        info="Your website writes itself from your pharmacy details. Change the wording here if you would rather say it your own way — leave anything blank to keep the automatic version."
+      />
 
       <div className="mt-2">
         <Row

@@ -11,8 +11,9 @@
  * PUBLISH IS HERE, AT THE TOP. It used to be the last control on a long
  * page, which meant the state an owner most needs to see — am I live, and is
  * there a button I have not pressed — was the one thing they had to scroll
- * for. The address form and the take-down stay in the Publishing panel at
- * the bottom: those are set-once decisions, and this is the recurring one.
+ * for. It now sits ABOVE the tab strip, so it is on screen whichever section
+ * an owner is looking at. The address form and the take-down stay in the
+ * Settings tab: those are set-once decisions, and this is the recurring one.
  *
  * IT OWNS NO PUBLISHING STATE. Everything comes from the usePublishing
  * object WebsitePanel created, so this button and the one at the bottom of
@@ -27,9 +28,9 @@
 import * as api from './api.js';
 
 const STATUS = {
-  published: { dot: 'bg-teal-600', label: 'Live', text: 'text-teal-800' },
-  unpublished: { dot: 'bg-amber-500', label: 'Taken down', text: 'text-amber-800' },
-  draft: { dot: 'bg-slate-400', label: 'Not published yet', text: 'text-slate-600' },
+  published: { dot: 'bg-teal-600', label: 'Live', pill: 'bg-teal-50 text-teal-800' },
+  unpublished: { dot: 'bg-amber-500', label: 'Taken down', pill: 'bg-amber-50 text-amber-800' },
+  draft: { dot: 'bg-slate-400', label: 'Not published yet', pill: 'bg-slate-100 text-slate-600' },
 };
 
 /** "Today", "Yesterday", or a plain date. Never a relative "3 days ago". */
@@ -58,19 +59,22 @@ export default function WebsiteHeader({
   const lastPublished = lastPublishedLabel(site.published_at);
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+    <div className="rounded-2xl border border-slate-200 bg-white p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <h2 className="font-display text-xl font-semibold text-slate-900">
             {pharmacy?.name || 'Your pharmacy website'}
           </h2>
           {url && (
-            <p className="mt-1 break-all font-mono text-sm text-slate-600">{url}</p>
+            <p className="mt-1 break-all font-mono text-sm text-slate-500">{url}</p>
+          )}
+          {lastPublished && (
+            <p className="mt-1 text-xs text-slate-400">Last published {lastPublished.toLowerCase()}</p>
           )}
         </div>
 
-        <span className={`inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold ${status.text}`}>
-          <span className={`h-2 w-2 rounded-full ${status.dot}`} aria-hidden="true" />
+        <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${status.pill}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} aria-hidden="true" />
           {status.label}
         </span>
       </div>
@@ -117,17 +121,13 @@ export default function WebsiteHeader({
             ? 'Publishing…'
             : isPublished ? 'Publish changes' : 'Publish my website'}
         </button>
-
-        {lastPublished && (
-          <p className="text-sm text-slate-500">Last published: {lastPublished}</p>
-        )}
       </div>
 
       {/* The one case where the top action cannot work. Said here rather than
           left as a disabled button with no explanation. */}
       {!site.subdomain && (
         <p className="mt-3 text-sm text-slate-500">
-          Choose your web address in Publishing, further down, before publishing.
+          Choose your web address in Settings before publishing.
         </p>
       )}
     </div>

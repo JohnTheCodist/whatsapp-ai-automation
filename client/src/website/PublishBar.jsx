@@ -28,6 +28,8 @@
 
 import { useState } from 'react';
 import { Panel } from '../DashboardKit.jsx';
+import SectionTitle from './SectionTitle.jsx';
+import InfoTip from './InfoTip.jsx';
 import * as api from './api.js';
 
 const inputClass =
@@ -54,30 +56,36 @@ export default function PublishBar({ site, publicDomain = null, publishing }) {
 
   return (
     <Panel className="p-5">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <h3 className="font-display text-base font-semibold text-slate-900">Publishing</h3>
-        <Badge status={site.status} />
-      </div>
+      <SectionTitle
+        title="Publishing"
+        info="Your details stay in step automatically — changing your phone number or address in Setup updates the live page without republishing. Layout and wording changes need a publish."
+        aside={<Badge status={site.status} />}
+      />
 
-      {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-      {note && <p className="mb-3 rounded-lg bg-teal-50 px-3 py-2 text-sm text-teal-800">{note}</p>}
+      {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {note && <p className="mt-3 rounded-lg bg-teal-50 px-3 py-2 text-sm text-teal-800">{note}</p>}
 
       {/* ---- the address ---- */}
       {site.subdomain ? (
-        <div className="mb-4">
-          <p className="text-sm font-medium text-slate-700">Your web address</p>
-          <p className="mt-1 break-all font-mono text-sm text-slate-600">{url}</p>
-          <p className="mt-1 text-xs text-slate-500">
-            Fixed once chosen — customers and search engines rely on it.
+        <div className="mt-4 mb-4">
+          <p className="flex items-center gap-2 text-sm font-medium text-slate-700">
+            Web address
+            <InfoTip label="About your web address">
+              Fixed once chosen — customers and search engines rely on it, and you will be
+              printing it.
+            </InfoTip>
           </p>
+          <p className="mt-1 break-all font-mono text-sm text-slate-600">{url}</p>
         </div>
       ) : (
-        <div className="mb-4">
+        <div className="mt-4 mb-4">
           <label className="block">
-            <span className="text-sm font-medium text-slate-700">Choose your web address</span>
-            <span className="mt-0.5 block text-xs text-slate-500">
-              This is what customers will type. Choose carefully — it is meant to last, and
-              you will be printing it.
+            <span className="flex items-center gap-2 text-sm font-medium text-slate-700">
+              Choose your web address
+              <InfoTip label="About your web address">
+                This is what customers will type. Choose carefully — it is meant to last, and
+                you will be printing it.
+              </InfoTip>
             </span>
             {/* The fixed part changes SIDES with the shape, which is the whole
                 reason this is not a single string. As a path the address comes
@@ -151,13 +159,6 @@ export default function PublishBar({ site, publicDomain = null, publishing }) {
 
       {!site.subdomain && (
         <p className="mt-3 text-xs text-slate-500">Choose an address before publishing.</p>
-      )}
-
-      {isPublished && (
-        <p className="mt-3 text-xs text-slate-500">
-          Your details stay in step automatically — changing your phone number or address in
-          Setup updates the live page without republishing. Layout changes need a publish.
-        </p>
       )}
     </Panel>
   );

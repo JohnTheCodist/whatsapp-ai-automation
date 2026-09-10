@@ -31,9 +31,9 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Panel, PanelHead } from '../DashboardKit.jsx';
-import { IconSetup } from '../Icons.jsx';
+import { Panel } from '../DashboardKit.jsx';
 import * as api from './api.js';
+import SectionTitle from './SectionTitle.jsx';
 import DesignSettings from './DesignSettings.jsx';
 
 export default function DesignSection({
@@ -54,7 +54,10 @@ export default function DesignSection({
 
   return (
     <Panel className="p-5 sm:p-6">
-      <PanelHead Icon={IconSetup}>Design</PanelHead>
+      <SectionTitle
+        title="Design"
+        info="Every design here is complete and ready to publish. Colours, fonts and corners are a small set of approved combinations — there is no wrong one to pick."
+      />
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
         <div className="min-w-0">

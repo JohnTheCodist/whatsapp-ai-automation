@@ -27,9 +27,9 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Panel, PanelHead } from '../DashboardKit.jsx';
-import { IconWebsite } from '../Icons.jsx';
+import { Panel } from '../DashboardKit.jsx';
 import * as api from './api.js';
+import SectionTitle from './SectionTitle.jsx';
 
 function Stat({ value, label }) {
   return (
@@ -62,7 +62,10 @@ export default function AnalyticsPanel({ site }) {
 
   return (
     <Panel className="p-5">
-      <PanelHead Icon={IconWebsite}>Your website, last 30 days</PanelHead>
+      <SectionTitle
+        title="Last 30 days"
+        info="Counted on our server, with no tracking scripts and nothing stored about visitors. Repeat visits served from a cache are not counted, so these are a floor rather than an exact figure."
+      />
 
       {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
 
@@ -80,30 +83,34 @@ export default function AnalyticsPanel({ site }) {
             <Stat value={data.totals.view === 0 ? '—' : `${rate}%`} label="Contact rate" />
           </div>
 
-          <p className="mt-4 text-sm text-slate-600">
-            {data.totals.view === 0
-              ? 'No visits yet. Share your web address on WhatsApp, on your receipts and on your shop window.'
-              : data.conversions === 0
-                ? `${data.totals.view} ${data.totals.view === 1 ? 'person has' : 'people have'} visited, but nobody has got in touch yet.`
-                : `${rate}% of visitors contacted the pharmacy.`}
-            {other > 0 && (
-              <>
-                {' '}
-                That includes {data.totals.phone > 0 && `${data.totals.phone} phone ${data.totals.phone === 1 ? 'tap' : 'taps'}`}
-                {data.totals.phone > 0 && data.totals.directions > 0 && ' and '}
-                {data.totals.directions > 0 && `${data.totals.directions} ${data.totals.directions === 1 ? 'request' : 'requests'} for directions`}.
-              </>
-            )}
-          </p>
+          {/* THE SENTENCE ONLY EARNS ITS PLACE WHEN IT SAYS SOMETHING THE
+              TILES DO NOT. "5% of visitors contacted the pharmacy" directly
+              under a tile reading "5% — Contact rate" is the same fact twice,
+              which is exactly the padding this tab was carrying everywhere.
+              So it appears for the two states the tiles cannot express: no
+              visits at all, and visits that led nowhere. */}
+          {data.totals.view === 0 && (
+            <p className="mt-4 text-sm text-slate-600">
+              No visits yet. Share your web address on WhatsApp, on your receipts and in
+              your shop window.
+            </p>
+          )}
+          {data.totals.view > 0 && data.conversions === 0 && (
+            <p className="mt-4 text-sm text-slate-600">
+              {data.totals.view} {data.totals.view === 1 ? 'person has' : 'people have'} visited,
+              but nobody has got in touch yet.
+            </p>
+          )}
+          {/* Phone taps and directions are detail rather than headline, and
+              usually zero. Named here only when they actually happened. */}
+          {other > 0 && (
+            <p className="mt-3 text-xs text-slate-500">
+              Also {data.totals.phone > 0 && `${data.totals.phone} phone ${data.totals.phone === 1 ? 'tap' : 'taps'}`}
+              {data.totals.phone > 0 && data.totals.directions > 0 && ' and '}
+              {data.totals.directions > 0 && `${data.totals.directions} ${data.totals.directions === 1 ? 'request' : 'requests'} for directions`}.
+            </p>
+          )}
 
-          {/* Said plainly rather than left for someone to wonder about. The
-              counts come from the server; a page served from a browser or CDN
-              cache never reaches us, so the real figures are a little higher. */}
-          <p className="mt-3 text-xs text-slate-400">
-            Counted on our server, with no tracking scripts and nothing stored about
-            visitors. Repeat visits served from a cache are not counted, so these are a
-            floor rather than an exact figure.
-          </p>
         </>
       )}
     </Panel>

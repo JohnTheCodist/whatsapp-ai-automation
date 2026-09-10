@@ -24,17 +24,16 @@
  * seven rows mixed the pharmacy's facts with the website's wording, which are
  * two different things that write to two different places.
  *
- * The order now is:
+ * FOUR SUB-SECTIONS, WITH THE HEADER ABOVE THEM ALL:
  *
- *   header      what it is, whether it is live, and the three actions
- *   preview     the thing itself
- *   performance did it do anything
- *   business    the facts (profile — shared with the assistant)
- *   content     how those facts are worded (the site's own content column)
- *   design      one choice, with the rest folded behind it
- *   publishing  the address, and taking it down
+ *   header     what it is, whether it is live, and the three actions
+ *   Overview   the preview, and what the site did
+ *   Content    the facts, then how those facts are worded
+ *   Design     one choice, with the rest folded behind it
+ *   Settings   the address, and taking it down
  *
- * Read at a glance from the top; set-once decisions at the bottom.
+ * The header sits outside the tab strip on purpose: publishing is the state
+ * of the whole section rather than one tab's business.
  *
  * PUBLISHING IS ONE STATE MACHINE, CREATED HERE. usePublishing is built once
  * and handed to both the header and PublishBar, so the Publish button at the
@@ -49,6 +48,7 @@ import WebsiteHeader from './WebsiteHeader.jsx';
 import BusinessInfo from './BusinessInfo.jsx';
 import WebsiteContent from './WebsiteContent.jsx';
 import DesignSection from './DesignSection.jsx';
+import WebsiteTabs from './WebsiteTabs.jsx';
 import PreviewPane from './PreviewPane.jsx';
 import PublishBar from './PublishBar.jsx';
 import AnalyticsPanel from './AnalyticsPanel.jsx';
@@ -64,13 +64,6 @@ import * as api from './api.js';
  * their details publishes a complete site without it.
  */
 const Editor = lazy(() => import('./Editor.jsx'));
-
-/** A section label above a card, so the page reads as a sequence of answers. */
-function SectionLabel({ children }) {
-  return (
-    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{children}</p>
-  );
-}
 
 export default function WebsitePanel({ onNavigate }) {
   const [site, setSite] = useState(undefined); // undefined = loading, null = none yet
@@ -89,6 +82,10 @@ export default function WebsitePanel({ onNavigate }) {
   const [nonce, setNonce] = useState(() => Date.now());
   const [editing, setEditing] = useState(false);
   const [changingDesign, setChangingDesign] = useState(false);
+  // Which sub-section is showing. NOT PERSISTED: a remembered tab is a
+  // remembered assumption about why somebody came back, and 'show me the
+  // website' is right far more often than any guess.
+  const [tab, setTab] = useState('overview');
 
   useEffect(() => {
     let live = true;
@@ -190,9 +187,12 @@ export default function WebsitePanel({ onNavigate }) {
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-7">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Website</p>
-
+    <div className="mx-auto flex max-w-5xl flex-col gap-6">
+      {/* ABOVE THE TABS, ALWAYS. Whether the site is live and the button that
+          publishes it are the state of the whole section, not one tab's
+          business — burying either behind a tab would put the most important
+          control back out of sight, which is the fault this restructure set
+          out to fix. */}
       <WebsiteHeader
         site={site}
         pharmacy={pharmacy}
@@ -201,44 +201,47 @@ export default function WebsitePanel({ onNavigate }) {
         onEdit={() => setEditing(true)}
       />
 
-      {/* The focal point. Everything below is a way of changing something you
-          can see here. */}
-      <PreviewPane nonce={nonce} />
+      <WebsiteTabs active={tab} onChange={setTab} />
 
-      {/* AnalyticsPanel returns null unless the site is published — a panel of
-          zeroes above an unpublished site reads as a broken feature rather
-          than an empty one. The label is inside the same condition so it does
-          not sit above nothing. */}
-      {site.status === 'published' && (
-        <div>
-          <SectionLabel>Performance</SectionLabel>
+      {tab === 'overview' && (
+        <>
+          {/* The focal point of the whole section. */}
+          <PreviewPane nonce={nonce} />
+
+          {/* Returns null unless the site is published — a panel of zeroes
+              above an unpublished site reads as a broken feature rather than
+              an empty one. */}
           <AnalyticsPanel site={site} />
-        </div>
+        </>
       )}
 
-      {/* The facts, then the wording. Two panels rather than one list of
-          seven rows, because they write to two different places and only the
-          first of them also changes what the assistant tells customers. */}
-      <BusinessInfo onSaved={onContentSaved} onNavigate={onNavigate} />
+      {tab === 'content' && (
+        <>
+          {/* The facts, then the wording. Two panels rather than one list of
+              seven rows, because they write to two different places and only
+              the first also changes what the assistant tells customers. */}
+          <BusinessInfo onSaved={onContentSaved} onNavigate={onNavigate} />
+          <WebsiteContent site={site} pages={pages} onSaved={onContentSaved} />
+        </>
+      )}
 
-      <WebsiteContent site={site} pages={pages} onSaved={onContentSaved} />
+      {tab === 'design' && (
+        <DesignSection
+          templateId={site.template_id}
+          theme={site.theme}
+          onThemeChange={refreshPreview}
+          onChangeDesign={() => setChangingDesign(true)}
+          onOpenEditor={() => setEditing(true)}
+        />
+      )}
 
-      <DesignSection
-        templateId={site.template_id}
-        theme={site.theme}
-        onThemeChange={refreshPreview}
-        onChangeDesign={() => setChangingDesign(true)}
-        onOpenEditor={() => setEditing(true)}
-      />
-
-      <div>
-        <SectionLabel>Publishing</SectionLabel>
+      {tab === 'settings' && (
         <PublishBar
           site={site}
           publicDomain={publicDomain}
           publishing={publishing}
         />
-      </div>
+      )}
     </div>
   );
 }

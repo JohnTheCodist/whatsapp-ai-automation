@@ -28,10 +28,10 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Panel, PanelHead } from '../DashboardKit.jsx';
-import { IconSetup } from '../Icons.jsx';
+import { Panel } from '../DashboardKit.jsx';
 import * as api from './api.js';
 import Row from './Row.jsx';
+import SectionTitle from './SectionTitle.jsx';
 import LogoUpload from './LogoUpload.jsx';
 import PhotoUpload from './PhotoUpload.jsx';
 import ServicesPicker from './ServicesPicker.jsx';
@@ -120,11 +120,10 @@ export default function BusinessInfo({ onSaved, onNavigate }) {
 
   return (
     <Panel className="p-5 sm:p-6">
-      <PanelHead Icon={IconSetup}>Business information</PanelHead>
-      <p className="mt-1 text-sm text-slate-600">
-        The facts about your pharmacy. Your website uses these automatically, and changing
-        them here changes them everywhere — including what the assistant tells customers.
-      </p>
+      <SectionTitle
+        title="Business information"
+        info="The facts about your pharmacy. Your website uses these automatically, and changing them here changes them everywhere — including what the assistant tells customers on WhatsApp."
+      />
 
       {status.state === 'error' && (
         <p className="mt-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{status.message}</p>
