@@ -498,8 +498,13 @@ test('metro\'s generated pages get the coloured band, and the pharmacy\'s own na
   assert.match(about, /<span class="rx-eyebrow rx-eyebrow--outline">Your Community Pharmacy<\/span>/);
   assert.match(about, /<h1>About <span class="rx-name-accent">Ikeja Family Pharmacy<\/span><\/h1>/);
 
-  const contact = pages.find((p) => p.path === '/contact/').html;
-  assert.match(contact, /<h1>Contact <span class="rx-name-accent">Ikeja Family Pharmacy<\/span><\/h1>/);
+  // A second page, to show the band and the highlight are not one page's
+  // special case. Metro gives the contact page its own heading (see below),
+  // so the second example here is the location page, whose heading is still
+  // the derived one.
+  const location = pages.find((p) => p.path === '/location/').html;
+  assert.match(location, METRO_PAGE_HEAD);
+  assert.match(location, NAME_ACCENT_SPAN);
 });
 
 test('metro highlights the pharmacy\'s own AREA too, on the headings that end with it rather than with the name', () => {
@@ -540,7 +545,7 @@ test('metro\'s page badge differs per page kind, and the head\'s call to action 
   };
   assert.equal(badgeOn('/about/'), 'Your Community Pharmacy');
   assert.equal(badgeOn('/services/'), 'Comprehensive Care');
-  assert.equal(badgeOn('/contact/'), 'Here To Help');
+  assert.equal(badgeOn('/contact/'), 'We&#39;re Here for You');
 
   // Scoped to the head's OWN section: every page has a call to action lower
   // down, so anything looser than this passes on all of them.
@@ -991,4 +996,71 @@ test('the WhatsApp mark in the footer and the one on the floating button are the
   const paths = [...html.matchAll(/<path d="(M12\.04 2C[^"]+)"\/>/g)].map((m) => m[1]);
   assert.equal(paths.length, 2, 'the footer column and the floating button');
   assert.equal(paths[0], paths[1], 'one logo, drawn once');
+});
+
+// =====================================================================
+// METRO'S CONTACT PAGE
+// =====================================================================
+
+test("metro's contact page opens with the warmer heading, and the pharmacy's own name is the accent", () => {
+  const contact = renderWithPageCopy({}, { templateId: 'metro' }).find((x) => x.path === '/contact/').html;
+  const head = contact.slice(contact.indexOf('<section class="rx-block rx-page-head'));
+  assert.match(head, /<h1>Get in Touch with <span class="rx-name-accent">Ikeja Family Pharmacy<\/span><\/h1>/);
+  assert.match(head, /<span class="rx-eyebrow rx-eyebrow--outline">We&#39;re Here for You<\/span>/);
+});
+
+test('the search-result strings still say "Contact {name}" — only the visible heading changed', () => {
+  const pages = renderAllPages({
+    site: templates.cloneSeed('metro'),
+    pharmacy: PHARMACY,
+    profile: PROFILE,
+    theme: templates.getTemplate('metro').theme,
+    assets: new Map(),
+    year: 2026,
+    templateId: 'metro',
+  });
+  const page = pages.pages.find((x) => x.path === '/contact/');
+  assert.equal(page.title, 'Contact Ikeja Family Pharmacy — Pharmacy in Ikeja');
+  assert.match(page.description, /^Contact Ikeja Family Pharmacy/);
+  const html = pages.rendered.find((x) => x.path === '/contact/').html;
+  assert.match(html, /<title>Contact Ikeja Family Pharmacy — Pharmacy in Ikeja<\/title>/);
+  // The breadcrumb a search engine reads is the page's nav name, unchanged.
+  assert.match(html, /"name":"Contact","item":"\/contact\/"/);
+});
+
+test("no other template's contact page changes at all", () => {
+  const contact = renderWithPageCopy({}, { templateId: 'professional' }).find((x) => x.path === '/contact/').html;
+  assert.match(contact, /<h1>Contact Ikeja Family Pharmacy<\/h1>/);
+  assert.ok(!contact.includes('Get in Touch with'));
+  assert.ok(!contact.includes("We&#39;re Here for You"));
+});
+
+test("the owner's own heading still wins over metro's wording", () => {
+  const pages = renderWithPageCopy({ '/contact/': { heading: 'Talk to a pharmacist' } }, { templateId: 'metro' });
+  const contact = pages.find((x) => x.path === '/contact/').html;
+  assert.match(contact, /<h1>Talk to a pharmacist<\/h1>/);
+  assert.ok(!contact.includes('Get in Touch with'));
+});
+
+test("metro's contact lede names the area when there is one, drops the clause entirely when there is not, and promises nothing", () => {
+  const withArea = renderWithPageCopy({}, { templateId: 'metro' }).find((x) => x.path === '/contact/').html;
+  assert.match(withArea, /Reach out to our team in Ikeja, Lagos today\./);
+
+  const bare = renderAllPages({
+    site: templates.cloneSeed('metro'),
+    pharmacy: PHARMACY,
+    profile: { ...PROFILE, city: null, state: null },
+    theme: templates.getTemplate('metro').theme,
+    assets: new Map(),
+    year: 2026,
+    templateId: 'metro',
+  }).rendered.find((x) => x.path === '/contact/').html;
+  assert.match(bare, /Reach out to our team today\./);
+  assert.ok(!/team in\s*(today|\.)/.test(bare), 'no dangling "in" where the area would have been');
+
+  // The reference's own line offers to schedule a consultation. This must
+  // not, on either version: that is a service a given pharmacy may not run.
+  for (const html of [withArea, bare]) {
+    assert.ok(!/consultation|appointment/i.test(html), 'no service this pharmacy has not said it offers');
+  }
 });

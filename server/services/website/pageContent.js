@@ -135,8 +135,25 @@ const METRO_PAGE_BADGE = Object.freeze({
   services: 'Comprehensive Care',
   service: 'Comprehensive Care',
   location: 'Come And See Us',
-  contact: 'Here To Help',
+  contact: "We're Here for You",
   healthIndex: 'Health Information',
+});
+
+/**
+ * Metro's own wording for a generated page's <h1>, where the reference's is
+ * warmer than the derived one.
+ *
+ * THE VISIBLE HEADING ONLY. The page's <title>, its meta description and its
+ * breadcrumb still read "Contact {name}" — those are read in a search result,
+ * where the plain form is the one somebody actually typed, and a heading
+ * written for the page is the wrong string to put there.
+ *
+ * Each of these still ENDS with the pharmacy's own name, so the accent below
+ * lands on a fact rather than on whichever words looked important. An owner's
+ * own heading override still wins over all of it.
+ */
+const METRO_PAGE_HEADING = Object.freeze({
+  contact: (name) => `Get in Touch with ${name}`,
 });
 
 /**
@@ -730,7 +747,10 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
   };
 
   const open = (intro) => {
-    const heading = override.heading || page.h1;
+    const metroHeading = ctx.templateId === 'metro'
+      ? METRO_PAGE_HEADING[page.kind]?.(name)
+      : null;
+    const heading = override.heading || metroHeading || page.h1;
     const lede = override.intro || intro;
 
     // METRO'S OWN PAGE-HEAD: a coloured band instead of the plain default —
@@ -849,7 +869,16 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
     parts.push(chipList('What we offer here', allPages.filter((x) => x.kind === 'service')));
     parts.push(ctaRow(ctx, `Hello ${name}, I would like directions`));
   } else if (page.kind === 'contact') {
-    open(`How to reach ${name}.`);
+    // Metro opens with the reference's invitation rather than the plain
+    // derived line. Deliberately NOT the reference's own "need to schedule a
+    // consultation?" — that asserts a service this pharmacy may not offer,
+    // and the head of their contact page is the last place to promise one.
+    // Asking about a prescription and asking what is in stock are things
+    // anybody can do at any pharmacy, so both are safe to write here.
+    const metroContactIntro = area
+      ? `Have a question about your prescription, or want to know whether we have something in stock? Reach out to our team in ${area} today.`
+      : 'Have a question about your prescription, or want to know whether we have something in stock? Reach out to our team today.';
+    open(ctx.templateId === 'metro' ? metroContactIntro : `How to reach ${name}.`);
     parts.push(ctaRow(ctx, `Hello ${name}`));
     parts.push(visitSplit(ctx, p));
   } else if (page.kind === 'healthIndex') {

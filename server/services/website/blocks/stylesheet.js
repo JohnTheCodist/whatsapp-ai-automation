@@ -231,13 +231,19 @@ p:last-child{margin-bottom:0}
    file (pageContent.js, not the block registry) with its own render path. */
 .rx-page-head--metro{
   background:var(--rx-primary);
-  background-image:radial-gradient(circle, color-mix(in oklab, var(--rx-on-primary) 30%, transparent) 1.5px, transparent 1.5px);
-  background-size:20px 20px;
+  background-image:
+    radial-gradient(38rem 22rem at 22% 0%, color-mix(in oklab, var(--rx-on-primary) 16%, transparent), transparent 70%),
+    radial-gradient(circle, color-mix(in oklab, var(--rx-on-primary) 30%, transparent) 1.5px, transparent 1.5px);
+  background-size:auto, 20px 20px;
   color:var(--rx-on-primary);
   text-align:center;
 }
 .rx-page-head--metro>div{max-width:44rem;margin-inline:auto}
-.rx-page-head--metro .rx-eyebrow--outline{border-color:var(--rx-accent);color:var(--rx-accent)}
+.rx-page-head--metro .rx-eyebrow--outline{
+  border-color:transparent;
+  color:var(--rx-accent);
+  background:color-mix(in oklab, var(--rx-ink) 26%, transparent);
+}
 .rx-page-head--metro h1,
 .rx-page-head--metro .rx-lede{color:var(--rx-on-primary);max-width:none;margin-inline:auto}
 .rx-page-head--metro .rx-lede{opacity:.9}
