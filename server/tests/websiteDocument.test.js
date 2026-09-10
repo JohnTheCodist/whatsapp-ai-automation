@@ -1064,3 +1064,105 @@ test("metro's contact lede names the area when there is one, drops the clause en
     assert.ok(!/consultation|appointment/i.test(html), 'no service this pharmacy has not said it offers');
   }
 });
+
+// =====================================================================
+// METRO CONTACT CARDS
+// =====================================================================
+
+const CONTACT_CARDS = /<ul class="rx-contact-cards">/;
+
+/** Metro's contact page, against whatever the pharmacy has on file. */
+function metroContact(profile) {
+  return renderAllPages({
+    site: templates.cloneSeed('metro'),
+    pharmacy: PHARMACY,
+    profile,
+    theme: templates.getTemplate('metro').theme,
+    assets: new Map(),
+    year: 2026,
+    templateId: 'metro',
+  }).rendered.find((x) => x.path === '/contact/').html;
+}
+
+/** The headings of the cards that rendered, in order. */
+function cardHeadings(html) {
+  const grid = html.slice(html.indexOf('<ul class="rx-contact-cards">'));
+  return [...grid.slice(0, grid.indexOf('</ul></section>')).matchAll(/<h2>([^<]*)<\/h2>/g)].map((m) => m[1]);
+}
+
+test("metro's contact page is a card per way of reaching the pharmacy, each with its own action", () => {
+  const html = metroContact(PROFILE);
+  assert.match(html, CONTACT_CARDS);
+  assert.deepEqual(cardHeadings(html), ['Visit Us', 'Call Us', 'Message Us', 'Opening Hours']);
+  assert.match(html, /<a class="rx-contact-go" href="https:\/\/maps\.google\.com[^"]*">Get Directions<\/a>/);
+  assert.match(html, /<a class="rx-contact-go" href="tel:08012345678">Call Now<\/a>/);
+  assert.match(html, /<a class="rx-contact-go" href="https:\/\/wa\.me\/2348012345678"[^>]*>Open WhatsApp<\/a>/);
+});
+
+test('a card is dropped whole when the fact behind it is not on file — never a heading over a blank', () => {
+  // No address, no maps link, no hours: WhatsApp is all this pharmacy has,
+  // because a published site always has that.
+  const html = metroContact({ ...PROFILE, address_line: null, city: null, state: null, maps_url: null, phone: null, opening_hours: [] });
+  assert.deepEqual(cardHeadings(html), ['Message Us']);
+  assert.ok(!html.includes('>Visit Us<'), 'no address means no address card');
+  assert.ok(!html.includes('>Opening Hours<'), 'no hours means no hours card');
+});
+
+test('an address with no maps link still gets its card, just without a directions link', () => {
+  const html = metroContact({ ...PROFILE, maps_url: null });
+  assert.ok(cardHeadings(html).includes('Visit Us'));
+  assert.match(html, /12 Allen Avenue, Ikeja, Lagos/);
+  assert.ok(!html.includes('>Get Directions<'), 'nowhere to send them is not a link');
+});
+
+test("the hours card shows the owner's own week and never asserts a day they have not filled in", () => {
+  const html = metroContact({
+    ...PROFILE,
+    opening_hours: [
+      { day: 'mon', open: '09:00', close: '17:00' },
+      { day: 'tue', open: '09:00', close: '17:00' },
+      { day: 'sun', closed: true },
+    ],
+  });
+  assert.match(html, /<span>Mon – Tue:<\/span> <span>9:00 am – 5:00 pm<\/span>/);
+  // Sunday is marked shut by the owner, so it is shown as shut.
+  assert.match(html, /<li class="rx-closed"><span>Sunday:<\/span> <span>Closed<\/span><\/li>/);
+  // Wednesday through Saturday are simply not on file. They are absent, not
+  // declared closed — the pharmacy never said that and this must not either.
+  assert.ok(!/Wednesday|Thursday|Friday|Saturday/.test(html));
+});
+
+test('the contact page invents no fax number and no email address, which the reference has and this product does not', () => {
+  const html = metroContact(PROFILE);
+  assert.ok(!/\bfax\b/i.test(html), 'pharmacy_profile has no fax column');
+  assert.ok(!/mailto:/.test(html), 'nor an email one');
+});
+
+test("every other template's contact page is the two-column address and hours it always was", () => {
+  const html = renderAllPages({
+    site: templates.cloneSeed('professional'),
+    pharmacy: PHARMACY,
+    profile: PROFILE,
+    theme: templates.getTemplate('professional').theme,
+    assets: new Map(),
+    year: 2026,
+    templateId: 'professional',
+  }).rendered.find((x) => x.path === '/contact/').html;
+  assert.doesNotMatch(html, CONTACT_CARDS);
+  assert.match(html, /<h2>Where to find us<\/h2>/);
+  assert.match(html, /<h2>Opening hours<\/h2>/);
+});
+
+test('metro does not print the same thing twice — the cards REPLACE the call-to-action row and the address/hours split', () => {
+  const html = metroContact(PROFILE);
+  // Both of those said exactly what the cards now say: the row was the same
+  // WhatsApp and phone links, and the split was the same address and hours.
+  assert.ok(!html.includes('<div class="rx-cta-row">'), 'the cards carry the actions now');
+  assert.ok(!html.includes('<h2>Where to find us</h2>'), 'and the address');
+  assert.ok(!html.includes('<h2>Opening hours</h2>'), 'and the hours');
+
+  // Once inside the page's own body, whatever the chrome around it does.
+  const body = html.slice(html.indexOf('<div class="rx-page">'), html.indexOf('<footer'));
+  assert.equal([...body.matchAll(/12 Allen Avenue, Ikeja, Lagos/g)].length, 1);
+  assert.equal([...body.matchAll(/href="tel:08012345678"/g)].length, 1);
+});

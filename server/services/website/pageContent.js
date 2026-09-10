@@ -28,6 +28,9 @@
 
 const { esc, waHref, telHref, mapsHref, assetsOfKind } = require('./blocks/render');
 const { renderBlock } = require('./blocks');
+// Drawn once, in the block that already needed them for the location cards.
+const { groupedHours, PIN_ICON, PHONE_ICON, CLOCK_ICON } = require('./blocks/definitions/practical');
+const { whatsappGlyph } = require('./blocks/icons');
 const { serviceIcon } = require('./blocks/icons');
 const { navPages } = require('./pages');
 const { bylineFor, GENERAL_DISCLAIMER } = require('./health');
@@ -378,6 +381,63 @@ function metroServiceCards(items, name, area) {
     + '<div class="rx-head rx-head--center"><span class="rx-eyebrow rx-eyebrow--pill">What We Offer</span>'
     + '<h2>How We Can Help</h2></div>'
     + `<ul class="rx-svc-cards">${cards}</ul></section>`;
+}
+
+/**
+ * The four ways to reach the pharmacy, as cards — Metro's contact page only.
+ *
+ * ONE CARD PER THING THE PHARMACY ACTUALLY HAS. Each is dropped whole when
+ * the fact behind it is not on file, so a pharmacy with no address published
+ * gets three cards rather than a card with a heading over a blank.
+ *
+ * The reference has an Email card. This does not, because pharmacy_profile
+ * has no email column — see the pharmacy.contact block's own note on the same
+ * point. A card headed "Email us" above nothing, or above an address someone
+ * guessed, is worse than one card fewer. When that column exists this gains
+ * a fifth card and no other change.
+ *
+ * The reference's Phone card also carries a fax number, for the same reason
+ * it is missing here.
+ *
+ * The closed days come from the owner's own opening hours and are never
+ * inferred: a day they have not filled in is simply absent, not asserted to
+ * be a day they are shut.
+ */
+function metroContactCards(ctx, p) {
+  const tel = telHref(p.phone, ctx);
+  const wa = waHref(ctx.pharmacy?.public_whatsapp_number, null, ctx);
+  const address = addressLine(p);
+  const hours = groupedHours(p?.opening_hours || []);
+
+  const card = (icon, heading, body, action) =>
+    ({ icon, heading, body, action: action || '' });
+
+  const link = (href, label, external) => `<a class="rx-contact-go" href="${esc(href)}"${
+    external ? ' rel="noopener noreferrer" target="_blank"' : ''}>${esc(label)}</a>`;
+
+  const cards = [
+    address ? card(PIN_ICON, 'Visit Us', `<address class="rx-contact-lines">${esc(address)}</address>`,
+      p?.maps_url ? link(mapsHref(p.maps_url, ctx), 'Get Directions') : '') : null,
+    tel ? card(PHONE_ICON, 'Call Us', `<p class="rx-contact-lines">${esc(p.phone)}</p>`,
+      link(tel, 'Call Now')) : null,
+    wa ? card(whatsappGlyph({ size: 20 }), 'Message Us',
+      '<p class="rx-contact-lines">Send us a message and we will reply here.</p>',
+      link(wa, 'Open WhatsApp', true)) : null,
+    hours.length ? card(CLOCK_ICON, 'Opening Hours', `<ul class="rx-contact-lines rx-contact-hours">${
+      hours.map((r) => `<li${r.value === 'Closed' ? ' class="rx-closed"' : ''}>`
+        + `<span>${esc(r.label)}:</span> <span>${esc(r.value)}</span></li>`).join('')
+    }</ul>`) : null,
+  ].filter(Boolean);
+
+  if (!cards.length) return '';
+
+  // Alternating top rules, the same rhythm the service cards use: position in
+  // the row, never anything about the card's own contents.
+  const items = cards.map((c, i) => `<li class="rx-contact-card rx-contact-card--${i % 2 === 0 ? 'a' : 'b'}">`
+    + `<span class="rx-contact-mark">${c.icon}</span>`
+    + `<h2>${esc(c.heading)}</h2>${c.body}${c.action}</li>`).join('');
+
+  return `<section class="rx-block"><ul class="rx-contact-cards">${items}</ul></section>`;
 }
 
 /**
@@ -879,8 +939,16 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
       ? `Have a question about your prescription, or want to know whether we have something in stock? Reach out to our team in ${area} today.`
       : 'Have a question about your prescription, or want to know whether we have something in stock? Reach out to our team today.';
     open(ctx.templateId === 'metro' ? metroContactIntro : `How to reach ${name}.`);
-    parts.push(ctaRow(ctx, `Hello ${name}`));
-    parts.push(visitSplit(ctx, p));
+    if (ctx.templateId === 'metro') {
+      // The cards carry their own call, phone and WhatsApp buttons, so the
+      // ctaRow above them would be the same two links a second time — and
+      // the address and hours they already show are exactly what visitSplit
+      // renders. One of each, not two.
+      parts.push(metroContactCards(ctx, p));
+    } else {
+      parts.push(ctaRow(ctx, `Hello ${name}`));
+      parts.push(visitSplit(ctx, p));
+    }
   } else if (page.kind === 'healthIndex') {
     open('General health information, written for our customers.');
     const articles = allPages.filter((x) => x.kind === 'health');

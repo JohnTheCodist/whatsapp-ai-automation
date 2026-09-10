@@ -1339,6 +1339,99 @@ p:last-child{margin-bottom:0}
 .rx-byline p{margin:0}
 .rx-disclaimer{color:var(--rx-muted);font-size:var(--rx-size-sm);border-top:1px solid var(--rx-line);padding-top:var(--rx-md)}
 
+/* ---- contact cards (metro) ----
+   One card per way of reaching the pharmacy — see pageContent.js's
+   metroContactCards() for which ones exist and when each is dropped.
+   The coloured rule floats just above the card rather than being a border on
+   it: a border would be clipped to the card's own corner radius and read as
+   part of the box, and the reference's is a separate mark sitting over the
+   top edge. Inset left and right so it reads as a mark and not a lid. */
+.rx-contact-cards{
+  list-style:none;
+  margin:0;
+  padding:0;
+  display:grid;
+  gap:var(--rx-lg);
+  grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));
+}
+.rx-contact-card{
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  text-align:center;
+  gap:var(--rx-xs);
+  padding:var(--rx-lg) var(--rx-md);
+  background:var(--rx-surface);
+  border:1px solid var(--rx-line);
+  border-radius:var(--rx-radius);
+  box-shadow:var(--rx-shadow);
+}
+.rx-contact-card::before{
+  content:"";
+  position:absolute;
+  left:8%;
+  right:8%;
+  top:-3px;
+  height:5px;
+  border-radius:999px;
+}
+.rx-contact-card--a::before{background:var(--rx-primary)}
+.rx-contact-card--b::before{background:var(--rx-accent)}
+.rx-contact-card h2{
+  font-size:var(--rx-size-lg);
+  margin:0;
+}
+.rx-contact-mark{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:3.25rem;
+  height:3.25rem;
+  border-radius:50%;
+  margin-bottom:var(--rx-2xs);
+  color:var(--rx-primary);
+  background:var(--rx-tint);
+}
+.rx-contact-card--b .rx-contact-mark{
+  /* On the gold cards the mark echoes the rule above it. The gold itself is
+     a background here, never the glyph: --rx-accent on a pale gold disc is
+     not a mark anybody can see. */
+  color:var(--rx-ink);
+  background:color-mix(in oklab, var(--rx-accent) 22%, var(--rx-surface));
+}
+.rx-contact-lines{
+  margin:0;
+  color:var(--rx-muted);
+  font-style:normal;
+  line-height:1.7;
+  list-style:none;
+  padding:0;
+  width:100%;
+}
+.rx-contact-hours li{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:center;
+  column-gap:.3rem;
+}
+/* A day the owner has marked shut, told apart from one they are open. Muted
+   rather than the reference's red: nothing here is an alert, and red on a
+   pharmacy's page belongs to things that actually are. */
+.rx-contact-hours .rx-closed{color:var(--rx-muted);opacity:.72}
+.rx-contact-go{
+  margin-top:auto;
+  padding-top:var(--rx-sm);
+  display:inline-flex;
+  align-items:center;
+  min-height:44px;
+  color:var(--rx-primary);
+  font-family:var(--rx-display);
+  font-weight:600;
+  text-decoration:none;
+}
+.rx-contact-go:hover{text-decoration:underline}
+
 /* ---- footer ----
    A statement, not four columns of links. The secondary text is a TRANSLUCENT
    WHITE rather than var(--rx-muted): --rx-muted is tuned for the light page
@@ -1590,7 +1683,7 @@ p:last-child{margin-bottom:0}
        tall it finishes almost as soon as the top of it is visible at all.
        That read as "there is no animation" for the single commonest section
        on the page, which is exactly the report this fixes. */
-    .rx-cards>*,.rx-photo-grid>*,.rx-chips>*,.rx-service-grid>*,.rx-svc-cards>*,
+    .rx-cards>*,.rx-photo-grid>*,.rx-chips>*,.rx-service-grid>*,.rx-svc-cards>*,.rx-contact-cards>*,
     .rx-service-tiles>*,.rx-about-highlights>*,.rx-faq-list>*{
       animation:rx-rise both;
       animation-timeline:view();
@@ -1607,6 +1700,7 @@ p:last-child{margin-bottom:0}
     .rx-block:has(>.rx-photo-grid),
     .rx-block:has(>.rx-service-grid),
     .rx-block:has(>.rx-svc-cards),
+    .rx-block:has(>.rx-contact-cards),
     .rx-block:has(>.rx-service-tiles),
     .rx-block:has(>.rx-faq-list){animation:none}
   }
