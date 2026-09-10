@@ -2,10 +2,7 @@
  * The Website section.
  *
  * WHAT THIS SCREEN SAYS, IN ONE LINE: your website is already built — here
- * it is, and here is how to change how it looks. Not "here is a builder".
- * The pharmacy gave us their details during onboarding; the site exists as a
- * consequence of that, and everything on this page is either a view of it or
- * a small, bounded choice about it.
+ * it is, and here is how to change it. Not "here is a builder".
  *
  * WHICH STATE YOU ARE IN IS DERIVED, NEVER STORED. A "which step am I on"
  * value has to be persisted or it resets on reload, and once persisted it can
@@ -18,28 +15,44 @@
  *   editing       →  the advanced editor        (lazy GrapesJS)
  *   otherwise     →  the website, top to bottom
  *
- * THE ORDER OF THE MAIN VIEW IS THE ORDER OF AN OWNER'S QUESTIONS.
- * Is it live and where (status) → what does it look like (preview) → what
- * design is that (current design) → did it do anything (performance) → what
- * is on it (content) → how does it look (design) → the address and the
- * publish button (settings). The two things somebody comes back to check are
- * at the top; the things they set once are at the bottom.
+ * THE ORDER, AND WHY IT CHANGED. This page used to claim its order was "the
+ * order of an owner's questions" and then contradict itself: publishing was
+ * the very last control, so the state an owner most needs — am I live, and is
+ * there a button I have not pressed — was the one thing they had to scroll
+ * for. "Change design" appeared twice within two hundred pixels, on either
+ * side of a preview that already showed them their design. And one list of
+ * seven rows mixed the pharmacy's facts with the website's wording, which are
+ * two different things that write to two different places.
  *
- * PUBLISHING IS NOT REIMPLEMENTED HERE. PublishBar owns the address form and
- * the publish/unpublish calls exactly as it always has — this file only
- * decides where on the page it sits.
+ * The order now is:
+ *
+ *   header      what it is, whether it is live, and the three actions
+ *   preview     the thing itself
+ *   performance did it do anything
+ *   business    the facts (profile — shared with the assistant)
+ *   content     how those facts are worded (the site's own content column)
+ *   design      one choice, with the rest folded behind it
+ *   publishing  the address, and taking it down
+ *
+ * Read at a glance from the top; set-once decisions at the bottom.
+ *
+ * PUBLISHING IS ONE STATE MACHINE, CREATED HERE. usePublishing is built once
+ * and handed to both the header and PublishBar, so the Publish button at the
+ * top and the one at the bottom are the same button in two places rather than
+ * two that could disagree about whether a request is in flight.
  */
 
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { Panel } from '../DashboardKit.jsx';
 import TemplatePicker from './TemplatePicker.jsx';
-import WebsiteStatus from './WebsiteStatus.jsx';
-import CurrentDesign from './CurrentDesign.jsx';
+import WebsiteHeader from './WebsiteHeader.jsx';
+import BusinessInfo from './BusinessInfo.jsx';
 import WebsiteContent from './WebsiteContent.jsx';
-import DesignSettings from './DesignSettings.jsx';
+import DesignSection from './DesignSection.jsx';
 import PreviewPane from './PreviewPane.jsx';
 import PublishBar from './PublishBar.jsx';
 import AnalyticsPanel from './AnalyticsPanel.jsx';
+import usePublishing from './usePublishing.js';
 import * as api from './api.js';
 
 /**
@@ -47,10 +60,8 @@ import * as api from './api.js';
  *
  * GrapesJS is ~1.15 MB plus a 60 kB stylesheet — larger than the entire
  * dashboard. `lazy` means it is fetched only when a pharmacy actually opens
- * "Customise design", which most never will: choosing a design and confirming
- * their details publishes a complete site without it. Importing Editor.jsx
- * normally would put all of that into the initial download for every user of
- * every section of the app.
+ * the section editor, which most never will: choosing a design and confirming
+ * their details publishes a complete site without it.
  */
 const Editor = lazy(() => import('./Editor.jsx'));
 
@@ -63,6 +74,7 @@ function SectionLabel({ children }) {
 
 export default function WebsitePanel({ onNavigate }) {
   const [site, setSite] = useState(undefined); // undefined = loading, null = none yet
+  const [pharmacy, setPharmacy] = useState(null);
   // The domain pharmacy sites hang off, or null when only the path form is
   // live. Comes from the server because the browser cannot tell — see
   // api.publicUrl.
@@ -70,8 +82,7 @@ export default function WebsitePanel({ onNavigate }) {
   // The generated pages this site currently has (About, Services, one per
   // service, Location, Contact) — computed server-side by the exact same
   // function the renderer and the sitemap use, so this list can never name a
-  // page that does not actually exist. See WebsiteContent's "Website page
-  // text" row, the only consumer.
+  // page that does not actually exist.
   const [pages, setPages] = useState([]);
   const [error, setError] = useState(null);
   // Bumped whenever something the preview renders has changed. See PreviewPane.
@@ -94,14 +105,21 @@ export default function WebsitePanel({ onNavigate }) {
     return () => { live = false; };
   }, []);
 
+  // The pharmacy's name, for the header. Its own request rather than a field
+  // threaded out of BusinessInfo: that panel is below the fold and may not
+  // have loaded, and a header that pops its own title in late reads worse
+  // than one that is briefly generic.
+  useEffect(() => {
+    let live = true;
+    api.getPharmacy().then((p) => live && setPharmacy(p)).catch(() => {});
+    return () => { live = false; };
+  }, []);
+
   const refreshPreview = useCallback(() => setNonce(Date.now()), []);
 
-  // Adding or removing a service inside WebsiteContent changes which
-  // generated pages exist. Re-fetching keeps the "Website page text" editor's
-  // list in step with reality rather than whatever it was when the tab
-  // opened — simplest correct option, since the page list has no narrower
-  // endpoint of its own (see routes/website.js's GET / for why one wasn't
-  // added just for this).
+  // Adding or removing a service changes which generated pages exist.
+  // Re-fetching keeps the "Website pages" editor's list in step with reality
+  // rather than whatever it was when the tab opened.
   const refreshPages = useCallback(() => {
     api.getWebsite().then((res) => setPages(Array.isArray(res.pages) ? res.pages : [])).catch(() => {});
   }, []);
@@ -110,6 +128,15 @@ export default function WebsitePanel({ onNavigate }) {
     refreshPreview();
     refreshPages();
   }, [refreshPreview, refreshPages]);
+
+  const onPublishChanged = useCallback((updated) => {
+    setSite(updated);
+    refreshPreview();
+  }, [refreshPreview]);
+
+  // Created unconditionally: hooks cannot live behind the early returns
+  // below, and it costs nothing on the branches that never render a button.
+  const publishing = usePublishing(onPublishChanged);
 
   if (error) {
     return (
@@ -164,27 +191,19 @@ export default function WebsitePanel({ onNavigate }) {
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-7">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Website</p>
-        <h2 className="font-display text-2xl font-semibold text-slate-900">
-          Your pharmacy on the web
-        </h2>
-      </div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Website</p>
 
-      <WebsiteStatus
+      <WebsiteHeader
         site={site}
+        pharmacy={pharmacy}
         publicDomain={publicDomain}
-        onChangeDesign={() => setChangingDesign(true)}
+        publishing={publishing}
+        onEdit={() => setEditing(true)}
       />
 
       {/* The focal point. Everything below is a way of changing something you
           can see here. */}
       <PreviewPane nonce={nonce} />
-
-      <CurrentDesign
-        templateId={site.template_id}
-        onChangeDesign={() => setChangingDesign(true)}
-      />
 
       {/* AnalyticsPanel returns null unless the site is published — a panel of
           zeroes above an unpublished site reads as a broken feature rather
@@ -192,44 +211,32 @@ export default function WebsitePanel({ onNavigate }) {
           not sit above nothing. */}
       {site.status === 'published' && (
         <div>
-          <SectionLabel>Website performance</SectionLabel>
+          <SectionLabel>Performance</SectionLabel>
           <AnalyticsPanel site={site} />
         </div>
       )}
 
-      <WebsiteContent site={site} pages={pages} onSaved={onContentSaved} onNavigate={onNavigate} />
+      {/* The facts, then the wording. Two panels rather than one list of
+          seven rows, because they write to two different places and only the
+          first of them also changes what the assistant tells customers. */}
+      <BusinessInfo onSaved={onContentSaved} onNavigate={onNavigate} />
 
-      <div className="flex flex-col gap-4">
-        <DesignSettings theme={site.theme} onThemeChange={refreshPreview} />
+      <WebsiteContent site={site} pages={pages} onSaved={onContentSaved} />
 
-        {/* The advanced layer, and it reads like one. Most pharmacies publish
-            a complete site without ever pressing this, which is why it sits
-            below the approved choices rather than above them — choosing a
-            design is the product, and this is for the minority who want to
-            rearrange. */}
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Customise the design</p>
-            <p className="mt-0.5 text-sm text-slate-600">
-              Add, remove and reorder sections. Your details stay where they are.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="shrink-0 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
-          >
-            Open editor
-          </button>
-        </div>
-      </div>
+      <DesignSection
+        templateId={site.template_id}
+        theme={site.theme}
+        onThemeChange={refreshPreview}
+        onChangeDesign={() => setChangingDesign(true)}
+        onOpenEditor={() => setEditing(true)}
+      />
 
       <div>
-        <SectionLabel>Website settings</SectionLabel>
+        <SectionLabel>Publishing</SectionLabel>
         <PublishBar
           site={site}
           publicDomain={publicDomain}
-          onChanged={(updated) => { setSite(updated); refreshPreview(); }}
+          publishing={publishing}
         />
       </div>
     </div>

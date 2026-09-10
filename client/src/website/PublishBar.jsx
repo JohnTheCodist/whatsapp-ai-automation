@@ -13,6 +13,17 @@
  * The status here is derived from the record, never from local state. An
  * optimistic "Published!" that the server did not agree with would be the one
  * lie this screen must not tell.
+ *
+ * THE PUBLISH MACHINE IS NO LONGER OWNED HERE. Publishing is reachable from
+ * the action bar at the top of the tab as well as from this panel, so the
+ * busy/error/note state and the api calls moved to usePublishing, which
+ * WebsitePanel creates once and hands to both. Two components each holding
+ * their own copy would mean pressing Publish at the top and watching this
+ * panel report nothing.
+ *
+ * THE WEB ADDRESS IS STILL OWNED HERE, and deliberately: it is a set-once
+ * decision that belongs beside the other settings, not next to the button an
+ * owner presses every week.
  */
 
 import { useState } from 'react';
@@ -34,30 +45,12 @@ function Badge({ status }) {
   return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${styles}`}>{label}</span>;
 }
 
-export default function PublishBar({ site, publicDomain = null, onChanged }) {
+export default function PublishBar({ site, publicDomain = null, publishing }) {
   const [address, setAddress] = useState(site.subdomain || '');
-  const [busy, setBusy] = useState(null);
-  const [error, setError] = useState(null);
-  const [note, setNote] = useState(null);
+  const { busy, error, note, publish, unpublish, saveAddress } = publishing;
 
   const url = api.publicUrl(site.subdomain, publicDomain);
   const isPublished = site.status === 'published';
-
-  async function run(kind, fn) {
-    setBusy(kind);
-    setError(null);
-    setNote(null);
-    try {
-      const res = await fn();
-      onChanged?.(res.site);
-      if (kind === 'publish') setNote('Your website is live.');
-      if (kind === 'unpublish') setNote('Taken down. Nothing was deleted — publish again any time.');
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(null);
-    }
-  }
 
   return (
     <Panel className="p-5">
@@ -115,7 +108,7 @@ export default function PublishBar({ site, publicDomain = null, onChanged }) {
           <button
             type="button"
             disabled={busy !== null || address.trim().length < 3}
-            onClick={() => run('address', () => api.setWebAddress(address))}
+            onClick={() => saveAddress(address)}
             className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-40"
           >
             {busy === 'address' ? 'Checking…' : 'Confirm address'}
@@ -128,7 +121,7 @@ export default function PublishBar({ site, publicDomain = null, onChanged }) {
         <button
           type="button"
           disabled={busy !== null || !site.subdomain}
-          onClick={() => run('publish', api.publish)}
+          onClick={publish}
           className="rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-40"
         >
           {busy === 'publish' ? 'Publishing…' : isPublished ? 'Publish changes' : 'Publish my website'}
@@ -147,7 +140,7 @@ export default function PublishBar({ site, publicDomain = null, onChanged }) {
             <button
               type="button"
               disabled={busy !== null}
-              onClick={() => run('unpublish', api.unpublish)}
+              onClick={unpublish}
               className="ml-auto text-sm font-medium text-slate-500 transition hover:text-red-700 disabled:opacity-40"
             >
               {busy === 'unpublish' ? 'Taking down…' : 'Take it down'}
