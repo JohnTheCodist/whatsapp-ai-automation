@@ -1,0 +1,48 @@
+# Regenerate the per-pharmacy Caddy site blocks, once.
+#
+# Driven by rxnaija-sites.timer. See deploy/sync-pharmacy-sites.sh for why
+# this runs on a timer rather than only at deploy time.
+#
+# Install:  sudo cp deploy/rxnaija-sites.{service,timer} /etc/systemd/system/
+#           sudo systemctl daemon-reload
+#           sudo systemctl enable --now rxnaija-sites.timer
+
+[Unit]
+Description=RxNaija — sync published pharmacy sites into Caddy
+Documentation=https://github.com/JohnTheCodist/whatsapp-ai-automation
+# The generator reads Postgres over the network, and reloads a Caddy that
+# needs to be there to reload. Neither is a hard dependency — a run that finds
+# either missing exits 0 and the next tick picks it up.
+After=network-online.target caddy.service
+
+[Service]
+Type=oneshot
+
+# ROOT, DELIBERATELY. This writes /etc/caddy and reloads a system service.
+# The part that touches the database and the environment file drops to the
+# rxnaija user inside the script, so nothing that talks to Postgres or reads a
+# secret runs with these privileges.
+User=root
+ExecStart=/opt/rxnaija/deploy/sync-pharmacy-sites.sh
+
+# NOT PrivateTmp: the script stages through mktemp and hands the file to the
+# app user to write. A private /tmp namespace is fine for that, but the unit
+# gains nothing from it and it is one more thing to reason about the day this
+# stops working.
+
+# A failed run must never leave the timer disabled — the next tick is the
+# recovery. The script restores the last working configuration itself before
+# exiting non-zero, so the only thing an exit code changes here is what shows
+# up in the journal.
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rxnaija-sites
+
+# Bounded, so a wedged run cannot hold the flock past the next several ticks.
+TimeoutStartSec=120
+
+# NOT NoNewPrivileges. The script drops to the app user with `sudo -u`, which
+# is setuid — under NoNewPrivileges that call fails and every run is a silent
+# no-op. The usual hardening line here would disable the whole timer.
+ProtectHome=true

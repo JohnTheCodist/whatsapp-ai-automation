@@ -425,6 +425,46 @@ as_app '
   node scripts/rerender-sites.js
 ' || say "WARNING: some websites did not re-render — see the output above"
 
+# Install the timer that keeps Caddy in step with what is published.
+#
+# Here rather than only in setup.sh so an EXISTING box gains it on the next
+# deploy — the boxes that need it are precisely the ones already running.
+# Every step is idempotent, so this is a no-op on the second deploy onward.
+#
+# Never fatal. A box that cannot install a timer should still finish its
+# deploy; the worst case is the behaviour we had before it existed, which is
+# that a newly published site waits for the next deploy for its certificate.
+sync_units() {
+  local unit_src="$APP_DIR/deploy"
+  [ -f "$unit_src/rxnaija-sites.timer" ] || return 0
+  command -v caddy >/dev/null 2>&1 || return 0
+
+  # The script is executed by root out of the repo working tree, so its mode
+  # has to survive a git checkout that did not preserve one.
+  sudo chmod 0755 "$unit_src/sync-pharmacy-sites.sh" 2>/dev/null || true
+
+  local changed=0
+  local unit
+  for unit in rxnaija-sites.service rxnaija-sites.timer; do
+    if ! cmp -s "$unit_src/$unit" "/etc/systemd/system/$unit"; then
+      sudo cp "$unit_src/$unit" "/etc/systemd/system/$unit" || return 0
+      changed=1
+    fi
+  done
+
+  if [ "$changed" = "1" ]; then
+    say "Installing the pharmacy-site sync timer"
+    sudo systemctl daemon-reload || return 0
+  fi
+
+  # --now covers the first install; on later runs the timer is already
+  # active and this is a no-op that still repairs a disabled one.
+  sudo systemctl enable --now rxnaija-sites.timer >/dev/null 2>&1 \
+    || say "WARNING: could not enable rxnaija-sites.timer — publishing still works, but a new subdomain will wait for the next deploy"
+}
+
+sync_units
+
 sync_caddy
 
 exit 0

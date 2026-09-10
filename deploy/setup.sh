@@ -133,6 +133,14 @@ fi
 say "Installing systemd unit and Caddyfile"
 sudo cp "$APP_DIR/deploy/rxnaija.service" /etc/systemd/system/rxnaija.service
 sudo cp "$APP_DIR/deploy/Caddyfile" /etc/caddy/Caddyfile
+
+# The timer that gives a newly published pharmacy its certificate without
+# waiting for a deploy. Enabled in step 3 below, once .env.production exists —
+# starting it now would only produce failed runs with nothing to read.
+sudo cp "$APP_DIR/deploy/rxnaija-sites.service" /etc/systemd/system/rxnaija-sites.service
+sudo cp "$APP_DIR/deploy/rxnaija-sites.timer" /etc/systemd/system/rxnaija-sites.timer
+sudo chmod 0755 "$APP_DIR/deploy/sync-pharmacy-sites.sh"
+
 sudo systemctl daemon-reload
 
 cat <<'NEXT'
@@ -170,6 +178,7 @@ Provisioning done. Three things left, and they need your keys.
 3. Start everything:
 
      sudo systemctl enable --now rxnaija
+     sudo systemctl enable --now rxnaija-sites.timer
      sudo systemctl reload caddy
      sudo systemctl status rxnaija --no-pager
 

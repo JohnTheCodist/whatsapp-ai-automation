@@ -1,0 +1,36 @@
+# How often a newly published pharmacy waits for its certificate.
+#
+# TWO MINUTES, and the number is chosen rather than inherited. An owner
+# publishes and then immediately opens their own subdomain to look at it —
+# that is the moment this exists to serve. Longer and they see a browser
+# security warning on their own website; much shorter buys nothing, because a
+# run with nothing to do costs one indexed query and writes no file.
+#
+# Install:  sudo cp deploy/rxnaija-sites.{service,timer} /etc/systemd/system/
+#           sudo systemctl daemon-reload
+#           sudo systemctl enable --now rxnaija-sites.timer
+#
+# Check:    systemctl list-timers rxnaija-sites --all
+#           journalctl -u rxnaija-sites -n 50
+
+[Unit]
+Description=RxNaija — sync published pharmacy sites into Caddy, every 2 minutes
+Documentation=https://github.com/JohnTheCodist/whatsapp-ai-automation
+
+[Timer]
+# From boot rather than immediately: a box that has just started is already
+# installing, migrating and pairing sockets, and Caddy may not be up yet.
+OnBootSec=3min
+OnUnitActiveSec=2min
+
+# Run a missed tick as soon as the box is back, so a reboot or a suspended VM
+# does not leave a pharmacy waiting for the next scheduled moment.
+Persistent=true
+
+# Every box would otherwise fire on the same wall-clock boundary. Irrelevant
+# at one host and free to prevent.
+RandomizedDelaySec=15
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target
