@@ -311,6 +311,59 @@ function cardGrid(items, { withIcon = true } = {}) {
 }
 
 /**
+ * The words under a card's heading: the service's own, with the meta lead-in
+ * taken off the front.
+ *
+ * pages.js builds each service page's description to be read in a search
+ * result — "Vaccinations at Ikeja Family Pharmacy in Ikeja, Lagos. <whatever
+ * the owner wrote>". That is right in a <meta> tag and a stutter under a
+ * heading that already says "Vaccinations". Only that one exact, known
+ * lead-in is removed; what is left is the owner's own sentence, or the
+ * catalogue summary, never a rewrite of either. A service with nothing but
+ * the lead-in gets no paragraph at all rather than an invented one.
+ */
+function serviceBlurb(item, name, area) {
+  const label = item.label || item.nav;
+  const lead = `${label} at ${name}${area ? ` in ${area}` : ''}.`;
+  const text = String(item.description || '').trim();
+  return (text.startsWith(lead) ? text.slice(lead.length) : text).trim();
+}
+
+/**
+ * The same services, as centred cards under a soft blob mark — Metro's
+ * Services page only.
+ *
+ * SAME LINKS, SAME FACTS, SAME ICON MATCHER as cardGrid above: each card
+ * still goes to that service's own page, still shows only the name and
+ * description already on the profile, and still takes its mark from
+ * serviceIcon(), so a service looks like itself here and in the home page's
+ * grid. Only the arrangement differs.
+ *
+ * The heading deliberately does NOT repeat the page's own <h1>. The
+ * reference says "Pharmacy Services" here, directly under a hero that also
+ * says services — which reads as a stutter on a page whose h1 is already
+ * "Pharmacy services in {area}".
+ */
+function metroServiceCards(items, name, area) {
+  const cards = items.map((item, i) => {
+    const label = item.label || item.nav;
+    const blurb = serviceBlurb(item, name, area);
+    const desc = blurb ? `<p>${esc(blurb)}</p>` : '';
+    // Alternating tone is rhythm, not meaning — the same as the homepage
+    // tiles. Nothing about a service decides which colour it gets.
+    const tone = i % 2 === 0 ? 'rx-svc-blob--a' : 'rx-svc-blob--b';
+    return `<li><a class="rx-svc-card" href="${esc(item.path)}">`
+      + `<span class="rx-svc-blob ${tone}">${serviceIcon(item.name || label)}</span>`
+      + `<h3>${esc(label)}</h3>${desc}</a></li>`;
+  }).join('');
+
+  return '<section class="rx-block">'
+    + '<div class="rx-head rx-head--center"><span class="rx-eyebrow rx-eyebrow--pill">What We Offer</span>'
+    + '<h2>How We Can Help</h2></div>'
+    + `<ul class="rx-svc-cards">${cards}</ul></section>`;
+}
+
+/**
  * The footer — the same block the home page uses, for the reason in header().
  *
  * The hand-built one here emitted its children straight into the section, so
@@ -728,7 +781,7 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
   } else if (page.kind === 'services') {
     open(area ? `What we can help with at our pharmacy in ${area}.` : 'What we can help with.');
     const services = allPages.filter((x) => x.kind === 'service');
-    parts.push(cardGrid(services));
+    parts.push(ctx.templateId === 'metro' ? metroServiceCards(services, name, area) : cardGrid(services));
     parts.push(ctaRow(ctx, `Hello ${name}, I have a question about your services`));
   } else if (page.kind === 'service') {
     const copy = SERVICE_COPY[page.slug] || null;

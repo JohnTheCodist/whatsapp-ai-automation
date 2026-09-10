@@ -764,3 +764,107 @@ test('metro\'s story stands on the description alone when the pharmacy has uploa
   assert.match(about, /Family run since 2014\./);
   assert.ok(!about.includes('<div class="rx-story-frame">'), 'no photo means no frame, not an empty one');
 });
+
+// The services page's card grid. Same guard as above: `.rx-svc-card` is a
+// selector in the inlined stylesheet on EVERY page, so these match the
+// rendered element, never the bare class name.
+const SVC_CARD_LINK = /<li><a class="rx-svc-card" href="([^"]+)">/g;
+
+/** Two services with descriptions and one without, on the given template. */
+function renderServicesPage(templateId) {
+  const pages = renderAllPages({
+    site: templates.cloneSeed(templateId),
+    pharmacy: PHARMACY,
+    profile: {
+      ...PROFILE,
+      services: [
+        { name: 'Prescription Refills', description: 'Repeat prescriptions dispensed and ready for collection.' },
+        { name: 'Blood Pressure Checks', description: 'Have your blood pressure measured by pharmacy staff.' },
+        { name: 'Vaccinations' },
+      ],
+    },
+    theme: templates.getTemplate(templateId).theme,
+    assets: new Map(),
+    year: 2026,
+    templateId,
+  }).rendered;
+  return pages.find((p) => p.path === '/services/').html;
+}
+
+test('metro\'s services page lays the services out as blob cards; every other template keeps the plain card grid', () => {
+  const metro = renderServicesPage('metro');
+  assert.match(metro, /<ul class="rx-svc-cards">/);
+  assert.match(metro, /<span class="rx-eyebrow rx-eyebrow--pill">What We Offer<\/span>/);
+
+  const professional = renderServicesPage('professional');
+  assert.ok(!professional.includes('<ul class="rx-svc-cards">'), 'the blob grid is metro\'s alone');
+  assert.ok(!professional.includes('>What We Offer<'), 'and so is its eyebrow');
+});
+
+test('every blob card is a link to that service\'s own page, and each service appears exactly once', () => {
+  const html = renderServicesPage('metro');
+  const hrefs = [...html.matchAll(SVC_CARD_LINK)].map((m) => m[1]);
+  assert.deepEqual(hrefs, [
+    '/services/prescription-refills/',
+    '/services/blood-pressure-check/',
+    '/services/vaccinations/',
+  ]);
+  assert.match(html, /<h3>Prescription Refills<\/h3>/);
+  assert.match(html, /<h3>Vaccinations<\/h3>/);
+});
+
+/** The markup of one card, by the service page it links to. */
+function cardFor(html, path) {
+  const from = html.slice(html.indexOf('"' + path + '"'));
+  return from.slice(0, from.indexOf('</a>'));
+}
+
+test('a card says the service\'s own words, without the search-result lead-in that repeats its heading', () => {
+  const html = renderServicesPage('metro');
+  // pages.js prefixes every service's meta description with "<service> at
+  // <pharmacy> in <area>." — right for a search result, a stutter directly
+  // under a heading that already says the service's name.
+  const refills = cardFor(html, '/services/prescription-refills/');
+  assert.match(refills, /<h3>Prescription Refills<\/h3>/);
+  assert.match(refills, /<p>Repeat prescriptions dispensed and ready for collection\.<\/p>/);
+  assert.ok(
+    !refills.includes('Prescription Refills at Ikeja Family Pharmacy'),
+    'the lead-in belongs in the <meta> tag, not on the card',
+  );
+});
+
+test('a service with nothing but that lead-in on file gets no paragraph at all — never a blank one, never an invented line', () => {
+  const html = renderServicesPage('metro');
+  // "Vaccinations" is in no catalogue entry and this fixture gives it no
+  // description of its own, so the whole of its meta description IS the
+  // lead-in — and what is left after removing it is nothing.
+  const card = cardFor(html, '/services/vaccinations/');
+  assert.match(card, /<h3>Vaccinations<\/h3>/);
+  assert.ok(!card.includes('<p>'), 'nothing on file means nothing under the heading');
+});
+
+test('the plain card grid every other template uses is untouched — it still carries the full meta description', () => {
+  const professional = renderServicesPage('professional');
+  assert.match(professional, /<p>Vaccinations at Ikeja Family Pharmacy in Ikeja, Lagos\.<\/p>/);
+});
+test('the blob tone alternates as rhythm only — it is not decided by anything about the service', () => {
+  const html = renderServicesPage('metro');
+  const tones = [...html.matchAll(/<span class="rx-svc-blob (rx-svc-blob--[ab])">/g)].map((m) => m[1]);
+  assert.deepEqual(tones, ['rx-svc-blob--a', 'rx-svc-blob--b', 'rx-svc-blob--a']);
+});
+
+test('the card grid\'s heading does not simply repeat the page\'s own <h1>', () => {
+  const html = renderServicesPage('metro');
+  const h1 = html.match(/<h1>([\s\S]*?)<\/h1>/)[1].replace(/<[^>]+>/g, '');
+  const h2 = html.match(/<h2>([\s\S]*?)<\/h2>/)[1].replace(/<[^>]+>/g, '');
+  assert.notEqual(h2.toLowerCase(), h1.toLowerCase());
+});
+
+test('the reveal animation on the cards moves them, and never fades them — a card must never be able to stay invisible', () => {
+  const css = stylesheet(templates.getTemplate('metro').theme);
+  const rise = css.match(/@keyframes rx-rise\{([\s\S]*?)\}\s*\}/);
+  assert.ok(rise, 'the rx-rise keyframes must exist');
+  assert.ok(!/opacity/.test(rise[1]), 'rx-rise must be transform-only — opacity has blanked the page before');
+  assert.match(css, /\.rx-svc-cards>\*/, 'the cards must be in the stagger');
+  assert.match(css, /@media \(prefers-reduced-motion:reduce\)\{\s*\*\{animation:none!important/);
+});

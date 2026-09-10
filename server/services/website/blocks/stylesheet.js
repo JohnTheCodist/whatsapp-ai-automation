@@ -304,6 +304,67 @@ p:last-child{margin-bottom:0}
   border-radius:999px;
   background:var(--rx-tint);
 }
+/* ---- services index: cards under a blob (Metro) ----
+   The same services cardGrid renders as rows elsewhere, arranged as centred
+   cards instead. The mark sits on a soft organic shape that slowly morphs —
+   the one CONTINUOUS animation on these pages, and safe to run because it
+   animates border-radius on a decorative span: nothing moves, nothing
+   reflows, and nothing is hidden at any point in the cycle. The global
+   prefers-reduced-motion rule at the foot of this sheet turns it off. */
+.rx-svc-cards{
+  display:grid;
+  gap:var(--rx-md);
+  margin:0;
+  padding:0;
+  list-style:none;
+  grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));
+}
+.rx-svc-card{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  height:100%;
+  padding:var(--rx-lg) var(--rx-md);
+  text-align:center;
+  text-decoration:none;
+  color:inherit;
+  background:var(--rx-surface);
+  border:1px solid var(--rx-line);
+  border-radius:min(var(--rx-radius),20px);
+  transition:transform var(--rx-dur) var(--rx-ease),box-shadow var(--rx-dur) var(--rx-ease),
+             border-color var(--rx-dur) var(--rx-ease);
+}
+.rx-svc-card:hover{transform:translateY(-3px);box-shadow:var(--rx-shadow);border-color:var(--rx-primary)}
+.rx-svc-card h3{margin:var(--rx-md) 0 .35rem;color:var(--rx-ink)}
+.rx-svc-card p{margin:0;color:var(--rx-muted);font-size:var(--rx-size-sm)}
+.rx-svc-blob{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:5rem;
+  height:5rem;
+  flex:0 0 auto;
+  border-radius:58% 42% 47% 53% / 52% 46% 54% 48%;
+  animation:rx-blob 14s ease-in-out infinite;
+}
+.rx-svc-blob svg{width:42%;height:42%}
+.rx-svc-blob--a{background:color-mix(in oklab, var(--rx-primary) 12%, var(--rx-surface));color:var(--rx-primary)}
+/* A DARKENED accent, not the accent itself: --rx-accent is a light gold, and
+   a light-gold mark on a light-gold ground is not a mark. */
+.rx-svc-blob--b{
+  background:color-mix(in oklab, var(--rx-accent) 22%, var(--rx-surface));
+  color:color-mix(in oklab, var(--rx-accent) 55%, var(--rx-ink));
+}
+/* Offset so the six do not pulse in unison, which reads as a glitch rather
+   than as movement. */
+.rx-svc-cards>li:nth-child(3n+2) .rx-svc-blob{animation-delay:-4.5s}
+.rx-svc-cards>li:nth-child(3n+3) .rx-svc-blob{animation-delay:-9s}
+@keyframes rx-blob{
+  0%,100%{border-radius:58% 42% 47% 53% / 52% 46% 54% 48%}
+  33%{border-radius:44% 56% 62% 38% / 43% 58% 42% 57%}
+  66%{border-radius:51% 49% 38% 62% / 60% 40% 60% 40%}
+}
+
 .rx-story-chips{display:flex;flex-wrap:wrap;gap:var(--rx-sm);margin-top:var(--rx-md)}
 .rx-story-chip{
   display:inline-flex;
@@ -1434,19 +1495,25 @@ p:last-child{margin-bottom:0}
        tall it finishes almost as soon as the top of it is visible at all.
        That read as "there is no animation" for the single commonest section
        on the page, which is exactly the report this fixes. */
-    .rx-cards>*,.rx-photo-grid>*,.rx-chips>*,.rx-service-grid>*{
+    .rx-cards>*,.rx-photo-grid>*,.rx-chips>*,.rx-service-grid>*,.rx-svc-cards>*,
+    .rx-service-tiles>*,.rx-about-highlights>*,.rx-faq-list>*{
       animation:rx-rise both;
       animation-timeline:view();
       animation-timing-function:var(--rx-ease);
       animation-range:entry 0% entry 65%;
     }
+    /* The blob's own morph is a separate, continuous animation on a child
+       span, so it does not collide with the card's reveal above. */
     /* The children animate; the section around them must not, or the two
        compound into a double fade — and for .rx-service-grid specifically,
        must not, or the outer one (sized to the whole grid) finishes before
        any card's own has properly started. */
     .rx-page .rx-block:has(>.rx-cards),
     .rx-block:has(>.rx-photo-grid),
-    .rx-block:has(>.rx-service-grid){animation:none}
+    .rx-block:has(>.rx-service-grid),
+    .rx-block:has(>.rx-svc-cards),
+    .rx-block:has(>.rx-service-tiles),
+    .rx-block:has(>.rx-faq-list){animation:none}
   }
   .rx-photo,.rx-hero-media img,.rx-split-media img{
     transition:transform 420ms var(--rx-ease);
