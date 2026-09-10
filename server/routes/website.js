@@ -112,7 +112,13 @@ router.get('/', requireAuth, asyncRoute(async (req, res) => {
       pharmacies.getProfile(req.pharmacyId),
     ]);
     const health = Array.isArray(site.content?.health) ? site.content.health : [];
-    pages = buildPages({ pharmacy, profile, health, healthLibrary: publishableArticles() })
+    pages = buildPages({
+      pharmacy, profile, health, healthLibrary: publishableArticles(),
+      // Which pages exist depends on the template — Metro has no
+      // location page. Passed so this list cannot disagree with what
+      // publishing actually produces.
+      templateId: site.template_id || null,
+    })
       // 'home' is edited through the guided form or the advanced editor —
       // it has no generated heading/intro of the kind this list is for.
       // 'health' articles are reviewed clinical content (health.js) and must
@@ -176,8 +182,10 @@ router.post('/pages/copy/generate', requireAuth, requireRole('owner', 'pharmacis
   if (!pharmacy) throw new HttpError(404, 'Pharmacy not found', 'NOT_FOUND');
 
   const health = Array.isArray(site?.content?.health) ? site.content.health : [];
-  const page = buildPages({ pharmacy, profile, health, healthLibrary: publishableArticles() })
-    .find((p) => p.path === path);
+  const page = buildPages({
+    pharmacy, profile, health, healthLibrary: publishableArticles(),
+    templateId: site?.template_id || null,
+  }).find((p) => p.path === path);
   if (!page || page.kind === 'home' || page.kind === 'health') {
     throw new HttpError(404, 'No such page to draft copy for', 'NOT_FOUND');
   }

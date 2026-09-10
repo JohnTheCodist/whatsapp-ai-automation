@@ -183,9 +183,12 @@ function metaDescription(text) {
  * @param {object} args.profile   the pharmacy_profile row (NAP, services)
  * @param {string[]} args.health  slugs of health topics the OWNER has enabled
  * @param {object[]} args.healthLibrary  available health articles
+ * @param {string|null} args.templateId  the template the site is built from,
+ *   which decides ONE thing here and nothing else: whether /location/ exists.
+ *   See the location block below.
  * @returns {object[]} pages
  */
-function buildPages({ pharmacy, profile, health = [], healthLibrary = [] } = {}) {
+function buildPages({ pharmacy, profile, health = [], healthLibrary = [], templateId = null } = {}) {
   const name = String(pharmacy?.name || 'Our pharmacy').trim() || 'Our pharmacy';
   const place = placeOf(profile);
   const area = areaOf(profile);
@@ -250,7 +253,24 @@ function buildPages({ pharmacy, profile, health = [], healthLibrary = [] } = {})
     }
   }
 
-  if (hasLocation(profile)) {
+  // NO LOCATION PAGE ON METRO, on purpose.
+  //
+  // Metro's contact page carries the address, the opening hours, a directions
+  // link and a live map of the same pin — so a location page there is the
+  // same facts at a second URL, and the two compete with each other for the
+  // one search a person actually makes ("pharmacy near me in {area}"). Two
+  // thin pages splitting that intent is worse than one that answers it.
+  //
+  // Every other template keeps it: their contact page is the address and
+  // hours in two columns and nothing else, and the location page is where
+  // the map and the directions live.
+  //
+  // Decided per template rather than per pharmacy because it follows from
+  // what the template's OWN contact page renders, which the owner does not
+  // choose page by page. A site switched away from Metro gets the page back
+  // on its next publish, and one switched to Metro loses it — the publish
+  // step already deletes pages that are no longer in this set.
+  if (hasLocation(profile) && templateId !== 'metro') {
     pages.push({
       path: '/location/',
       kind: 'location',

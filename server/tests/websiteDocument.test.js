@@ -499,12 +499,11 @@ test('metro\'s generated pages get the coloured band, and the pharmacy\'s own na
   assert.match(about, /<h1>About <span class="rx-name-accent">Ikeja Family Pharmacy<\/span><\/h1>/);
 
   // A second page, to show the band and the highlight are not one page's
-  // special case. Metro gives the contact page its own heading (see below),
-  // so the second example here is the location page, whose heading is still
-  // the derived one.
-  const location = pages.find((p) => p.path === '/location/').html;
-  assert.match(location, METRO_PAGE_HEAD);
-  assert.match(location, NAME_ACCENT_SPAN);
+  // special case. Metro gives its contact page a heading of its own and has
+  // no location page at all, so the second example is a service page.
+  const service = pages.find((p) => p.kind === 'service').html;
+  assert.match(service, METRO_PAGE_HEAD);
+  assert.match(service, NAME_ACCENT_SPAN);
 });
 
 test('metro highlights the pharmacy\'s own AREA too, on the headings that end with it rather than with the name', () => {
@@ -514,8 +513,12 @@ test('metro highlights the pharmacy\'s own AREA too, on the headings that end wi
   // halves are facts already on the profile — this never picks words for
   // being important-looking.
   const pages = renderWithPageCopy({}, { templateId: 'metro' });
-  const location = pages.find((p) => p.path === '/location/').html;
-  assert.match(location, /<h1>Find us in <span class="rx-name-accent">Ikeja, Lagos<\/span><\/h1>/);
+  // The location page was the other example here. Metro has none — see the
+  // "no location page on metro" tests below — so its heading is checked on
+  // the template that still has the page.
+  const location = renderWithPageCopy({}, { templateId: 'professional' })
+    .find((p) => p.path === '/location/').html;
+  assert.match(location, /<h1>Find us in Ikeja, Lagos<\/h1>/);
 
   const services = pages.find((p) => p.path === '/services/').html;
   assert.match(services, /<h1>Pharmacy services in <span class="rx-name-accent">Ikeja, Lagos<\/span><\/h1>/);
@@ -1244,4 +1247,55 @@ test("no other template's contact page gains a form or a map", () => {
   // The rendered element, not the class name: that name is also a selector
   // in the stylesheet every page inlines.
   assert.ok(!html.includes('<section class=\"rx-block rx-reach-band\">'));
+});
+
+// =====================================================================
+// METRO HAS NO LOCATION PAGE
+// =====================================================================
+
+test('metro has no /location/ page — its contact page already answers that question', () => {
+  const metro = renderWithPageCopy({}, { templateId: 'metro' });
+  assert.equal(metro.find((x) => x.path === '/location/'), undefined);
+
+  // And nothing links to a page that is not there.
+  for (const page of metro) {
+    assert.ok(!page.html.includes('href="/location/"'), `${page.path} links to a page that does not exist`);
+    assert.ok(!page.html.includes('>Location</a>'), `${page.path} still offers it in a nav`);
+  }
+});
+
+test('the facts that page carried are all still on metro, on the contact page', () => {
+  const contact = renderWithPageCopy({}, { templateId: 'metro' }).find((x) => x.path === '/contact/').html;
+  assert.match(contact, /12 Allen Avenue, Ikeja, Lagos/, 'the address');
+  assert.match(contact, /Monday:<\/span> <span>8:00 am – 8:00 pm/, 'the hours');
+  assert.match(contact, /Get Directions/, 'the directions link');
+  assert.match(contact, /<iframe src="https:\/\/maps\.google\.com\/maps\?q=/, 'and the map');
+});
+
+test('every other template keeps its location page exactly as it was', () => {
+  for (const id of ['professional', 'modern', 'premium', 'family']) {
+    const pages = renderWithPageCopy({}, { templateId: id });
+    const location = pages.find((x) => x.path === '/location/');
+    assert.ok(location, `${id} must keep its location page`);
+    assert.match(location.html, /<h1>Find us in Ikeja, Lagos<\/h1>/);
+  }
+  // Including a site with no template id at all, which is what an older row
+  // or a bare renderAllPages call looks like.
+  assert.ok(renderWithPageCopy({}).find((x) => x.path === '/location/'));
+});
+
+test('a pharmacy with no address has no location page on ANY template — the template only decides the metro case', () => {
+  const noAddress = { ...PROFILE, address_line: null, city: null, state: null, maps_url: null };
+  for (const id of ['metro', 'professional']) {
+    const pages = renderAllPages({
+      site: templates.cloneSeed(id),
+      pharmacy: PHARMACY,
+      profile: noAddress,
+      theme: templates.getTemplate(id).theme,
+      assets: new Map(),
+      year: 2026,
+      templateId: id,
+    }).rendered;
+    assert.equal(pages.find((x) => x.path === '/location/'), undefined, id);
+  }
 });

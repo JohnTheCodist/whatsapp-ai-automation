@@ -51,7 +51,7 @@ function renderAllPages({
   // same derived content is dressed, exactly like theme already does.
   templateId = null,
 } = {}) {
-  const pages = buildPages({ pharmacy, profile, health, healthLibrary });
+  const pages = buildPages({ pharmacy, profile, health, healthLibrary, templateId });
 
   const ctx = {
     pharmacy: pharmacy || {},
