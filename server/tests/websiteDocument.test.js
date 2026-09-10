@@ -868,3 +868,127 @@ test('the reveal animation on the cards moves them, and never fades them — a c
   assert.match(css, /\.rx-svc-cards>\*/, 'the cards must be in the stagger');
   assert.match(css, /@media \(prefers-reduced-motion:reduce\)\{\s*\*\{animation:none!important/);
 });
+
+// =====================================================================
+// THE OWNER'S FAQ ON THE SERVICES PAGE, AND THE COLUMNS FOOTER
+// =====================================================================
+
+// Again: a class name is a selector in the always-inlined stylesheet, so
+// these match rendered elements.
+const COLUMNS_FOOTER = /<footer class="rx-block rx-pharmacy-footer rx-footer--columns">/;
+const STATEMENT_FOOTER = /<footer class="rx-block rx-pharmacy-footer">/;
+
+/** Metro, with the owner's own questions written on their home page. */
+function renderWithOwnerFaq(faqs, templateId = 'metro') {
+  const site = templates.cloneSeed(templateId);
+  const faq = site.blocks.find((b) => b.type === 'pharmacy.faq');
+  if (faq) faq.props.faqs = faqs;
+  return renderAllPages({
+    site,
+    pharmacy: PHARMACY,
+    profile: { ...PROFILE, services: [{ name: 'Vaccinations' }] },
+    theme: templates.getTemplate(templateId).theme,
+    assets: new Map(),
+    year: 2026,
+    templateId,
+  }).rendered;
+}
+
+const OWN_FAQ = [{ question: 'Do I need an appointment for vaccines?', answer: 'No, walk in any time we are open.' }];
+
+test("metro's services page carries the owner's OWN questions, worded exactly as they wrote them", () => {
+  const services = renderWithOwnerFaq(OWN_FAQ).find((x) => x.path === '/services/').html;
+  assert.match(services, /<summary>Do I need an appointment for vaccines\?/);
+  assert.match(services, /<p>No, walk in any time we are open\.<\/p>/);
+  // The block's own disclosure markup, not a second implementation of it.
+  assert.match(services, /<details class="rx-faq-item">/);
+});
+
+test('a pharmacy that has written no questions gets no FAQ section at all — never a seeded one', () => {
+  const services = renderWithOwnerFaq([]).find((x) => x.path === '/services/').html;
+  assert.ok(!services.includes('<details class="rx-faq-item">'), 'no questions means no accordion');
+  assert.ok(!services.includes('>Frequently Asked Questions<'), 'and no heading over nothing');
+  // Nor may it invent the kind of policy question a real pharmacy would have
+  // to answer for itself.
+  assert.ok(!/insurance|Medicaid|Medicare/i.test(services), 'no fabricated policy questions');
+});
+
+test("the FAQ is metro's — no other template's services page grows one", () => {
+  const services = renderWithOwnerFaq(OWN_FAQ, 'professional').find((x) => x.path === '/services/').html;
+  assert.ok(!services.includes('<details class="rx-faq-item">'));
+  assert.ok(!services.includes('Do I need an appointment for vaccines?'));
+});
+
+test("metro's footer is the four-column one, on every page and not only the home page", () => {
+  const pages = renderWithOwnerFaq([]);
+  for (const page of pages) {
+    assert.match(page.html, COLUMNS_FOOTER, `${page.path} must carry the same footer as every other page`);
+  }
+});
+
+test('every other template keeps the statement footer it already had', () => {
+  for (const id of ['professional', 'modern', 'premium', 'family']) {
+    const about = renderWithOwnerFaq([], id).find((x) => x.path === '/about/').html;
+    assert.match(about, STATEMENT_FOOTER, `${id} must be untouched`);
+    assert.doesNotMatch(about, COLUMNS_FOOTER);
+  }
+});
+
+test("the columns footer's own facts all come from the profile, and it links only to pages that exist", () => {
+  const pages = renderWithOwnerFaq([]);
+  const html = pages.find((x) => x.path === '/about/').html;
+  const footer = html.slice(html.indexOf('<footer'));
+
+  assert.match(footer, /<p class="rx-footer-blurb">Family run since 2014\.<\/p>/);
+  assert.match(footer, /12 Allen Avenue, Ikeja, Lagos/);
+  assert.match(footer, /href="tel:08012345678"/);
+  assert.match(footer, /Monday: 8:00 am – 8:00 pm/);
+
+  // Every href in the footer is either a page this site actually has or an
+  // external contact link — never a /terms/ or /privacy/ that would 404.
+  const paths = [...footer.matchAll(/href="(\/[^"]*)"/g)].map((m) => m[1]);
+  const real = new Set(pages.map((x) => x.path));
+  for (const path of paths) assert.ok(real.has(path), `${path} is not a page this site has`);
+  assert.ok(paths.includes('/services/vaccinations/'), 'the services column links to the service pages');
+});
+
+test('a column with nothing true to put in it is omitted whole, heading and all', () => {
+  // No services on file, so no service pages, so no Services column.
+  const pages = renderAllPages({
+    site: templates.cloneSeed('metro'),
+    pharmacy: PHARMACY,
+    profile: { ...PROFILE, services: [] },
+    theme: templates.getTemplate('metro').theme,
+    assets: new Map(),
+    year: 2026,
+    templateId: 'metro',
+  }).rendered;
+  const html = pages.find((x) => x.path === '/about/').html;
+  const footer = html.slice(html.indexOf('<footer'));
+  assert.ok(!footer.includes('>Services<'), 'no service pages means no Services column');
+  assert.match(footer, />Contact Info</, 'the columns that do have facts are still there');
+});
+
+test('the footer on a generated page is the one the OWNER edited, not a defaults-only copy', () => {
+  const site = templates.cloneSeed('metro');
+  site.blocks.find((b) => b.type === 'pharmacy.footer').props.copyright = 'Copyright 2026, all rights reserved.';
+  const pages = renderAllPages({
+    site,
+    pharmacy: PHARMACY,
+    profile: PROFILE,
+    theme: templates.getTemplate('metro').theme,
+    assets: new Map(),
+    year: 2026,
+    templateId: 'metro',
+  }).rendered;
+  for (const page of pages) {
+    assert.match(page.html, /Copyright 2026, all rights reserved\./, `${page.path} lost the owner's own line`);
+  }
+});
+
+test('the WhatsApp mark in the footer and the one on the floating button are the same drawing', () => {
+  const html = renderWithOwnerFaq([]).find((x) => x.path === '/about/').html;
+  const paths = [...html.matchAll(/<path d="(M12\.04 2C[^"]+)"\/>/g)].map((m) => m[1]);
+  assert.equal(paths.length, 2, 'the footer column and the floating button');
+  assert.equal(paths[0], paths[1], 'one logo, drawn once');
+});

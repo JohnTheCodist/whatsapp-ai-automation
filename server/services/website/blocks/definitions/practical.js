@@ -353,4 +353,10 @@ const contact = {
 
 module.exports = [openingHours, location, contact];
 module.exports.humanTime = humanTime;
+// Shared with chrome.js's columns footer, which shows the same three facts
+// under the same three marks. One drawing of a telephone per site.
+module.exports.groupedHours = groupedHours;
+module.exports.PIN_ICON = PIN_ICON;
+module.exports.PHONE_ICON = PHONE_ICON;
+module.exports.CLOCK_ICON = CLOCK_ICON;
 module.exports.DAY_ORDER = DAY_ORDER;

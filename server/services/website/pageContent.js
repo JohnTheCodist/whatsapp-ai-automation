@@ -364,6 +364,21 @@ function metroServiceCards(items, name, area) {
 }
 
 /**
+ * The owner's OWN FAQ, exactly as it renders on their home page.
+ *
+ * Rendered by the block itself rather than re-implemented here, so the two
+ * cannot drift apart and so every rule the block already enforces still
+ * holds — most importantly that nothing renders at all until the owner has
+ * written real questions and real answers. A seeded "Do you accept
+ * insurance?" answered "Yes" would be this website inventing a policy on a
+ * real pharmacy's behalf, which is the one thing it must never do.
+ */
+function ownerFaqSection(ctx) {
+  if (!ctx.siteFaq) return '';
+  return renderBlock({ type: 'pharmacy.faq', version: 1, props: ctx.siteFaq }, ctx);
+}
+
+/**
  * The footer — the same block the home page uses, for the reason in header().
  *
  * The hand-built one here emitted its children straight into the section, so
@@ -372,7 +387,11 @@ function metroServiceCards(items, name, area) {
  * alignment.
  */
 function footer(ctx, year, pages) {
-  return renderBlock({ type: 'pharmacy.footer', version: 1, props: {} }, {
+  // The owner's own footer props where the site has them, so this footer is
+  // byte-identical to the home page's. With none — an editor preview, a test
+  // fixture — the block's own defaults and `from` bindings still fill it in,
+  // exactly as they did when this passed {} unconditionally.
+  return renderBlock({ type: 'pharmacy.footer', version: 1, props: ctx.footerProps || {} }, {
     ...ctx,
     sitePages: ctx.sitePages || navPages(pages || []),
     year: year ?? ctx.year,
@@ -782,6 +801,12 @@ function renderPageBody(page, allPages, ctx, { year } = {}) {
     open(area ? `What we can help with at our pharmacy in ${area}.` : 'What we can help with.');
     const services = allPages.filter((x) => x.kind === 'service');
     parts.push(ctx.templateId === 'metro' ? metroServiceCards(services, name, area) : cardGrid(services));
+    // Metro's reference puts the pharmacy's own FAQ on this page, under the
+    // services — someone deciding whether to come in has just read what is
+    // on offer and is now asking the practical questions. Their own
+    // questions, from their own home page; nothing when they have written
+    // none.
+    if (ctx.templateId === 'metro') parts.push(ownerFaqSection(ctx));
     parts.push(ctaRow(ctx, `Hello ${name}, I have a question about your services`));
   } else if (page.kind === 'service') {
     const copy = SERVICE_COPY[page.slug] || null;

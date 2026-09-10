@@ -1367,6 +1367,91 @@ p:last-child{margin-bottom:0}
   font-size:var(--rx-size-sm);
 }
 
+/* ---- the columns footer (metro) ----
+   The same facts as the statement footer above, in the four-column
+   arrangement a neighbourhood pharmacy's site tends to use: who we are, the
+   links, the services, how to reach us. One column per phone, two per
+   tablet, four on a desktop. auto-fit is deliberately NOT used here: the
+   brand column carries a paragraph and the other three carry short lists,
+   so equal tracks would leave the paragraph in a gutter.
+   The gold rule under each heading is --rx-accent, the one fixed
+   non-themed token — decoration, never a functional colour. */
+.rx-footer--columns .rx-footer-inner{gap:var(--rx-lg)}
+.rx-footer-cols{display:grid;gap:var(--rx-lg)}
+.rx-footer-logo{
+  display:block;
+  width:3.5rem;height:3.5rem;
+  object-fit:contain;
+  background:#fff;
+  border-radius:var(--rx-radius);
+  padding:.4rem;
+  margin-bottom:var(--rx-sm);
+}
+.rx-footer-blurb{color:rgba(255,255,255,.72);margin:var(--rx-sm) 0 0;max-width:32ch;line-height:1.65}
+.rx-footer-h{
+  font-family:var(--rx-display);
+  font-size:var(--rx-size-lg);
+  font-weight:700;
+  color:var(--rx-accent);
+  margin:0 0 var(--rx-sm);
+  padding-bottom:.45rem;
+  /* A short rule under the heading, not a full-width one: it marks the
+     heading, and a rule running past the column's own text reads as a
+     divider between columns instead. */
+  background-image:linear-gradient(var(--rx-accent),var(--rx-accent));
+  background-repeat:no-repeat;
+  background-size:2.75rem 2px;
+  background-position:0 100%;
+}
+.rx-footer-links,.rx-footer-dots,.rx-footer-info{
+  list-style:none;margin:0;padding:0;display:grid;gap:.15rem;
+}
+.rx-footer-links a,.rx-footer-dots a{
+  color:rgba(255,255,255,.78);
+  display:inline-flex;align-items:center;gap:.5rem;
+  min-height:44px;
+  font-size:var(--rx-size-sm);
+}
+.rx-footer-links a:hover,.rx-footer-dots a:hover{color:var(--rx-surface)}
+/* The chevron and the dot are drawn in CSS rather than shipped as two more
+   SVGs: they are punctuation, they carry no meaning a screen reader needs,
+   and content-generated marks are invisible to the accessibility tree. */
+.rx-footer-links a::before{
+  content:"";
+  width:.42rem;height:.42rem;
+  flex:none;
+  border-top:2px solid var(--rx-accent);
+  border-right:2px solid var(--rx-accent);
+  transform:rotate(45deg);
+}
+.rx-footer-dots a::before{
+  content:"";
+  width:.45rem;height:.45rem;
+  flex:none;
+  border-radius:50%;
+  background:#8ab4ff;
+  background:color-mix(in oklab, var(--rx-primary) 45%, var(--rx-surface));
+}
+.rx-footer-info{gap:var(--rx-sm)}
+.rx-footer-info li{
+  display:grid;
+  grid-template-columns:2.25rem minmax(0,1fr);
+  align-items:start;
+  gap:.6rem;
+  color:rgba(255,255,255,.78);
+  font-size:var(--rx-size-sm);
+  line-height:1.6;
+}
+.rx-footer-info a{color:rgba(255,255,255,.78);min-height:44px;display:inline-flex;align-items:center}
+.rx-footer-info a:hover{color:var(--rx-surface)}
+.rx-footer-mark{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:2.25rem;height:2.25rem;
+  border-radius:50%;
+  color:var(--rx-accent);
+  border:1px solid rgba(255,255,255,.18);
+}
+
 /* ---- the responsive step ----
    rx-stack-640 and rx-stack-768 are declared by the blocks themselves, in
    their "responsive" metadata, and emitted by their renderers. Adding a block
@@ -1384,8 +1469,12 @@ p:last-child{margin-bottom:0}
   .rx-photo-grid:has(:nth-child(3))>:first-child{grid-row:span 2;aspect-ratio:4/5}
   .rx-footer-inner{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);align-items:start}
   .rx-footer-legal{grid-column:1 / -1}
+  /* The columns footer manages its own tracks, in .rx-footer-cols. */
+  .rx-footer--columns .rx-footer-inner{grid-template-columns:minmax(0,1fr)}
+  .rx-footer-cols{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (min-width:768px){
+  .rx-footer-cols{grid-template-columns:minmax(0,1.5fr) repeat(3,minmax(0,1fr));gap:var(--rx-xl)}
   .rx-stack-640{display:flex;flex-direction:row;align-items:center;justify-content:space-between;width:100%}
   .rx-nav{display:flex}
   .rx-header-cta{display:inline-flex}
@@ -1553,6 +1642,9 @@ p:last-child{margin-bottom:0}
   .rx-pharmacy-header,.rx-menu,.rx-cta-row{display:none}
   .rx-pharmacy-footer{background:none;color:#000;border-top:1px solid #000}
   .rx-pharmacy-footer a,.rx-footer-address,.rx-footer-legal{color:#000}
+  .rx-footer-blurb,.rx-footer-h,.rx-footer-links a,.rx-footer-dots a,.rx-footer-info,.rx-footer-info a{color:#000}
+  .rx-footer-mark,.rx-footer-logo{display:none}
+  .rx-footer-info li{grid-template-columns:minmax(0,1fr)}
   .rx-block{padding:1rem 0;break-inside:avoid}
 }
 `.trim();

@@ -274,7 +274,12 @@ const TEMPLATES = [
           label: 'Message Us on WhatsApp',
           style: 'band',
         }),
-        b('pharmacy.footer', 1),
+        // The directory footer, not the statement one — the reference this
+        // template is built from ends on the site's own links, its services
+        // and its contact details in four columns. Every other template
+        // keeps the statement footer; this is a prop, so an owner can move
+        // between the two without leaving Metro.
+        b('pharmacy.footer', 1, { layout: 'columns' }),
       ],
     },
   },

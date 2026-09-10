@@ -17,6 +17,12 @@
  */
 
 const { esc, attr, waHref, telHref, assetUrl, section } = require('../render');
+// The contact marks and the "Mon – Fri" collapsing already exist, drawn and
+// tested, for the location block's visit cards. requiring them here is a
+// one-way edge (practical.js knows nothing of chrome.js) and the alternative
+// is a second telephone icon that slowly stops matching the first.
+const { groupedHours, PIN_ICON, PHONE_ICON, CLOCK_ICON } = require('./practical');
+const { whatsappGlyph } = require('../icons');
 
 /** The links the site actually has, or the owner's own if they set any. */
 function navLinks(props, ctx) {
@@ -128,6 +134,73 @@ const header = {
   },
 };
 
+/**
+ * The four-column footer: who we are, the site's own links, the services
+ * that have pages, and how to reach the pharmacy.
+ *
+ * EVERY COLUMN IS OMITTED WHOLE when there is nothing true to put in it.
+ * The Services column needs service pages to exist, Contact needs an address
+ * or a phone number, and the blurb needs the owner to have written a
+ * description. A heading over an empty column is worse than one column fewer,
+ * and inventing a filler line to avoid the gap is not on the table.
+ *
+ * There are no "Terms of Service" or "Privacy Policy" links, which the
+ * reference has and this deliberately does not: those pages do not exist on
+ * a site this builder generates, and a footer link to a 404 is worse than no
+ * link. If they are ever real pages they belong here.
+ */
+function columnsFooter(props, ctx, tel, wa) {
+  const address = [props.address, props.city, props.state].filter(Boolean).join(', ');
+
+  const logoUrl = props.logo ? assetUrl(props.logo, ctx) : '';
+  const brand = [
+    logoUrl
+      ? `<img class="rx-footer-logo" src="${esc(logoUrl)}" alt="${esc(props.pharmacyName || '')}" width="56" height="56" loading="lazy" decoding="async">`
+      : '',
+    props.pharmacyName ? `<p class="rx-footer-name">${esc(props.pharmacyName)}</p>` : '',
+    props.blurb ? `<p class="rx-footer-blurb">${esc(props.blurb)}</p>` : '',
+  ].filter(Boolean).join('');
+
+  const pages = ctx.sitePages || [];
+  const quick = pages.length
+    ? `<nav class="rx-footer-col" aria-label="Footer"><h2 class="rx-footer-h">Quick Links</h2>`
+      + `<ul class="rx-footer-links">${pages.map((x) => `<li><a href="${esc(x.path)}">${esc(x.nav)}</a></li>`).join('')}</ul></nav>`
+    : '';
+
+  const serviceLinks = ctx.serviceLinks || [];
+  const svc = serviceLinks.length
+    ? `<div class="rx-footer-col"><h2 class="rx-footer-h">Services</h2>`
+      + `<ul class="rx-footer-dots">${serviceLinks.map((x) => `<li><a href="${esc(x.path)}">${esc(x.label)}</a></li>`).join('')}</ul></div>`
+    : '';
+
+  // The same "Mon – Fri" collapsing the visit cards use, so the two never
+  // disagree about the week on the same site.
+  const hours = groupedHours(ctx.profile?.opening_hours || []);
+  const info = [
+    address ? `<li><span class="rx-footer-mark">${PIN_ICON}</span><span>${esc(address)}</span></li>` : '',
+    tel ? `<li><span class="rx-footer-mark">${PHONE_ICON}</span><a href="${esc(tel)}">${esc(props.phone)}</a></li>` : '',
+    wa ? `<li><span class="rx-footer-mark">${whatsappGlyph({ size: 20 })}</span><a href="${esc(wa)}" rel="noopener noreferrer" target="_blank">WhatsApp</a></li>` : '',
+    hours.length
+      ? `<li><span class="rx-footer-mark">${CLOCK_ICON}</span><span>${
+        hours.map((r) => `${esc(r.label)}: ${esc(r.value)}`).join('<br>')
+      }</span></li>`
+      : '',
+  ].filter(Boolean).join('');
+  const contact = info
+    ? `<div class="rx-footer-col"><h2 class="rx-footer-h">Contact Info</h2><ul class="rx-footer-info">${info}</ul></div>`
+    : '';
+
+  const legal = props.copyright
+    ? `<p class="rx-footer-legal">${esc(props.copyright)}</p>`
+    : (ctx.year ? `<p class="rx-footer-legal">© ${esc(ctx.year)} ${esc(props.pharmacyName)}</p>` : '');
+
+  const cols = `<div class="rx-footer-cols"><div class="rx-footer-brand">${brand}</div>${quick}${svc}${contact}</div>`;
+  return section(this.id, `<div class="rx-footer-inner">${cols}${legal}</div>`, {
+    tag: 'footer',
+    className: 'rx-footer--columns',
+  });
+}
+
 const footer = {
   id: 'pharmacy.footer',
   version: 1,
@@ -152,6 +225,18 @@ const footer = {
     // time makes the output non-deterministic, and the renderer tests assert
     // determinism. The publishing step supplies the year through ctx.
     copyright: { type: 'text', max: 200 },
+    // The pharmacy's own description, shown beside the name in the columns
+    // layout. Bound, never written here: this is the sentence they already
+    // wrote about themselves in their profile, and the assistant quotes the
+    // same one.
+    blurb: { type: 'text', max: 300, from: 'profile.description' },
+    logo: { type: 'asset', from: 'profile.logo_asset_id' },
+    // 'statement' is the footer every template had: the name at size, the
+    // address under it, and the two ways to reach the pharmacy. 'columns' is
+    // the directory footer — the same facts, plus the links the site already
+    // has, in the four-column arrangement Metro's reference uses. A choice
+    // about arrangement only; neither one can say anything the other cannot.
+    layout: { type: 'enum', values: ['statement', 'columns'] },
   },
 
   defaults: {},
@@ -170,6 +255,7 @@ const footer = {
   render(props, ctx) {
     const tel = telHref(props.phone, ctx);
     const wa = waHref(props.whatsappNumber, null, ctx);
+    if (props.layout === 'columns') return columnsFooter.call(this, props, ctx, tel, wa);
 
     // A statement, not four columns of links: the pharmacy's name at size,
     // the address under it, and the two ways to reach it. Everything here is

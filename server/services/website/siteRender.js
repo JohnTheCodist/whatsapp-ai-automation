@@ -73,10 +73,26 @@ function renderAllPages({
     aboutWhyUs: (site?.blocks || [])
       .filter((b) => b?.type === 'pharmacy.about')
       .flatMap((b) => (Array.isArray(b?.props?.whyUs) ? b.props.whyUs : [])),
+    // The owner's own FAQ, from the same block on their HOMEPAGE, so a
+    // generated page can show the identical questions rather than a second
+    // set nobody wrote. Same reasoning as aboutHighlights above: this file
+    // knows the block shape, pageContent.js keeps receiving derived facts.
+    siteFaq: (site?.blocks || []).find((b) => b?.type === 'pharmacy.faq')?.props || null,
+    // The owner's own footer props, for the same reason and a stronger one:
+    // a footer is supposed to be IDENTICAL on every page. Before this, the
+    // generated pages rendered a default-props footer while the home page
+    // rendered the owner's, so an edited copyright line — or a template's
+    // own footer layout — stopped at the home page.
+    footerProps: (site?.blocks || []).find((b) => b?.type === 'pharmacy.footer')?.props || null,
     // The site map, so the header block can link to the pages that exist
     // rather than to nothing. Set here because this is the only place that
     // knows the whole site.
     sitePages: navPages(pages),
+    // The service pages that exist, for a footer column of them. Capped:
+    // a footer column is a summary, and a pharmacy with twenty services
+    // would otherwise push the copyright line off the bottom of a phone.
+    serviceLinks: pages.filter((x) => x.kind === 'service').slice(0, 6)
+      .map((x) => ({ path: x.path, label: x.label || x.nav })),
   };
 
   const rendered = pages.map((page) => {
