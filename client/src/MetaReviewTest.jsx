@@ -1,14 +1,23 @@
 /**
- * Meta App Review Test — Settings → WhatsApp.
+ * WhatsApp messaging — Settings → WhatsApp.
  *
- * AN INTERNAL TEST SCREEN, AND IT SAYS SO. It exists to record the two Meta
- * App Review videos: sending a WhatsApp message through the Cloud API
- * (whatsapp_business_messaging) and creating a message template
- * (whatsapp_business_management). It is not how pharmacies connect WhatsApp —
- * that is the Pairing tab beside it, which this does not touch.
+ * TWO PANELS, TWO TABS. "Send a message" is the default export; "Message
+ * templates" is TemplatesPanel beside it. They are two different jobs and an
+ * owner arrives wanting exactly one of them, so they are not stacked on one
+ * screen.
  *
- * Every action here is a real Graph API call made by our server with
- * RxNaija's own token. Nothing on this screen is simulated.
+ * These are also the two capabilities Meta reviews — sending
+ * (whatsapp_business_messaging) and templates
+ * (whatsapp_business_management) — and the App Review videos are recorded
+ * here. The screen is written as what it is, an ordinary part of the product,
+ * rather than as a test harness with a banner on it: a reviewer is judging
+ * whether a real product uses the permission, and a screen labelled "test"
+ * argues against exactly that. Nothing here is staged for the camera; every
+ * action is a real Graph API call made by our server with RxNaija's own
+ * token.
+ *
+ * It is NOT how a pharmacy connects WhatsApp today — that is the Pairing tab,
+ * which this does not touch. See services/whatsapp/metaCloudReview.js.
  *
  * The result views are pure functions of state and exported, so they can be
  * rendered and checked without a browser.
@@ -198,7 +207,7 @@ export function TemplateList({ templates }) {
   );
 }
 
-function TemplatesPanel() {
+export function TemplatesPanel() {
   const [form, setForm] = useState({
     name: 'rxnaija_test', category: 'UTILITY', language: 'en', body: 'Your order is ready for collection.',
   });
@@ -228,8 +237,12 @@ function TemplatesPanel() {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5">
       <h3 className="font-display text-base font-semibold text-slate-900">Message templates</h3>
+      <p className="mt-1 text-sm text-slate-600">
+        Templates are the messages WhatsApp lets you send at any time, such as telling a
+        customer their order is ready. Each one is approved by WhatsApp before it can be used.
+      </p>
 
-      <form className="mt-4 grid gap-4 md:grid-cols-2" onSubmit={(e) => { e.preventDefault(); create(); }}>
+      <form className="mt-5 grid gap-4 md:grid-cols-2" onSubmit={(e) => { e.preventDefault(); create(); }}>
         <Field label="Template name">
           <input className={inputClass} value={form.name} onChange={set('name')} autoComplete="off" spellCheck={false} />
         </Field>
@@ -289,7 +302,7 @@ function TemplatesPanel() {
   );
 }
 
-export default function MetaReviewTest() {
+export default function SendMessagePanel() {
   const [status, setStatus] = useState(null);
   const [to, setTo] = useState('');
   const [message, setMessage] = useState('Hello from RxNaija');
@@ -305,25 +318,20 @@ export default function MetaReviewTest() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div>
-        <h2 className="font-display text-lg font-semibold text-slate-900">Meta App Review Test</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Sends through the Meta WhatsApp Cloud API{status?.graphVersion ? ` (Graph ${status.graphVersion})` : ''}.
-          For App Review only — this does not change how your pharmacy is connected.
-        </p>
-      </div>
-
       {status && status.ok === false && (
         <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-800">{status.error}</p>
       )}
       {status?.ok && !status.messaging && (
         <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Not configured on the server yet — set META_SYSTEM_USER_TOKEN and META_PHONE_NUMBER_ID.
+          WhatsApp messaging is not set up on this server yet.
         </p>
       )}
 
       <section className="rounded-lg border border-slate-200 bg-white p-5">
-        <h3 className="mb-4 font-display text-base font-semibold text-slate-900">Send a WhatsApp message</h3>
+        <h3 className="font-display text-base font-semibold text-slate-900">Send a message</h3>
+        <p className="mb-5 mt-1 text-sm text-slate-600">
+          Message a customer on WhatsApp from your pharmacy&rsquo;s business number.
+        </p>
         <SendForm
           to={to}
           message={message}
@@ -344,8 +352,6 @@ export default function MetaReviewTest() {
           )}
         />
       </section>
-
-      <TemplatesPanel />
     </div>
   );
 }

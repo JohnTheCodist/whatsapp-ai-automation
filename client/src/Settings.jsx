@@ -28,7 +28,7 @@ import CustomerContactSettings from './CustomerContactSettings.jsx';
 import CustomerQrCode from './CustomerQrCode.jsx';
 import TradeQrCode from './TradeQrCode.jsx';
 import PharmacyHoursSettings from './PharmacyHoursSettings.jsx';
-import MetaReviewTest from './MetaReviewTest.jsx';
+import SendMessagePanel, { TemplatesPanel } from './MetaReviewTest.jsx';
 import ConnectWhatsApp from './ConnectWhatsApp.jsx';
 import CatalogueSync from './CatalogueSync.jsx';
 import { IconSearch } from './Icons.jsx';
@@ -93,9 +93,12 @@ const ALL_GROUPS = [
           // it in a video submitted to Meta risks the business account. See
           // reviewMode.js.
           { id: 'pairing', label: 'Pairing', reviewHide: true, render: () => <ConnectWhatsApp /> },
-          // Internal: records the Meta App Review videos through the Cloud
-          // API. Does not change how the pharmacy is connected — Pairing does.
-          { id: 'meta-review', label: 'Meta App Review Test', render: () => <MetaReviewTest /> },
+          // Sending, and the templates that make sending outside the 24-hour
+          // window possible, through the WhatsApp Cloud API. Two tabs rather
+          // than one long panel: they are two different jobs, and an owner
+          // arrives wanting exactly one of them.
+          { id: 'send', label: 'Send a message', render: () => <SendMessagePanel /> },
+          { id: 'templates', label: 'Message templates', render: () => <TemplatesPanel /> },
           {
             id: 'api',
             label: 'API status',

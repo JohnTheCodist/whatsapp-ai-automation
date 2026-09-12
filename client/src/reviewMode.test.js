@@ -32,7 +32,8 @@ const GROUPS = [
         tabs: [
           { id: 'pairing', label: 'Pairing', reviewHide: true },
           { id: 'api', label: 'API status', reviewHide: true },
-          { id: 'meta-review', label: 'Meta App Review Test' },
+          { id: 'send', label: 'Send a message' },
+          { id: 'templates', label: 'Message templates' },
         ],
       },
       { id: 'stock-sync', label: 'Stock sync', tabs: [{ id: 'devices', label: 'Connected computers' }] },
@@ -53,10 +54,11 @@ test('on, the pairing panel and the raw API status are gone', () => {
   expect(ids).not.toContain('api');
 });
 
-test('on, the Meta App Review Test panel and the rest of the product remain', () => {
+test('on, the WhatsApp messaging panels and the rest of the product remain', () => {
   const visible = visibleGroups(GROUPS, true);
   const ids = tabIds(visible);
-  expect(ids).toContain('meta-review');
+  expect(ids).toContain('send');
+  expect(ids).toContain('templates');
   expect(ids).toContain('assistant');
   expect(ids).toContain('devices');
   // The product still looks like a product: both groups survive.

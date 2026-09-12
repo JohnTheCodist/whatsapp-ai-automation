@@ -1,5 +1,5 @@
 /**
- * Calls behind the Meta App Review Test screen.
+ * Calls behind the WhatsApp messaging screens (Settings → WhatsApp).
  *
  * Plain fetch: window.fetch is already patched to attach the session token
  * (see auth.js), exactly as ConnectWhatsApp relies on. No Meta credential
@@ -21,7 +21,7 @@ async function request(path, { method = 'GET', body } = {}, fetchImpl = fetch) {
     try { json = await res.json(); } catch { json = null; }
 
     if (!res.ok || json?.success === false) {
-      if (res.status === 403) return { ok: false, error: 'Only the pharmacy owner can use the Meta App Review Test.' };
+      if (res.status === 403) return { ok: false, error: 'Only the pharmacy owner can send WhatsApp messages.' };
       return { ok: false, error: json?.error || `The request failed (${res.status}).` };
     }
     return { ok: true, ...json };
