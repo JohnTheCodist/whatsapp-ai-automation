@@ -167,6 +167,22 @@ const env = {
     },
   },
 
+  // Meta WhatsApp Cloud API — the App Review harness ONLY (see
+  // services/whatsapp/metaCloudReview.js). Deliberately NOT under `channel`:
+  // it is not a channel, CHANNEL_PROVIDER never selects it, and leaving every
+  // value empty changes nothing about how Baileys runs.
+  metaCloud: {
+    appId: process.env.META_APP_ID || '',
+    appSecret: process.env.META_APP_SECRET || '',
+    systemUserToken: process.env.META_SYSTEM_USER_TOKEN || '',
+    phoneNumberId: process.env.META_PHONE_NUMBER_ID || '',
+    wabaId: process.env.META_WABA_ID || '',
+    // Newest version Graph accepted when this was written (probed 2026-09-11:
+    // v26.0 answers, v27.0 is unknown). Meta retires versions on a schedule,
+    // so this is a setting rather than a constant.
+    graphVersion: process.env.META_GRAPH_VERSION || 'v26.0',
+  },
+
   llm: {
     apiKey: process.env.LLM_API_KEY || '',
     apiUrl: process.env.LLM_API_URL || 'https://api.openai.com/v1/chat/completions',

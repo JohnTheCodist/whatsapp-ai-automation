@@ -26,6 +26,11 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // The React 17+ JSX runtime, matching what @vitejs/plugin-react gives the
+  // real build. Without it esbuild emits React.createElement and a .jsx
+  // component — which, like every component here, never imports React —
+  // fails under test with "React is not defined".
+  esbuild: { jsx: 'automatic' },
   test: {
     environment: 'node',
     include: ['src/**/*.test.js', 'src/**/*.test.jsx'],

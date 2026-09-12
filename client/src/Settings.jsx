@@ -28,6 +28,7 @@ import CustomerContactSettings from './CustomerContactSettings.jsx';
 import CustomerQrCode from './CustomerQrCode.jsx';
 import TradeQrCode from './TradeQrCode.jsx';
 import PharmacyHoursSettings from './PharmacyHoursSettings.jsx';
+import MetaReviewTest from './MetaReviewTest.jsx';
 import ConnectWhatsApp from './ConnectWhatsApp.jsx';
 import CatalogueSync from './CatalogueSync.jsx';
 import { IconSearch } from './Icons.jsx';
@@ -88,6 +89,9 @@ const GROUPS = [
         blurb: 'The live socket everything else depends on.',
         tabs: [
           { id: 'pairing', label: 'Pairing', render: () => <ConnectWhatsApp /> },
+          // Internal: records the Meta App Review videos through the Cloud
+          // API. Does not change how the pharmacy is connected — Pairing does.
+          { id: 'meta-review', label: 'Meta App Review Test', render: () => <MetaReviewTest /> },
           {
             id: 'api',
             label: 'API status',

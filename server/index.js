@@ -204,6 +204,9 @@ app.get('/api/summary', require('./middleware/auth').requireAuth, async (req, re
 app.use('/api/overview', require('./routes/overview'));       // dashboard
 app.use('/api/insights', require('./routes/insights'));      // owner metrics + AI performance
 app.use('/api/pharmacies', require('./routes/pharmacies'));  // Phase 1
+// Before /api/whatsapp so the Baileys router can never shadow it. Meta App
+// Review harness only — see services/whatsapp/metaCloudReview.js.
+app.use('/api/whatsapp/cloud', require('./routes/metaCloudReview'));
 app.use('/api/whatsapp', require('./routes/whatsapp'));      // Phase 2
 app.use('/api/catalogue', require('./routes/catalogue'));    // Phase 3
 app.use('/api/sync', require('./routes/sync'));              // catalogue sync agent
