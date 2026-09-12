@@ -32,6 +32,7 @@ import MetaReviewTest from './MetaReviewTest.jsx';
 import ConnectWhatsApp from './ConnectWhatsApp.jsx';
 import CatalogueSync from './CatalogueSync.jsx';
 import { IconSearch } from './Icons.jsx';
+import { visibleGroups } from './reviewMode.js';
 
 /**
  * The map of the whole screen, as data.
@@ -42,7 +43,7 @@ import { IconSearch } from './Icons.jsx';
  * `render` functions are what keep each panel untouched — this file names
  * them, it does not reimplement them.
  */
-const GROUPS = [
+const ALL_GROUPS = [
   {
     label: 'Your pharmacy',
     items: [
@@ -88,13 +89,20 @@ const GROUPS = [
         title: 'WhatsApp',
         blurb: 'The live socket everything else depends on.',
         tabs: [
-          { id: 'pairing', label: 'Pairing', render: () => <ConnectWhatsApp /> },
+          // reviewHide: Baileys is an unofficial WhatsApp client, and showing
+          // it in a video submitted to Meta risks the business account. See
+          // reviewMode.js.
+          { id: 'pairing', label: 'Pairing', reviewHide: true, render: () => <ConnectWhatsApp /> },
           // Internal: records the Meta App Review videos through the Cloud
           // API. Does not change how the pharmacy is connected — Pairing does.
           { id: 'meta-review', label: 'Meta App Review Test', render: () => <MetaReviewTest /> },
           {
             id: 'api',
             label: 'API status',
+            // reviewHide: a raw JSON dump of internal health is noise in a
+            // recording, and one more surface that could show something the
+            // video has no reason to carry.
+            reviewHide: true,
             render: ({ health }) => (
               <section className="rounded-lg border border-slate-200 bg-white p-5">
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">API status</h2>
@@ -121,6 +129,12 @@ const GROUPS = [
     ],
   },
 ];
+
+/**
+ * What this build actually shows. Identical to ALL_GROUPS on every normal
+ * deploy; see reviewMode.js for the one build where it is not.
+ */
+const GROUPS = visibleGroups(ALL_GROUPS);
 
 const ALL_ITEMS = GROUPS.flatMap((g) => g.items);
 
