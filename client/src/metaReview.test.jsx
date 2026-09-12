@@ -20,9 +20,15 @@ function renderForm(state, overrides = {}) {
     <SendForm
       to="+2348031234567"
       message="Hello from RxNaija"
+      kind="text"
+      templateName="hello_world"
+      language="en_US"
       state={state}
       onTo={noop}
       onMessage={noop}
+      onKind={noop}
+      onTemplateName={noop}
+      onLanguage={noop}
       onSubmit={noop}
       {...overrides}
     />,
@@ -36,6 +42,37 @@ test('the form renders a number field, a message field and the send button', () 
   expect(html).toContain('Message');
   expect(html).toContain('Hello from RxNaija');
   expect(html).toMatch(/<button type="submit"[^>]*>Send WhatsApp Message<\/button>/);
+});
+
+test('choosing "template" swaps the message box for the template fields', () => {
+  const text = renderForm({ status: 'idle' }, { kind: 'text' });
+  expect(text).toContain('Hello from RxNaija');
+  expect(text).not.toContain('Template name');
+
+  const template = renderForm({ status: 'idle' }, { kind: 'template' });
+  expect(template).toContain('Template name');
+  expect(template).toContain('hello_world');
+  expect(template).toContain('Template language');
+  // The recipient field belongs to both.
+  expect(template).toContain('WhatsApp number');
+});
+
+test('both message types are offered, with the 24-hour caveat stated on the text one', () => {
+  const html = renderForm({ status: 'idle' });
+  expect(html).toContain('Text message');
+  expect(html).toContain('Approved template');
+  expect(html).toContain('24 hours');
+});
+
+test('a template send posts kind, template name and language; a text send posts the message', async () => {
+  const sent = [];
+  const capture = async (payload) => { sent.push(payload); return { ok: true, messageId: 'wamid.Z' }; };
+
+  await submitSend({ to: '+2348031234567', kind: 'template', templateName: 'hello_world', language: 'en_US' }, noop, capture);
+  await submitSend({ to: '+2348031234567', message: 'Hello from RxNaija' }, noop, capture);
+
+  expect(sent[0]).toEqual({ to: '+2348031234567', kind: 'template', templateName: 'hello_world', language: 'en_US' });
+  expect(sent[1]).toEqual({ to: '+2348031234567', message: 'Hello from RxNaija' });
 });
 
 test('while sending, the button is disabled and says so', () => {

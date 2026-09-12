@@ -34,8 +34,15 @@ export function getStatus(fetchImpl) {
   return request('/status', {}, fetchImpl);
 }
 
-export function sendTestMessage({ to, message }, fetchImpl) {
-  return request('/test-send', { method: 'POST', body: { to, message } }, fetchImpl);
+/**
+ * Send a test message.
+ *
+ * `payload` is passed through as given: `{ to, message }` for text, or
+ * `{ to, kind: 'template', templateName, language }` for a template. The
+ * server decides on `kind`, so the shape is not re-derived here.
+ */
+export function sendTestMessage(payload, fetchImpl) {
+  return request('/test-send', { method: 'POST', body: payload }, fetchImpl);
 }
 
 export function listTemplates(fetchImpl) {

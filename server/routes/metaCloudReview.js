@@ -34,8 +34,17 @@ router.get('/status', requireAuth, requireRole('owner'), (req, res) => {
   res.json(review.publicStatus());
 });
 
+// Two kinds of message, one endpoint. The screen has one recipient field and
+// one button; splitting this in two would mean the client picking a URL from
+// a radio button. Anything other than 'template' is a plain text send, so an
+// older client that sends no `kind` behaves exactly as it did.
 router.post('/test-send', requireAuth, requireRole('owner'), asyncRoute(async (req, res) => {
-  send(res, await review.sendTestMessage({ to: req.body?.to, message: req.body?.message }));
+  const result = req.body?.kind === 'template'
+    ? await review.sendTemplateMessage({
+      to: req.body?.to, templateName: req.body?.templateName, language: req.body?.language,
+    })
+    : await review.sendTestMessage({ to: req.body?.to, message: req.body?.message });
+  send(res, result);
 }));
 
 router.get('/templates', requireAuth, requireRole('owner'), asyncRoute(async (req, res) => {

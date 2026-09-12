@@ -58,7 +58,46 @@ export function SendResult({ state }) {
   return null;
 }
 
-export function SendForm({ to, message, state, onTo, onMessage, onSubmit }) {
+/**
+ * Text or template.
+ *
+ * WHY THE CHOICE IS HERE AT ALL. WhatsApp delivers free-form text only within
+ * 24 hours of the recipient last writing to the business. Outside that window
+ * Meta accepts the send, returns a message id, and fails it later with error
+ * 131047 — so the screen can say "sent" while nothing arrives. A template has
+ * no such window, which makes it the dependable choice when recording.
+ */
+export function SendKindChoice({ kind, onKind }) {
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="text-sm font-medium text-slate-700">Message type</legend>
+      {[
+        ['text', 'Text message', 'Only delivers within 24 hours of them messaging you.'],
+        ['template', 'Approved template', 'Delivers at any time. Use this if in doubt.'],
+      ].map(([value, label, hint]) => (
+        <label key={value} className="flex items-start gap-2.5">
+          <input
+            type="radio"
+            name="send-kind"
+            value={value}
+            checked={kind === value}
+            onChange={() => onKind(value)}
+            className="mt-1 h-4 w-4 accent-teal-700"
+          />
+          <span>
+            <span className="block text-sm text-slate-900">{label}</span>
+            <span className="block text-xs text-slate-500">{hint}</span>
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+export function SendForm({
+  to, message, kind, templateName, language, state,
+  onTo, onMessage, onKind, onTemplateName, onLanguage, onSubmit,
+}) {
   const sending = state.status === 'sending';
   return (
     <form
@@ -75,13 +114,38 @@ export function SendForm({ to, message, state, onTo, onMessage, onSubmit }) {
           autoComplete="off"
         />
       </Field>
-      <Field label="Message">
-        <textarea
-          className={`${inputClass} min-h-[5rem]`}
-          value={message}
-          onChange={(e) => onMessage(e.target.value)}
-        />
-      </Field>
+
+      <SendKindChoice kind={kind} onKind={onKind} />
+
+      {kind === 'template' ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Template name">
+            <input
+              className={inputClass}
+              value={templateName}
+              onChange={(e) => onTemplateName(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </Field>
+          <Field label="Template language">
+            <select className={inputClass} value={language} onChange={(e) => onLanguage(e.target.value)}>
+              <option value="en_US">en_US</option>
+              <option value="en_GB">en_GB</option>
+              <option value="en">en</option>
+            </select>
+          </Field>
+        </div>
+      ) : (
+        <Field label="Message">
+          <textarea
+            className={`${inputClass} min-h-[5rem]`}
+            value={message}
+            onChange={(e) => onMessage(e.target.value)}
+          />
+        </Field>
+      )}
+
       <div>
         <button type="submit" className={primaryButton} disabled={sending}>
           {sending ? 'Sending...' : 'Send WhatsApp Message'}
@@ -95,10 +159,14 @@ export function SendForm({ to, message, state, onTo, onMessage, onSubmit }) {
 /**
  * Submit handler, separated from the component so the transition
  * idle → sending → success | error can be tested without a DOM.
+ *
+ * The payload is passed through untouched, so the server sees exactly the
+ * shape the caller built — `{ to, message }`, or `{ to, kind, templateName,
+ * language }`.
  */
-export async function submitSend({ to, message }, setState, send = api.sendTestMessage) {
+export async function submitSend(payload, setState, send = api.sendTestMessage) {
   setState({ status: 'sending' });
-  const result = await send({ to, message });
+  const result = await send(payload);
   setState(result.ok
     ? { status: 'success', messageId: result.messageId }
     : { status: 'error', error: result.error });
@@ -225,6 +293,10 @@ export default function MetaReviewTest() {
   const [status, setStatus] = useState(null);
   const [to, setTo] = useState('');
   const [message, setMessage] = useState('Hello from RxNaija');
+  // Template by default: it is the one that delivers whenever you record.
+  const [kind, setKind] = useState('template');
+  const [templateName, setTemplateName] = useState('hello_world');
+  const [language, setLanguage] = useState('en_US');
   const [state, setState] = useState({ status: 'idle' });
 
   useEffect(() => {
@@ -255,10 +327,21 @@ export default function MetaReviewTest() {
         <SendForm
           to={to}
           message={message}
+          kind={kind}
+          templateName={templateName}
+          language={language}
           state={state}
           onTo={setTo}
           onMessage={setMessage}
-          onSubmit={() => submitSend({ to, message }, setState)}
+          onKind={setKind}
+          onTemplateName={setTemplateName}
+          onLanguage={setLanguage}
+          onSubmit={() => submitSend(
+            kind === 'template'
+              ? { to, kind: 'template', templateName, language }
+              : { to, message },
+            setState,
+          )}
         />
       </section>
 

@@ -179,6 +179,64 @@ test('a success response with no message ID is treated as a failure, not as a se
   assert.equal(result.success, false);
 });
 
+// ------------------------------------------------- sending a template ---
+
+test('sending a template posts type=template with the name and language code', async () => {
+  const { impl, calls } = fakeFetch({ status: 200, body: { messages: [{ id: 'wamid.TPL' }] } });
+
+  const result = await review.sendTemplateMessage(
+    { to: '08031234567', templateName: 'hello_world', language: 'en_US' },
+    { cfg: CFG, fetchImpl: impl, log: captureLog().log },
+  );
+
+  assert.deepEqual(result, { success: true, status: 200, messageId: 'wamid.TPL' });
+  assert.equal(calls[0].url, 'https://graph.facebook.com/v26.0/1111111111/messages');
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: '2348031234567',
+    type: 'template',
+    template: { name: 'hello_world', language: { code: 'en_US' } },
+  });
+});
+
+test('a template send validates the recipient exactly as a text send does', () => {
+  const good = { to: '08031234567', templateName: 'hello_world', language: 'en_US' };
+  assert.equal(review.validateTemplateSend(good).to, '2348031234567');
+  assert.equal(review.validateTemplateSend({ ...good, to: 'abc' }).ok, false);
+  assert.equal(review.validateTemplateSend({ ...good, to: '' }).ok, false);
+});
+
+test('a template send needs a template name and a real language code', () => {
+  const good = { to: '08031234567', templateName: 'hello_world', language: 'en_US' };
+  assert.match(review.validateTemplateSend({ ...good, templateName: '' }).error, /Choose a template/);
+  assert.match(review.validateTemplateSend({ ...good, templateName: 'Not A Name' }).error, /Choose a template/);
+  assert.match(review.validateTemplateSend({ ...good, language: 'english' }).error, /language code/);
+});
+
+test('the 24-hour-window error is still mapped on a template send, should Meta ever return it', async () => {
+  const { impl } = fakeFetch({ status: 400, body: { error: { code: 131047, message: 'Re-engagement message' } } });
+  const result = await review.sendTemplateMessage(
+    { to: '2348031234567', templateName: 'hello_world', language: 'en_US' },
+    { cfg: CFG, fetchImpl: impl, log: captureLog().log },
+  );
+  assert.equal(result.success, false);
+  assert.match(result.error, /24 hours/);
+});
+
+test('the route sends a template when kind is "template", and text otherwise', () => {
+  // The dispatch is one ternary in routes/metaCloudReview.js; this pins the
+  // branch names so a rename cannot quietly turn every template send into a
+  // text send — which would fail only outside the 24-hour window, i.e. in
+  // exactly the situation the template send exists for.
+  const src = require('node:fs').readFileSync(
+    require('node:path').join(__dirname, '..', 'routes', 'metaCloudReview.js'), 'utf8',
+  );
+  assert.match(src, /kind === 'template'/);
+  assert.match(src, /sendTemplateMessage/);
+  assert.match(src, /sendTestMessage/);
+});
+
 // ------------------------------------------------------------ templates ---
 
 test('template input is checked against Meta\'s rules first', () => {

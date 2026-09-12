@@ -86,9 +86,8 @@ function publicStatus(cfg = readConfig()) {
  * "0803 123 4567", "+234 803 123 4567" and "2348031234567" all arrive at
  * Meta as the digits-only international form it expects.
  */
-function validateSend(input, defaultCountryCode = env.defaultCountryCode || '234') {
-  const rawTo = typeof input?.to === 'string' ? input.to.trim() : '';
-  const message = typeof input?.message === 'string' ? input.message.trim() : '';
+function validateRecipient(rawInput, defaultCountryCode = env.defaultCountryCode || '234') {
+  const rawTo = typeof rawInput === 'string' ? rawInput.trim() : '';
 
   if (!rawTo) return { ok: false, error: 'Enter the WhatsApp number to send to.' };
   // Letters mean it is not a phone number at all, however the digits line up.
@@ -99,6 +98,14 @@ function validateSend(input, defaultCountryCode = env.defaultCountryCode || '234
   if (!to || to.length > 15) {
     return { ok: false, error: 'That is not a valid phone number. Include the country code, e.g. +234 803 123 4567.' };
   }
+  return { ok: true, to };
+}
+
+function validateSend(input, defaultCountryCode = env.defaultCountryCode || '234') {
+  const recipient = validateRecipient(input?.to, defaultCountryCode);
+  if (!recipient.ok) return recipient;
+  const { to } = recipient;
+  const message = typeof input?.message === 'string' ? input.message.trim() : '';
 
   if (!message) return { ok: false, error: 'Enter a message to send.' };
   if (message.length > MAX_TEXT_LENGTH) {
@@ -106,6 +113,30 @@ function validateSend(input, defaultCountryCode = env.defaultCountryCode || '234
   }
 
   return { ok: true, to, message };
+}
+
+/**
+ * Validate a request to send an APPROVED template to somebody.
+ *
+ * Separate from validateTemplate, which checks a template being CREATED. Here
+ * the template already exists on the account and only its name and language
+ * are sent, so the rules are the naming rules and nothing about the body.
+ */
+function validateTemplateSend(input, defaultCountryCode = env.defaultCountryCode || '234') {
+  const recipient = validateRecipient(input?.to, defaultCountryCode);
+  if (!recipient.ok) return recipient;
+
+  const templateName = typeof input?.templateName === 'string' ? input.templateName.trim() : '';
+  const language = typeof input?.language === 'string' ? input.language.trim() : '';
+
+  if (!/^[a-z0-9_]{1,512}$/.test(templateName)) {
+    return { ok: false, error: 'Choose a template to send.' };
+  }
+  if (!/^[a-z]{2,3}(_[A-Z]{2})?$/.test(language)) {
+    return { ok: false, error: 'The template language must be a WhatsApp language code, e.g. en_US.' };
+  }
+
+  return { ok: true, to: recipient.to, templateName, language };
 }
 
 /**
@@ -325,6 +356,48 @@ async function sendTestMessage(input, { cfg = readConfig(), fetchImpl = fetch, l
   }
 }
 
+/**
+ * whatsapp_business_messaging — send an APPROVED template to somebody.
+ *
+ * WHY THIS EXISTS ALONGSIDE THE TEXT SEND. WhatsApp only delivers free-form
+ * text within 24 hours of the recipient last writing to the business, and
+ * outside that window Meta ACCEPTS the send, returns a message id, and then
+ * fails it asynchronously with error 131047 — which arrives on a webhook this
+ * harness does not have. So a text send can report success on screen and
+ * deliver nothing, which is a poor thing to discover halfway through
+ * recording an App Review video. A template has no such window.
+ *
+ * Templates carrying variables are not supported here: Meta requires a
+ * parameter for each, and a template with no variables (hello_world, and the
+ * ones this screen creates) needs none.
+ */
+async function sendTemplateMessage(input, { cfg = readConfig(), fetchImpl = fetch, log = console } = {}) {
+  const blocked = notConfigured(cfg, 'messaging');
+  if (blocked) return blocked;
+
+  const v = validateTemplateSend(input);
+  if (!v.ok) return { success: false, status: 400, error: v.error };
+
+  try {
+    const json = await graph(`/${encodeURIComponent(cfg.phoneNumberId)}/messages`, {
+      method: 'POST',
+      body: {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: v.to,
+        type: 'template',
+        template: { name: v.templateName, language: { code: v.language } },
+      },
+    }, { cfg, fetchImpl, log });
+
+    const messageId = json?.messages?.[0]?.id;
+    if (!messageId) throw new MetaError('Meta accepted the request but returned no message ID.', 502);
+    return { success: true, status: 200, messageId };
+  } catch (err) {
+    return failure(err, log);
+  }
+}
+
 /** whatsapp_business_management — submit a template for review. */
 async function createTemplate(input, { cfg = readConfig(), fetchImpl = fetch, log = console } = {}) {
   const blocked = notConfigured(cfg, 'templates');
@@ -381,8 +454,11 @@ async function listTemplates({ cfg = readConfig(), fetchImpl = fetch, log = cons
 module.exports = {
   readConfig,
   publicStatus,
+  validateRecipient,
   validateSend,
+  validateTemplateSend,
   validateTemplate,
+  sendTemplateMessage,
   toSafeError,
   appSecretProof,
   sendTestMessage,
