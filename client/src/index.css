@@ -1,7 +1,7 @@
 /* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app
  * theme: studied-DNA (source: image — the ERPNext / Frappe desk screenshots the owner supplied)
  * paper #FFFFFF · sidebar #F8F8F8 · ink #171717 · accent: RxNaija emerald oklch(52% 0.112 165), kept by request
- * type: Inter 400/500/600, sentence case · motion: none beyond ≤160ms colour transitions
+ * type: Inter 400/500/600, sentence case · motion: the hover-open sidebar (clip-path + opacity, see .ui-rail), otherwise ≤160ms colour
  */
 @import "tailwindcss";
 
@@ -100,12 +100,11 @@
   --ui-focus:        oklch(52% 0.112 165);
 
   /* The sidebar: ERPNext's light grey column, not the old dark rail. The
-     active row is a white pill lifted by a hairline shadow; hover is one
-     step darker grey. */
+     active item is a white tile with an inset hairline (.ui-rail-pill); hover
+     is one step darker grey. */
   --ui-sidebar:        oklch(97.9% 0 0);  /* #F8F8F8 */
   --ui-sidebar-hover:  oklch(94.6% 0 0);  /* #EDEDED */
   --ui-sidebar-active: oklch(100% 0 0);
-  --ui-shadow-pill:    0 1px 2px oklch(20.5% 0 0 / 0.10), 0 0 0 1px oklch(20.5% 0 0 / 0.04);
 
   /* Data bars — anything whose LENGTH is the number. Ink, never the accent;
      see design.md. Near-square ends read as a printed chart. */
@@ -118,6 +117,12 @@
      rest of this system. */
   --ui-pill-orange-bg: oklch(96.5% 0.030 55);
   --ui-pill-orange-fg: oklch(56% 0.160 50);
+
+  /* The two named easings. ease-out for anything arriving (fast start, long
+     soft landing); ease-in-out for anything leaving. No bounce, no overshoot
+     on UI state. */
+  --ui-ease-out:    cubic-bezier(0.22, 1, 0.36, 1);
+  --ui-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
 }
 
 html,
@@ -341,6 +346,161 @@ tbody tr:hover { background: var(--ui-sidebar); }
 nav[aria-label="Sections"] {
   --ui-surface: var(--ui-sidebar);
   --ui-sunk:    var(--ui-sidebar-hover);
+}
+
+/* ── the sidebar: an icon strip that opens on hover ──
+   At rest the sidebar is the desk's 56px icon strip. Point at it and the
+   full 214px panel opens OVER the page (it never pushes the content — a
+   table that jumps sideways every time the cursor passes would be worse
+   than no sidebar); move away and it closes. Keyboard focus inside opens it
+   too, so tabbing through the navigation shows the labels it is reading.
+
+   HOW IT MOVES, AND WHY THIS WAY
+   The panel is always laid out at full width and revealed with clip-path,
+   so nothing reflows while it animates — the browser composites a mask,
+   it does not re-measure a column every frame. Width would have been the
+   obvious property and is the wrong one.
+
+     opening   the mask sweeps open over 320ms on --ui-ease-out, after a
+               70ms hover-intent pause so a cursor crossing to the page
+               does not flash it open; the shadow grows with it; labels
+               fade and slide in 6px, cascading 16ms apart top to bottom;
+               the active item's white tile stretches into a full-width
+               pill; count badges move from the icon's corner to the end
+               of the row.
+     closing   a 140ms grace period (slipping off by a few pixels does not
+               snap it shut), then the mask closes over 220ms on
+               --ui-ease-in-out, labels out together in 110ms.
+
+   Every timing lives in the --rail-* variables below. The closed state
+   sets them on .ui-rail; the open state only swaps the values. Transition
+   parameters are read from the state being entered, which is what gives
+   opening and closing their different speeds and delays. */
+.ui-rail {
+  --rail-inset: calc(100% - 56px);
+  --rail-shadow: 0 0 0 0 oklch(20.5% 0 0 / 0);
+  --rail-dur: 220ms;
+  --rail-ease: var(--ui-ease-in-out);
+  --rail-delay: 140ms;
+  --rail-label-opacity: 0;
+  --rail-label-shift: -6px;
+  --rail-label-dur: 110ms;
+  --rail-label-delay: 0ms;
+  --rail-label-stagger: 0ms;
+  --rail-closed-only: 1;
+  --rail-closed-delay: 150ms;
+  --rail-pill-inset: 0 calc(100% - 38px) 0 2px;
+
+  /* The right edge of the mask sits 24px PAST the panel when open, so the
+     shadow is not clipped along with everything else. */
+  clip-path: inset(0 var(--rail-inset) 0 0);
+  box-shadow: var(--rail-shadow);
+  transition:
+    clip-path var(--rail-dur) var(--rail-ease) var(--rail-delay),
+    box-shadow var(--rail-dur) var(--rail-ease) var(--rail-delay);
+}
+
+/* Open. Hover only for a real pointer: on a touch screen a tap would leave
+   :hover stuck on and the panel open over the page with no way to shut it. */
+@media (hover: hover) and (pointer: fine) {
+  .ui-rail:hover {
+    --rail-inset: -24px;
+    --rail-shadow: 10px 0 28px -14px oklch(20.5% 0 0 / 0.22);
+    --rail-dur: 320ms;
+    --rail-ease: var(--ui-ease-out);
+    --rail-delay: 70ms;
+    --rail-label-opacity: 1;
+    --rail-label-shift: 0px;
+    --rail-label-dur: 240ms;
+    --rail-label-delay: 140ms;
+    --rail-label-stagger: 16ms;
+    --rail-closed-only: 0;
+    --rail-closed-delay: 60ms;
+    --rail-pill-inset: 0 0 0 0;
+  }
+}
+/* Keyboard: :focus-visible, not :focus — a mouse click leaves focus on the
+   button it clicked, and plain :focus-within would then hold the panel open
+   after the pointer had left. */
+.ui-rail:has(:focus-visible) {
+  --rail-inset: -24px;
+  --rail-shadow: 10px 0 28px -14px oklch(20.5% 0 0 / 0.22);
+  --rail-dur: 320ms;
+  --rail-ease: var(--ui-ease-out);
+  --rail-delay: 0ms;
+  --rail-label-opacity: 1;
+  --rail-label-shift: 0px;
+  --rail-label-dur: 240ms;
+  --rail-label-delay: 80ms;
+  --rail-label-stagger: 12ms;
+  --rail-closed-only: 0;
+  --rail-closed-delay: 0ms;
+  --rail-pill-inset: 0 0 0 0;
+}
+
+/* Labels, the name row, the count pills at the end of a row. Still in the
+   accessibility tree when invisible — opacity hides them from eyes only, so
+   a screen reader hears "Consult, 2" in either state. `--i` is each row's
+   position, set inline, for the cascade. */
+.ui-rail-fade {
+  opacity: var(--rail-label-opacity);
+  transform: translateX(var(--rail-label-shift));
+  transition:
+    opacity var(--rail-label-dur) var(--ui-ease-out)
+      calc(var(--rail-label-delay) + var(--i, 0) * var(--rail-label-stagger)),
+    transform var(--rail-label-dur) var(--ui-ease-out)
+      calc(var(--rail-label-delay) + var(--i, 0) * var(--rail-label-stagger));
+}
+/* The collapsed strip's own marks: count badges on the icon corner, the
+   WhatsApp status dot, the hairline between groups. They hand over to the
+   full labels as the panel opens, and come back once it has closed. */
+.ui-rail-closed-only {
+  opacity: var(--rail-closed-only);
+  transition: opacity 140ms var(--ui-ease-out) var(--rail-closed-delay);
+}
+
+/* One highlight per row, shared by hover and "you are here". Collapsed it is
+   a 36px tile behind the icon — the desk's white square; open, the same
+   element stretches into the full-width pill, on the panel's own timing, so
+   the two move as one. Clipped rather than resized, for the same reason as
+   the panel. Its lift is drawn INSIDE (inset rings): an outer shadow would
+   be cut by the clip. */
+.ui-rail-pill {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background-color: transparent;
+  clip-path: inset(var(--rail-pill-inset) round 8px);
+  transition:
+    clip-path var(--rail-dur) var(--rail-ease) var(--rail-delay),
+    background-color 140ms ease;
+}
+.ui-rail-row:hover .ui-rail-pill {
+  background-color: var(--ui-sunk);
+}
+.ui-rail-row[aria-current="page"] .ui-rail-pill {
+  background-color: var(--ui-sidebar-active);
+  box-shadow:
+    inset 0 0 0 1px oklch(20.5% 0 0 / 0.06),
+    inset 0 -1px 0 oklch(20.5% 0 0 / 0.05);
+}
+
+/* Reduced motion: nothing slides or sweeps. The panel switches instantly
+   and the labels cross-fade in 120ms, so the change is still perceptible
+   without any spatial movement. Same selectors as the states above, later
+   in the file, so these values win. */
+@media (prefers-reduced-motion: reduce) {
+  .ui-rail,
+  .ui-rail:hover,
+  .ui-rail:has(:focus-visible) {
+    --rail-dur: 0ms;
+    --rail-delay: 0ms;
+    --rail-label-shift: 0px;
+    --rail-label-dur: 120ms;
+    --rail-label-delay: 0ms;
+    --rail-label-stagger: 0ms;
+    --rail-closed-delay: 0ms;
+  }
 }
 
 /* The header's search, the desk's "Search  Ctrl+K" pill: the same grey

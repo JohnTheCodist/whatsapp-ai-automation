@@ -82,9 +82,11 @@ faint to be the only sign of where keyboard focus is.
 
 The sidebar is the desk's light grey column (`--ui-sidebar`, #F8F8F8) with a
 hairline right edge; the header is white with a hairline bottom edge. Both
-used to be dark. The active sidebar row is a **white pill lifted by
-`--ui-shadow-pill`** — a shape, not only a tint, so "you are here" survives
-for anyone who cannot separate two greys. There is no coloured left bar.
+used to be dark. The active sidebar item is a **white tile / pill with an
+inset hairline** (`.ui-rail-pill`) — a shape, not only a tint, so "you are
+here" survives for anyone who cannot separate two greys. There is no
+coloured left bar. The lift is drawn inside the pill because the sidebar is
+revealed through a clip-path, which would cut an outer shadow off.
 
 Scoped by redefining `--ui-surface` / `--ui-sunk` on
 `nav[aria-label="Sections"]` in `index.css` — every descendant utility that
@@ -94,30 +96,38 @@ The top of the sidebar is the workspace row, in the shape of the desk's
 "Stock / ERPNext" header: the emerald R tile, the pharmacy's name, and
 "RxNaija" beneath it.
 
-### The sidebar collapses
+### The sidebar opens on hover
 
-Like the desk, the sidebar has two shapes, switched by a **Collapse** button
-at its foot:
+At rest the sidebar is the desk's **56px icon strip**: the R tile alone,
+36px icon tiles, groups separated by a hairline rule, the active item on a
+white tile, counts riding each icon's corner (9+ past nine), the WhatsApp
+state as a dot on its icon. **Point at it and the full 214px panel opens;
+move away and it closes.** There is no toggle.
 
-- **Expanded (214px):** icon + label rows, group labels, the WhatsApp panel
-  in full, count pills at the end of each row.
-- **Collapsed (56px):** the icon strip — the R tile alone, 36px icon tiles,
-  groups separated by a hairline rule instead of a label, the active item on
-  the same white tile, counts riding each icon's corner (9+ past nine), and
-  the WhatsApp state as a dot on its icon.
+- **It opens OVER the page.** The strip is the only thing in the page's
+  flow, so content never moves; a table that jumped sideways every time the
+  cursor crossed the sidebar would be worse than no sidebar. The open panel
+  carries a soft shadow on its right edge to read as a layer.
+- **Hover intent.** 70ms before opening, so a cursor on its way to the page
+  does not flash it open; a 140ms grace period before closing, so slipping
+  off by a few pixels does not snap it shut.
+- **Keyboard.** Focus inside the sidebar (`:focus-visible`) opens it too, so
+  tabbing through the navigation shows the labels being read. `:focus-visible`
+  rather than `:focus`: a mouse click leaves focus on the button it clicked,
+  and plain `:focus-within` would then hold the panel open after the pointer
+  had left.
+- **Touch.** Hover-open applies only under `(hover: hover) and (pointer:
+  fine)` — on a touch screen a tap would leave `:hover` stuck and the panel
+  open over the page with no way to shut it. Touch users get the strip, and
+  every label is still read by screen readers.
+- **Labels are hidden by opacity only,** never `display`/`visibility`, so
+  the accessibility tree is the same in both states.
 
-Collapsed, every item keeps its name: as `sr-only` text for screen readers
-and as a `title` on hover, which is the only way to learn an icon strip.
-Every row renders through one `RailButton` in `App.jsx`, so the two shapes
-cannot drift apart.
-
-The choice is **per device** (`client/src/sidebarPreference.js`,
-localStorage), like the alert-sound setting — the counter tablet and the
-back-office laptop want different things. With no saved choice, a screen
-under 1024px starts collapsed; the choice is saved only when someone
-actually toggles it, so that automatic default is never mistaken for a
-preference. Storage that is missing or throws never breaks the page. No
-width animation: the switch is instant, per the motion stance.
+Every row renders through one `RailButton` in `App.jsx`, laid out once at
+full width with its icon centred on the strip's midline (x = 28px), so the
+icon does not move by a pixel as the panel opens. The motion itself is
+specified under Motion, below. `client/src/sidebarRail.test.js` pins the
+keyboard, touch, reduced-motion, clip-path and screen-reader rules.
 
 ### Data bars are ink, never the accent
 
@@ -231,12 +241,31 @@ that it is left alone.
 ## Elevation
 
 **Flat.** Cards are a hairline border on white, no shadow — the desk does not
-float panels. The one shadow in the app is `--ui-shadow-pill`, on the active
-sidebar row.
+float panels. The one shadow in the app is the open sidebar's, on its right
+edge (`--rail-shadow`), so it reads as a layer over the page.
 
 ## Motion
 
 Motion-cut project — no animation library, and none is warranted.
+
+**The one choreographed moment is the sidebar**, and it is CSS only (`.ui-rail`
+in `index.css`, every timing in its `--rail-*` variables):
+
+- **Opening:** after 70ms of hover intent, the panel is revealed by a
+  clip-path mask sweeping open over 320ms on `--ui-ease-out`
+  (cubic-bezier(0.22, 1, 0.36, 1)), its shadow growing with it. Labels fade
+  in and slide 6px into place over 240ms, cascading 16ms apart from top to
+  bottom. The active item's white tile stretches into the full-width pill on
+  the panel's own timing; corner badges hand over to the row-end count pills.
+- **Closing:** after a 140ms grace period the mask closes over 220ms on
+  `--ui-ease-in-out` (cubic-bezier(0.65, 0, 0.35, 1)); labels leave together
+  in 110ms, and the strip's own marks return once it has closed.
+- **Why clip-path, not width:** the panel is always laid out at full width
+  and only its mask moves, so nothing re-measures or reflows while it
+  animates. clip-path, opacity and transform are the only properties that
+  move.
+- **Reduced motion:** the panel switches instantly; labels cross-fade in
+  120ms with no slide and no cascade.
 
 - Durations ≤ 160ms; easing `ease` on colour, `--ease-out` on transform.
 - Animate `transform` and `opacity` only (plus colour transitions on hover).
@@ -359,7 +388,6 @@ blocked sale, not plumbing.
   --ui-sidebar:        oklch(97.9% 0 0);
   --ui-sidebar-hover:  oklch(94.6% 0 0);
   --ui-sidebar-active: oklch(100% 0 0);
-  --ui-shadow-pill:    0 1px 2px oklch(20.5% 0 0 / 0.10), 0 0 0 1px oklch(20.5% 0 0 / 0.04);
 
   /* Data bars — see Theme § Data bars are ink. */
   --ui-bar:        var(--ui-ink);
