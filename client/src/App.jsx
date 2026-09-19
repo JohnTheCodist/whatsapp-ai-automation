@@ -14,8 +14,8 @@
  * reading — which matters most for the one section where waiting has a cost.
  *
  * COLOUR IS DOMAIN, NOT DECORATION
- * The rail is deep slate with a teal active state, continuing the accent the
- * rest of the app already uses. Semantic colour is kept separate from it:
+ * The rail is the ERPNext desk's light grey column with a white active pill
+ * (design.md, "Why ERPNext"). Semantic colour is kept separate from it:
  * red means someone is waiting, amber means work is queued, and neither is
  * ever the accent — so an alert can never be mistaken for "the active tab".
  */
@@ -240,6 +240,23 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
   const [search, setSearch] = useState('');
   const [patientQuery, setPatientQuery] = useState('');
   const prevPending = useRef(null);
+  const searchRef = useRef(null);
+
+  // Ctrl+K (Cmd+K on a Mac) focuses the header search, as it does on the
+  // ERPNext desk this layout follows. The hint is printed inside the field,
+  // so the shortcut has to exist — a hint for a key that does nothing is
+  // worse than no hint.
+  useEffect(() => {
+    function onKey(e) {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Persists the on/off PREFERENCE, independent of whether the browser has
   // actually unlocked audio yet (see the toggle button's click handler).
@@ -375,20 +392,23 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
         aria-label="Sections"
         className="sticky top-0 flex h-screen w-[214px] shrink-0 flex-col gap-1 border-r border-[var(--ui-line)] bg-[var(--ui-surface)] px-3 py-4"
       >
-        <div className="mb-5 flex items-center px-2">
-          {/* The mark alone. The "RxNaija" wordmark that sat beside it was the
-              product's name written twice on a rail that already belongs to
-              it — and the same R the sign-in screen and the tab icon use, so
-              the three places a person meets this brand now agree.
-
-              role + aria-label carry the name that the visible text used to:
-              a lone letter is a picture to a screen reader, not a word. */}
+        {/* The workspace row, in the shape of the desk's "Stock / ERPNext"
+            header: the brand tile, then whose workspace this is and whose
+            product it runs on. The R is the same mark the sign-in screen and
+            the tab icon use. */}
+        <div className="mb-4 flex min-w-0 items-center gap-2.5 px-1.5">
           <span
             role="img"
             aria-label="RxNaija"
-            className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-[var(--ui-accent)] text-[17px] font-semibold leading-none text-white"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ui-focus)] text-[15px] font-semibold leading-none text-white"
           >
             R
+          </span>
+          <span className="min-w-0 leading-tight">
+            <span className="block truncate text-[14px] font-semibold text-[var(--ui-ink)]">
+              {pharmacyName || 'Your pharmacy'}
+            </span>
+            <span className="block text-[12px] text-[var(--ui-ink-faint)]">RxNaija</span>
           </span>
         </div>
 
@@ -428,19 +448,17 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
               // order must not throw you back to the Inbox.
               onClick={() => setTab(children ? (isActive ? tab : children[0].id) : id)}
               aria-current={isActive ? 'page' : undefined}
-              className={`relative flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left transition
+              className={`relative flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-left transition
                 ${isActive
-                  ? 'bg-[var(--ui-accent-wash)] text-[var(--ui-accent-ink)]'
+                  ? 'bg-[var(--ui-sidebar-active)] text-[var(--ui-ink)] shadow-[var(--ui-shadow-pill)]'
                   : 'text-[var(--ui-ink-soft)] hover:bg-[var(--ui-sunk)] hover:text-[var(--ui-ink)]'}`}
             >
-              {/* The active marker is a shape, not just a tint — a rail that
-                  relies on colour alone loses its "you are here" for anyone
-                  who cannot separate the two greys. */}
-              {isActive && (
-                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r bg-[var(--ui-accent)]" />
-              )}
+              {/* The active marker is a shape, not just a tint: a white pill
+                  lifted off the grey column by a hairline shadow, the desk's
+                  "you are here". Colour alone would lose it for anyone who
+                  cannot separate two greys. */}
               <span className="shrink-0"><Icon /></span>
-              <span className="min-w-0 flex-1 truncate text-[13px] font-medium tracking-tight">{label}</span>
+              <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{label}</span>
               {count > 0 && (
                 <span
                   className={`ml-auto min-w-[19px] shrink-0 rounded-full px-1.5 text-center text-[10px] font-semibold leading-[18px] text-white
@@ -492,16 +510,13 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
             type="button"
             onClick={() => setTab(SETUP.id)}
             aria-current={tab === SETUP.id ? 'page' : undefined}
-            className={`relative mt-1 flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left transition
+            className={`relative mt-1 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-left transition
               ${tab === SETUP.id
-                ? 'bg-[var(--ui-accent-wash)] text-[var(--ui-accent-ink)]'
+                ? 'bg-[var(--ui-sidebar-active)] text-[var(--ui-ink)] shadow-[var(--ui-shadow-pill)]'
                 : 'text-[var(--ui-ink-soft)] hover:bg-[var(--ui-sunk)] hover:text-[var(--ui-ink)]'}`}
           >
-            {tab === SETUP.id && (
-              <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r bg-[var(--ui-accent)]" />
-            )}
             <span className="shrink-0"><SETUP.Icon /></span>
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium tracking-tight">{SETUP.label}</span>
+            <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{SETUP.label}</span>
           </button>
 
           {/* Billing, beneath Setup. Both are about the installation rather
@@ -512,16 +527,13 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
             type="button"
             onClick={() => setTab(BILLING.id)}
             aria-current={tab === BILLING.id ? 'page' : undefined}
-            className={`relative mt-1 flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left transition
+            className={`relative mt-1 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-left transition
               ${tab === BILLING.id
-                ? 'bg-[var(--ui-accent-wash)] text-[var(--ui-accent-ink)]'
+                ? 'bg-[var(--ui-sidebar-active)] text-[var(--ui-ink)] shadow-[var(--ui-shadow-pill)]'
                 : 'text-[var(--ui-ink-soft)] hover:bg-[var(--ui-sunk)] hover:text-[var(--ui-ink)]'}`}
           >
-            {tab === BILLING.id && (
-              <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r bg-[var(--ui-accent)]" />
-            )}
             <span className="shrink-0"><BILLING.Icon /></span>
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium tracking-tight">{BILLING.label}</span>
+            <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{BILLING.label}</span>
             {(billing?.warn || billing?.needsPayment) && (
               <span
                 className={`ml-auto h-1.5 w-1.5 shrink-0 rounded-full ${
@@ -537,32 +549,71 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
       <div className="flex min-w-0 flex-1 flex-col">
         {/* ---- top bar ---- */}
         <header className="sticky top-0 z-10 flex h-14 items-center gap-4 border-b border-[var(--ui-line)] bg-[var(--ui-surface)] px-5">
-          {/* The pharmacy's name used to be hardcoded here as "Sterling
-              Pharmacy" — one tenant's name shown to every tenant. It now
-              comes from the account chip on the right, which reads the real
-              one, so this corner is free for the search that was previously
-              squeezed between two blocks of text. */}
+          {/* Where you are, in the desk's breadcrumb form: home, the section,
+              and — inside a group — the segment. Each step before the last
+              takes you there; the last is where you already are. The
+              pharmacy's name is in the sidebar's workspace row and the
+              account chip, so it is not repeated here. */}
+          <nav aria-label="Breadcrumb" className="min-w-0 flex-1 overflow-hidden">
+            <ol className="flex min-w-0 items-center gap-1.5 text-[15px] whitespace-nowrap">
+              <li className="flex items-center">
+                <button
+                  type="button"
+                  onClick={() => setTab('overview')}
+                  aria-label="Home"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--ui-ink-soft)] hover:bg-[var(--ui-sunk)] hover:text-[var(--ui-ink)]"
+                >
+                  <IconOverview width={16} height={16} />
+                </button>
+              </li>
+              <li aria-hidden="true" className="text-[var(--ui-ink-faint)]">/</li>
+              {segments ? (
+                <>
+                  <li className="min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => setTab(segments[0].id)}
+                      className="truncate text-[var(--ui-ink-soft)] hover:text-[var(--ui-ink)]"
+                    >
+                      {active.title}
+                    </button>
+                  </li>
+                  <li aria-hidden="true" className="text-[var(--ui-ink-faint)]">/</li>
+                  <li className="min-w-0 truncate font-medium text-[var(--ui-ink)]" aria-current="page">
+                    {segments.find((s) => s.id === tab)?.label || active.title}
+                  </li>
+                </>
+              ) : (
+                <li className="min-w-0 truncate font-medium text-[var(--ui-ink)]" aria-current="page">
+                  {tab === SETUP.id ? SETUP.title : tab === BILLING.id ? BILLING.title : active.title}
+                </li>
+              )}
+            </ol>
+          </nav>
 
-          <form onSubmit={submitSearch} className="w-full max-w-md">
+          {/* The desk's "Search  Ctrl+K" pill. Submitting jumps to Patients
+              with the term applied. Fill and focus come from the global
+              field rule in index.css. */}
+          <form onSubmit={submitSearch} className="w-40 shrink-0 md:w-56 lg:w-72">
             <label className="relative block">
               <span className="sr-only">Search patients by name or phone</span>
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                <IconSearch width={16} height={16} />
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--ui-ink-faint)]">
+                <IconSearch width={15} height={15} />
               </span>
               <input
+                ref={searchRef}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search patients by name or phone…"
-                // Background and focus state come from the global input rule
-                // in index.css now (white, ringed on focus) — restating them
-                // here would only be dead weight sitting on top of it.
-                className="w-full rounded-[9px] border border-[var(--ui-line)] py-1.5 pl-9 pr-3 text-sm
-                           placeholder:text-[var(--ui-ink-faint)]"
+                placeholder="Search patients"
+                className="w-full py-1.5 pl-8 pr-14 text-[13px]"
               />
+              <span className="ui-kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" aria-hidden="true">
+                Ctrl+K
+              </span>
             </label>
           </form>
 
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5">
             {/* Browsers refuse to play audio until the user clicks something,
                 so this cannot be a passive setting — it has to be a real
                 click, and it has to say plainly whether sound is actually

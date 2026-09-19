@@ -1,38 +1,42 @@
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app
+ * theme: studied-DNA (source: image — the ERPNext / Frappe desk screenshots the owner supplied)
+ * paper #FFFFFF · sidebar #F8F8F8 · ink #171717 · accent: RxNaija emerald oklch(52% 0.112 165), kept by request
+ * type: Inter 400/500/600, sentence case · motion: none beyond ≤160ms colour transitions
+ */
 @import "tailwindcss";
 
 /* ─────────────────────────────────────────────────────────────────────────
    Palette retarget — the whole dashboard, without touching a component.
 
    Tailwind v4 resolves every `slate-*` / `teal-*` utility through these
-   variables at build time, so redefining them here restyles all seven
-   screens at once. The alternative was rewriting hundreds of className
-   strings across a dozen files, which is a large diff over working code for
-   a purely cosmetic result — and every one of those edits is a chance to
-   break a screen that currently works.
+   variables at build time, so redefining them here restyles every screen at
+   once. Rewriting hundreds of className strings across ~40 files would be a
+   large diff over working code for a purely cosmetic result.
 
-   TWO DELIBERATE CHOICES
-   `slate` moves from Tailwind's cool blue-grey to a warm neutral carrying a
-   trace of the accent's hue, which is what stops the greys reading as a
-   default install.
+   2026-09-19: THE ERPNEXT DESK LOOK (see design.md, "Why ERPNext").
+   `slate` is now the Frappe desk's pure neutral grey ramp — #F8F8F8 through
+   #171717, zero chroma — measured off the owner's ERPNext screenshots and
+   converted to OKLCH (achromatic, so L is the cube root of luminance). The
+   warm, emerald-tinted greys this file used to carry are gone: the reference
+   is deliberately colourless, and its calm comes from that.
 
-   `teal` is retargeted onto the emerald the marketing site uses, so the
-   product and the page a pharmacy signs up from are the same brand.
+   `teal` stays on the RxNaija emerald. The owner kept the brand colour, so
+   the product still reads as RxNaija inside an ERPNext-shaped frame.
 
    Semantic colours — red, amber, green — are deliberately NOT touched. Red
-   means someone is waiting and amber means work is queued; bending those
-   toward the brand is how an alert stops looking like an alert.
+   means someone is waiting and amber means work is queued.
    ───────────────────────────────────────────────────────────────────────── */
 @theme {
-  --color-slate-50:  oklch(98.4% 0.003 106);
-  --color-slate-100: oklch(96.6% 0.004 106);
-  --color-slate-200: oklch(92.4% 0.005 150);
-  --color-slate-300: oklch(87.0% 0.007 150);
-  --color-slate-400: oklch(70.0% 0.011 160);
-  --color-slate-500: oklch(58.0% 0.013 163);
-  --color-slate-600: oklch(48.0% 0.014 165);
-  --color-slate-700: oklch(38.0% 0.015 166);
-  --color-slate-800: oklch(29.0% 0.015 167);
-  --color-slate-900: oklch(22.0% 0.014 168);
+  --color-slate-50:  oklch(97.9% 0 0);   /* #F8F8F8  sidebar, table heads   */
+  --color-slate-100: oklch(96.4% 0 0);   /* #F3F3F3  input fill, grey button */
+  --color-slate-200: oklch(94.6% 0 0);   /* #EDEDED  hairlines, hover fill   */
+  --color-slate-300: oklch(91.3% 0 0);   /* #E2E2E2  stronger rule           */
+  --color-slate-400: oklch(83.0% 0 0);   /* #C7C7C7  disabled, icon rest     */
+  --color-slate-500: oklch(58.6% 0 0);   /* #7C7C7C  meta text               */
+  --color-slate-600: oklch(50.0% 0 0);   /* #666666  secondary text          */
+  --color-slate-700: oklch(43.9% 0 0);   /* #525252  labels                  */
+  --color-slate-800: oklch(34.1% 0 0);   /* #383838  strong body             */
+  --color-slate-900: oklch(20.5% 0 0);   /* #171717  ink, primary button     */
 
   --color-teal-50:  oklch(96.5% 0.032 165);
   --color-teal-100: oklch(93.0% 0.055 165);
@@ -43,116 +47,92 @@
   --color-teal-700: oklch(52.0% 0.112 165);
   --color-teal-800: oklch(42.0% 0.092 166);
 
-  /* Radii, retargeted for the same reason the palette was: every existing
-     `rounded-lg` / `rounded-md` in the app resolves through these, so the
-     softer, more generous curve of the reference arrives everywhere at once
-     without editing a single className. Tailwind's stock 8px reads tight and
-     utilitarian next to a surface this light. */
-  --radius-md: 10px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-2xl: 20px;
+  /* ERPNext's radii: 8px on anything you click or type into, 12px on large
+     containers. Every existing `rounded` / `rounded-lg` / `rounded-xl`
+     resolves through these, so the whole app picks up the tighter, more
+     businesslike curve without a className changing. */
+  --radius-sm: 6px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
 
-  /* Dashboard body face — see design.md's Typography section. Tailwind v4's
-     preflight sets `html`'s font-family from this token, so redefining it
-     here retypes every screen the same way the palette above recolours
-     them: without touching a className. Falls back to the system stack so a
-     slow or blocked font request never leaves the dashboard unreadable,
-     only momentarily on its second-choice face. */
+  /* Inter — the face the Frappe desk itself uses — with the system stack as
+     fallback so a blocked font request only costs a moment of second-choice
+     type, never an unreadable screen. */
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
 
-  /* Weight, retargeted the same way colour and radius already are. Every
-     `font-semibold` in the app — screen titles, card figures, section
-     headings — was resolving to Tailwind's stock 600, which reads as
-     legible rather than authoritative next to a considered surface. This is
-     the one-line version of going through every heading by hand: every
-     existing `font-semibold`/`font-bold` gets heavier at once, nothing in
-     any .jsx file has to change. `font-medium` (small labels, rail items) is
-     left at its default — bumping it too would blur the distinction between
-     a label and a heading, which is the thing weight is supposed to signal. */
-  --font-weight-semibold: 700;
-  --font-weight-bold: 800;
+  /* Back to stock weights. The previous system pushed semibold to 700 and
+     bold to 800 for an "authoritative" register; ERPNext's register is calm,
+     with titles at 600 and labels at 500, and that is the look asked for. */
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
-   Dashboard surface styling.
+   Tokens the markup reads through `var(--ui-*)`.
 
-   PURELY PRESENTATIONAL. Nothing here changes behaviour — it defines the
-   palette and a few surfaces Tailwind utilities cannot express inline (the
-   dotted canvas, the focus ring, scrollbars). Every rule is additive, so
-   removing this block returns the app to stock Tailwind rather than breaking
-   it.
-
-   The accent is the same emerald the marketing site uses, so the product and
-   the page a pharmacy signs up from do not look like two companies.
+   PURELY PRESENTATIONAL. Nothing here changes behaviour. Removing this block
+   returns the app to stock Tailwind rather than breaking it.
    ───────────────────────────────────────────────────────────────────────── */
 :root {
-  /* Flat white, same as --ui-surface. The warm off-white paper tone this
-     used to carry, plus the dotted texture .ui-canvas painted over it (below),
-     read as a busy background competing with the content sitting on it —
-     the thing to remove, not tune. Cards still separate from the page on
-     border + shadow alone (.ui-card), which is the same mechanism a
-     paper-toned canvas relied on, just without a background of its own to
-     lean on. */
-  --ui-paper:      oklch(100% 0 0);
-  --ui-surface:    oklch(100% 0 0);
-  --ui-sunk:       oklch(96.6% 0.004 106);
+  --ui-paper:        oklch(100% 0 0);     /* the work surface: white        */
+  --ui-surface:      oklch(100% 0 0);
+  --ui-sunk:         oklch(96.4% 0 0);    /* #F3F3F3: fields, grey buttons  */
+  --ui-sunk-hover:   oklch(94.6% 0 0);    /* #EDEDED                        */
 
-  --ui-ink:        oklch(24% 0.014 165);
-  --ui-ink-soft:   oklch(47% 0.014 165);
-  --ui-ink-faint:  oklch(62% 0.012 165);
+  --ui-ink:          oklch(20.5% 0 0);    /* #171717                        */
+  --ui-ink-soft:     oklch(43.9% 0 0);    /* #525252: labels, inactive nav  */
+  /* #707070-ish, not ERPNext's #7C7C7C: that one sits at 4.2:1 on white,
+     under the 4.5:1 small-text floor, and this tone is used for small meta
+     text and placeholders. The difference is invisible; the contrast is not. */
+  --ui-ink-faint:    oklch(55.5% 0 0);
 
-  --ui-line:       oklch(92.4% 0.005 150);
-  --ui-line-soft:  oklch(95.2% 0.004 150);
+  --ui-line:         oklch(94.6% 0 0);    /* #EDEDED hairline               */
+  --ui-line-soft:    oklch(96.4% 0 0);
+  --ui-line-strong:  oklch(83.0% 0 0);    /* #C7C7C7: focused field border  */
 
-  --ui-accent:     oklch(70% 0.135 165);
-  --ui-accent-ink: oklch(46% 0.105 165);
-  --ui-accent-wash:oklch(96.5% 0.032 165);
+  --ui-accent:       oklch(70% 0.135 165);
+  --ui-accent-ink:   oklch(46% 0.105 165);
+  --ui-accent-wash:  oklch(96.5% 0.032 165);
+  /* The focus ring. The accent itself is ~2.3:1 on white — too faint to be
+     the only sign of where focus is. The deeper brand green clears 3:1. */
+  --ui-focus:        oklch(52% 0.112 165);
 
-  /* The dark-chrome palette — rail + header only, applied by redefining the
-     tokens above scoped to those two elements, further down this file. Same
-     165° anchor as --ui-accent throughout, so the chrome reads as this
-     product's dark, not a generic near-black. Values follow the dark-mode
-     recipe: paper 12–18% lightness (never #000), ink 92–96% (never #fff),
-     elevation gets LIGHTER not darker, accent gains lightness and loses
-     chroma to stay legible on a dark fill. */
-  --ui-rail-bg:          oklch(16% 0.012 165);
-  --ui-rail-bg-raised:   oklch(21% 0.016 165);
-  --ui-rail-ink:         oklch(94% 0.006 165);
-  --ui-rail-ink-soft:    oklch(74% 0.010 165);
-  --ui-rail-ink-faint:   oklch(55% 0.010 165);
-  --ui-rail-line:        oklch(28% 0.010 165);
-  --ui-rail-accent-wash: oklch(22% 0.020 165);
-  --ui-rail-accent-ink:  oklch(78% 0.110 165);
+  /* The sidebar: ERPNext's light grey column, not the old dark rail. The
+     active row is a white pill lifted by a hairline shadow; hover is one
+     step darker grey. */
+  --ui-sidebar:        oklch(97.9% 0 0);  /* #F8F8F8 */
+  --ui-sidebar-hover:  oklch(94.6% 0 0);  /* #EDEDED */
+  --ui-sidebar-active: oklch(100% 0 0);
+  --ui-shadow-pill:    0 1px 2px oklch(20.5% 0 0 / 0.10), 0 0 0 1px oklch(20.5% 0 0 / 0.04);
 
-  /* Data bars — funnels, breakdowns, anything whose LENGTH is the number.
-     Ink, not the accent: design.md reserves emerald for identity and health,
-     and a bar measuring lost revenue is neither. It was emerald anyway, which
-     read as generic-dashboard-green, and amber on the loss breakdown was the
-     same mistake twice — amber means "queued work" in this system, not
-     "this quantity is larger than that one".
-
-     Near-square rather than a pill. A full-radius bar is the friendly default
-     every generated dashboard ships; 2px reads as a printed financial chart,
-     which is the register this screen is actually in. */
+  /* Data bars — anything whose LENGTH is the number. Ink, never the accent;
+     see design.md. Near-square ends read as a printed chart. */
   --ui-bar:        var(--ui-ink);
-  --ui-bar-track:  oklch(95.5% 0.004 150);
+  --ui-bar-track:  oklch(96.4% 0 0);
   --ui-radius-bar: 2px;
+
+  /* Status pills, matching the desk's soft-tint indicators ("Not Saved",
+     "Draft", "Submitted"). Semantic, not decorative — same meanings as the
+     rest of this system. */
+  --ui-pill-orange-bg: oklch(96.5% 0.030 55);
+  --ui-pill-orange-fg: oklch(56% 0.160 50);
+}
+
+html,
+body {
+  overflow-x: clip;
 }
 
 body {
   background: var(--ui-paper);
   color: var(--ui-ink);
   font-family: var(--font-sans);
+  font-size: 14px;
   -webkit-font-smoothing: antialiased;
 }
 
-/* The work surface. Used to carry a dotted radial-gradient texture on the
-   theory that a canvas you arrange things on should look like one — in
-   practice it competed with whatever sat on top of it instead of receding
-   behind it, which is the opposite of what a background is for. Flat white
-   now: cards read as panels through their own border and shadow, not
-   through contrast with a textured floor. */
 .ui-canvas {
   background-color: var(--ui-paper);
 }
@@ -164,180 +144,223 @@ button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible,
-textarea:focus-visible {
-  outline: 2px solid var(--ui-accent);
+textarea:focus-visible,
+[role="tab"]:focus-visible {
+  outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
   border-radius: 8px;
 }
 
-/* Quiet scrollbars — the rail and the side panels are chrome, and a default
-   grey scrollbar down the middle of them undoes the rest of the surface. */
+/* Quiet scrollbars. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--ui-line) transparent;
+  scrollbar-color: var(--ui-line-strong) transparent;
 }
 *::-webkit-scrollbar { width: 9px; height: 9px; }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb {
-  background: var(--ui-line);
+  background: var(--ui-line-strong);
   border-radius: 99px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 *::-webkit-scrollbar-thumb:hover { background: var(--ui-ink-faint); background-clip: content-box; }
 
-/* Card lift, used by list rows and panels. Kept here rather than repeated as
-   a long utility chain on every card in every screen. */
+/* ─────────────────────────────────────────────────────────────────────────
+   The ERPNext skin.
+
+   STILL NO COMPONENT EDITS for any of this. These rules are deliberately
+   UNLAYERED: Tailwind v4 puts utilities in @layer utilities, and an
+   unlayered declaration outranks any layered one regardless of specificity.
+   That is what lets one rule here restyle every field, tab strip and table
+   in the app without a className changing — and why nothing below needs
+   !important.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── cards: flat ──
+   The desk does not float panels. A hairline border on white is the whole
+   treatment; the soft lift the old system added is removed rather than
+   tuned down. */
 .ui-card {
   background: var(--ui-surface);
   border: 1px solid var(--ui-line);
   border-radius: 12px;
 }
-.ui-card-hover { transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease; }
-.ui-card-hover:hover {
-  border-color: oklch(86% 0.03 160);
-  box-shadow: 0 10px 26px -18px oklch(30% 0.03 165 / 0.45);
-}
+.ui-card-hover { transition: border-color 160ms ease; }
+.ui-card-hover:hover { border-color: var(--ui-line-strong); }
 
-@media (prefers-reduced-motion: reduce) {
-  .ui-card-hover { transition: none; }
-}
-
-/* ─────────────────────────────────────────────────────────────────────────
-   Polish layer.
-
-   STILL PURELY PRESENTATIONAL, AND STILL NO COMPONENT EDITS. Everything
-   below either retargets a token the existing markup already resolves
-   through, or styles structural elements (aside, header, table) that are
-   already in the tree. No className in any .jsx changes, so nothing that
-   runs the dashboard is touched.
-   ───────────────────────────────────────────────────────────────────────── */
-
-/* ── elevation ──
-   The stock look is a 1px border and nothing else, which makes every panel
-   sit in the same plane as the page. One very soft, very wide shadow lifts
-   cards off the canvas without announcing itself — the shadow should be felt
-   and not seen, so it is nearly transparent and heavily spread. */
-.ui-card,
-main section[class*="rounded"][class*="border"],
-main div[class*="rounded"][class*="border"] {
-  box-shadow: 0 1px 2px oklch(24% 0.014 165 / 0.04),
-              0 12px 28px -22px oklch(24% 0.014 165 / 0.30);
-}
-/* Small inline objects that merely happen to be rounded-and-bordered —
-   chips, avatars, badges, toggles — are not cards and must not be lifted.
-   Excluded by role/size rather than by listing every class that uses them. */
-main [class*="rounded-full"],
-main button[class*="rounded"],
-main [class*="rounded"][class*="border"] [class*="rounded"][class*="border"] {
-  box-shadow: none;
-}
-
-/* ── chrome: the rail and the header are dark; the canvas is not ──
-   A light rail sitting at the same weight as the content it frames reads as
-   "nothing decided this is chrome" — the gap that mattered most against a
-   real product. The frame goes dark; everything a pharmacist actually reads
-   and edits stays on the light paper. Same anchor hue as the accent (165°)
-   throughout, so it reads as this product's chrome, not a bolted-on
-   dark-mode toggle sitting next to a light app.
-
-   REDEFINED, NOT OVERRIDDEN. nav and header already read --ui-surface /
-   --ui-ink / --ui-line etc through Tailwind arbitrary-value classes
-   (bg-[var(--ui-surface)], text-[var(--ui-ink-soft)], ...) — the same
-   mechanism the whole palette retarget at the top of this file relies on.
-   Redefining those custom properties on the two chrome elements means every
-   descendant utility already in App.jsx and AccountMenu.jsx repaints for
-   free: no !important, no component touched, because nothing is being
-   fought — the utilities are just handed a different value for the token
-   they already resolve through.
-
-   Matched on the aria-label, not a utility class: the label is what the
-   rail IS, so it survives restyling, while `w-[214px]` is an implementation
-   detail that could change on any layout tweak and silently drop this. */
-nav[aria-label="Sections"],
-header {
-  --ui-surface:      var(--ui-rail-bg);
-  /* Lighter, not darker — a raised surface on dark chrome gets closer to
-     white, per the dark-mode elevation rule. Used for hover/active rail rows
-     and, further down, the search field's own background. */
-  --ui-sunk:         var(--ui-rail-bg-raised);
-  --ui-ink:          var(--ui-rail-ink);
-  --ui-ink-soft:     var(--ui-rail-ink-soft);
-  --ui-ink-faint:    var(--ui-rail-ink-faint);
-  --ui-line:         var(--ui-rail-line);
-  --ui-line-soft:    var(--ui-rail-line);
-  /* The active nav item's chip + label. A lift in tone plus a saturated,
-     lightened accent for the label — not a flat colour fill, which on dark
-     chrome would read as a solid block rather than "this one is selected". */
-  --ui-accent-wash:  var(--ui-rail-accent-wash);
-  --ui-accent-ink:   var(--ui-rail-accent-ink);
-}
-
-/* Section labels in the rail — the small, wide-tracked greys the reference
-   uses to group navigation. Targets the existing uppercase labels rather
-   than requiring a new class on them. Colour comes from the redefinition
-   above; only the type treatment is stated here. */
-nav[aria-label="Sections"] .uppercase,
-.ui-eyebrow {
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ui-ink-faint);
+/* ── text style: sentence case ──
+   ERPNext labels things the way you would say them — "Items", "Customer
+   since" — never in spaced capitals. Every `uppercase` label in the app is
+   written in sentence case in the source and uppercased by CSS, so undoing
+   the transform here re-sets 45 labels across 16 screens at once. Small
+   labels land at 12px/500; a card heading (an h2–h4 that was an uppercase
+   eyebrow) becomes the desk's 14px/600 section title. */
+.uppercase {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 12px;
   font-weight: 500;
 }
-
-/* The one control that lives inside dark chrome: the header's patient
-   search field. The global input rule two sections down paints every input
-   --ui-surface, which — now that --ui-surface means "dark chrome" inside
-   this element — would make the field the exact colour of the bar it sits
-   on. It needs the RAISED tone instead, so it reads as a field on a dark
-   bar rather than a hole cut into it. */
-header input[type="text"],
-header input:not([type]) {
-  background: var(--ui-rail-bg-raised);
-  border-color: var(--ui-rail-line) !important;
+h2.uppercase,
+h3.uppercase,
+h4.uppercase {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ui-ink);
 }
-header input:focus {
-  background: var(--ui-rail-bg-raised);
-  border-color: var(--ui-rail-accent-ink) !important;
+
+/* ── fields: grey, borderless, 8px ──
+   The desk's input: a #F3F3F3 fill with no visible border, darkening a
+   step on hover; on focus it turns white with a firm grey edge and a soft
+   halo. Checkboxes, radios, sliders, colour and file pickers keep their
+   native look. `.ui-field-plain` opts a field out, for the rare control
+   that must not look like a form input. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="hidden"]):not(.ui-field-plain),
+select:not(.ui-field-plain),
+textarea:not(.ui-field-plain) {
+  background-color: var(--ui-sunk);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--ui-ink);
+  transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="hidden"]):not(.ui-field-plain):hover,
+select:not(.ui-field-plain):hover,
+textarea:not(.ui-field-plain):hover {
+  background-color: var(--ui-sunk-hover);
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="hidden"]):not(.ui-field-plain):focus,
+select:not(.ui-field-plain):focus,
+textarea:not(.ui-field-plain):focus {
+  background-color: var(--ui-surface);
+  border-color: var(--ui-ink-faint);
+  box-shadow: 0 0 0 2px var(--ui-sunk-hover);
+  outline: none;
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--ui-ink-faint);
+}
+/* Checkboxes and radios stay native (keyboard, screen readers, touch size
+   all come free) but take the desk's ink instead of the browser's blue. */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--ui-ink);
+}
+input:disabled,
+select:disabled,
+textarea:disabled {
+  color: var(--ui-ink-faint);
+  cursor: not-allowed;
+}
+
+/* ── buttons ──
+   Primary is already the desk's near-black ("Save") — `bg-slate-900` now
+   resolves to #171717 through the palette above. The secondary idiom in
+   this codebase is a slate-300 hairline outline; the desk's secondary
+   ("Create", "Get Items From") is a grey fill with no border, so the one
+   class the outline buttons share is what this matches on. Only buttons
+   and links: a bordered <div> or <blockquote> is a container, not an
+   action, and keeps its line. */
+button[class*="border-slate-300"],
+a[class*="border-slate-300"] {
+  background-color: var(--ui-sunk);
+  border-color: transparent;
+  color: var(--ui-ink);
+}
+button[class*="border-slate-300"]:hover:not(:disabled),
+a[class*="border-slate-300"]:hover {
+  background-color: var(--ui-sunk-hover);
+}
+button[class*="border-slate-300"]:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* ── tabs: underlined ──
+   "Details | Other Info". Every tab strip in the app is a real
+   role="tablist" (Settings, AI performance, Manage Deals, Website), so the
+   ARIA roles are the hook — the semantics that make the keyboard work are
+   the same thing that makes them look like one idiom. The old raised-tab
+   and segmented-control looks both give way to one text row on a hairline,
+   the active tab carrying a 2px ink underline. */
+[role="tablist"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ui-line);
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+}
+[role="tab"] {
+  margin-bottom: -1px;
+  padding: 8px 0 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ui-ink-soft);
+  font-size: 14px;
+  font-weight: 500;
+}
+[role="tab"]:hover {
+  color: var(--ui-ink);
+}
+[role="tab"][aria-selected="true"] {
+  color: var(--ui-ink);
+  border-bottom-color: var(--ui-ink);
+  background: transparent;
 }
 
 /* ── tables ──
-   Column heads become quiet labels, and rows get a hairline instead of a
-   full rule, so a long queue reads as a list rather than a spreadsheet. */
+   A grey header row in sentence case, hairline rows, a faint hover — the
+   desk's child-table and list look. */
+thead,
+thead tr {
+  background: var(--ui-sidebar);
+}
 thead th {
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ui-ink-faint);
+  font-size: 13px;
   font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ui-ink-soft);
 }
 tbody tr { transition: background-color 130ms ease; }
-tbody tr:hover { background: var(--ui-sunk); }
+tbody tr:hover { background: var(--ui-sidebar); }
 
-/* ── controls ──
-   White, not sunk into the surface — a field is now the same white as the
-   page and the card it sits in, and reads as a field purely by its border,
-   the way the reference's inputs do. A sunk grey fill was doing the job a
-   plain border already does once the surface around it stopped competing
-   for attention, and kept two different whites in view at once on a screen
-   that is meant to read as one. */
-input[type="text"], input[type="search"], input:not([type]), select, textarea {
-  background: var(--ui-surface);
-  border-color: var(--ui-line) !important;
-  transition: border-color 140ms ease, box-shadow 140ms ease;
+/* ── chrome: the sidebar ──
+   The light grey column. Redefining tokens scoped to the <nav> (matched on
+   its aria-label, which is what it IS, rather than a utility class that
+   could change) hands every existing `bg-[var(--ui-surface)]` /
+   `hover:bg-[var(--ui-sunk)]` inside it the sidebar's own values. */
+nav[aria-label="Sections"] {
+  --ui-surface: var(--ui-sidebar);
+  --ui-sunk:    var(--ui-sidebar-hover);
 }
-input:focus, select:focus, textarea:focus {
+
+/* The header's search, the desk's "Search  Ctrl+K" pill: the same grey
+   fill as every field, with the shortcut hint sitting inside it. */
+.ui-kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 5px;
   background: var(--ui-surface);
-  border-color: var(--ui-accent) !important;
-  /* A soft ring rather than a heavier border on focus — the border itself
-     staying the same weight is what keeps focus from making the field jump
-     size against its neighbours. */
-  box-shadow: 0 0 0 3px var(--ui-accent-wash);
+  color: var(--ui-ink-faint);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 1px var(--ui-line);
 }
 
 /* ── ready-made pieces ──
-   Available for any screen that wants them; nothing is required to use them,
-   so adding them cannot alter a screen that does not. */
+   Available for any screen that wants them; nothing is required to use them. */
 .ui-badge {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 20px; height: 20px; padding: 0 6px;
@@ -348,43 +371,47 @@ input:focus, select:focus, textarea:focus {
 }
 .ui-chip {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 3px 9px; border-radius: 999px;
+  padding: 2px 8px; border-radius: 6px;
   background: var(--ui-accent-wash);
   color: var(--ui-accent-ink);
-  font-size: 11px; font-weight: 500;
+  font-size: 12px; font-weight: 500;
 }
 .ui-chip::before {
   content: ""; width: 6px; height: 6px; border-radius: 999px;
   background: var(--ui-accent);
 }
+/* The desk's orange "Not Saved" indicator, for unsaved-changes states. */
+.ui-pill-unsaved {
+  display: inline-flex; align-items: center;
+  padding: 2px 8px; border-radius: 6px;
+  background: var(--ui-pill-orange-bg);
+  color: var(--ui-pill-orange-fg);
+  font-size: 12px; font-weight: 500;
+}
 /* A card or section heading anchoring on an icon uses this, never a bare
-   glyph floating next to the text and never an emoji standing in for one —
-   see design.md's Icon-chip section for why the second ban is explicit. */
+   glyph and never an emoji — see design.md's Icon-chip section. */
 .ui-icon-chip {
   display: inline-flex; align-items: center; justify-content: center;
   width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
   background: var(--ui-accent-wash);
   color: var(--ui-accent-ink);
 }
-/* The reference's primary action is near-black, not brand-coloured — it
-   keeps the emerald meaning "live/healthy" instead of also meaning "button". */
+/* Primary action: the desk's near-black button. Brand green stays off
+   buttons so it keeps meaning "healthy / connected". */
 .ui-btn-dark {
   background: var(--ui-ink);
   color: oklch(99% 0 0);
-  border-radius: 10px;
-  padding: 7px 13px;
+  border-radius: 8px;
+  padding: 6px 12px;
   font-size: 13px; font-weight: 500;
   transition: background-color 140ms ease, transform 140ms ease;
 }
-.ui-btn-dark:hover { background: oklch(19% 0.014 168); }
+.ui-btn-dark:hover { background: oklch(30% 0 0); }
 .ui-btn-dark:active { transform: translateY(1px); }
 
 /* ── the loading dots ── see Loading.jsx
-   A WhatsApp typing indicator's rhythm rather than a generic spinner —
-   currentColor so it reads as whatever muted tone each of the ~14 call
-   sites already set on its own wrapper, not a fixed colour dropped in on
-   top of fourteen different backgrounds. Animates opacity and transform
-   only, per this file's motion stance. */
+   A typing indicator's rhythm rather than a generic spinner; currentColor so
+   it takes each call site's own muted tone. Opacity and transform only. */
 .ui-loading-dot {
   width: 4px;
   height: 4px;
@@ -399,8 +426,10 @@ input:focus, select:focus, textarea:focus {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  tbody tr, .ui-btn-dark, input, select, textarea { transition: none; }
+  tbody tr, .ui-btn-dark, .ui-card-hover, input, select, textarea,
+  button[class*="border-slate-300"] { transition: none; }
+  button[class*="border-slate-300"]:active:not(:disabled) { transform: none; }
   /* Frozen at a visible opacity, not removed — the dots are the loading
-     state's only content here, not decoration sitting on top of it. */
+     state's only content, not decoration on top of it. */
   .ui-loading-dot { animation: none; opacity: 0.6; }
 }
