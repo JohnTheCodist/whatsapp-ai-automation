@@ -20,13 +20,13 @@
  * "do not duplicate business logic" rule the rest of this segment follows.
  *
  * NOT AN EHR: no diagnosis, clinical notes, or medical history anywhere in
- * this shape. medicationJourneys is an honest empty array — no such table
- * exists yet, and inventing a placeholder record would be worse than
- * showing nothing.
+ * this shape. medicationJourneys lists only what a pharmacist enrolled
+ * (0052) — a patient with none gets an empty array, never a placeholder.
  */
 
 const { getSql, assertPharmacyId } = require('../db');
 const { listTimeline } = require('./customerTimeline');
+const { listJourneysForCustomer, refillCountsFrom } = require('../refills/medicationJourneys');
 // Priority is derived from workflow state in one place, so the profile and the
 // inbox can never disagree about what counts as urgent.
 const { priorityFor } = require('../whatsapp/conversationState');
@@ -54,7 +54,7 @@ async function getCustomerProfile(pharmacyId, customerId) {
   `;
   if (!customer) return null;
 
-  const [orderAgg, recentOrders, convAgg, recentConversations, crmCounts, activeConv, page] = await Promise.all([
+  const [orderAgg, recentOrders, convAgg, recentConversations, crmCounts, activeConv, page, journeys] = await Promise.all([
     // Total spend counts only orders that reached a real commitment — the
     // same status set overview.js already uses for "confirmed value", so
     // this number means the same thing everywhere it appears in the product.
@@ -132,6 +132,9 @@ async function getCustomerProfile(pharmacyId, customerId) {
     // rest. customer.id already proven to belong to pharmacyId above, so no
     // second existence check here.
     listTimeline(pharmacyId, customer.id, { limit: 25 }),
+    // Every journey, active first. Bounded in practice by how many medicines
+    // one patient is enrolled on, which is a handful, not a history.
+    listJourneysForCustomer(pharmacyId, customer.id, { sql: db }),
   ]);
 
   return {
@@ -160,18 +163,15 @@ async function getCustomerProfile(pharmacyId, customerId) {
         total: naira(o.total_kobo), createdAt: o.created_at,
       })),
     },
-    // No medication_journeys table exists yet — an honest empty array, not
-    // a fabricated placeholder record. Segment 2's concern.
-    medicationJourneys: [],
-    // Same treatment, same reason. Refills are driven by medication journeys,
-    // so there is nothing to count until that engine exists.
-    //
-    // Zeroes rather than a fabricated "1 due": a pharmacist who sees a refill
-    // marked due will act on it — ring the customer, pull the stock. A
-    // placeholder here is not a harmless mock, it is a false instruction to
-    // do clinical work. The empty state says plainly that the feature is not
-    // built, which is the one thing a real number could never say.
-    refills: { due: 0, completed: 0 },
+    // What a pharmacist enrolled (0052), and nothing else. A patient with no
+    // journeys still gets an honest empty array.
+    medicationJourneys: journeys,
+    // Derived from the journeys above, never stored. A pharmacist who sees a
+    // refill marked due will act on it — ring the customer, pull the stock —
+    // so `due` is only ever a count of real current supplies that are due,
+    // overdue or lapsed today (refillSchedule.js), and zero when there are
+    // none. See refillCountsFrom for what each number includes.
+    refills: refillCountsFrom(journeys),
     conversations: {
       count: convAgg[0].count,
       active: convAgg[0].active,

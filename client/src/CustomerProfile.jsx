@@ -4,9 +4,10 @@
  *
  * DELIBERATELY NOT AN EHR
  * No diagnosis, no medical history, no clinical notes anywhere on this
- * screen. Medication journeys are a named placeholder, not a feature — an
- * order for Amlodipine is a purchase, not evidence of an ongoing treatment
- * relationship, and this screen must not imply otherwise.
+ * screen. Medications are listed only when a pharmacist enrolled them
+ * (MedicationJourneys.jsx) — an order for Amlodipine is a purchase, not
+ * evidence of an ongoing treatment relationship, and nothing here turns one
+ * into the other.
  *
  * EVERY NUMBER CAME FROM THE SERVER
  * This component formats; it does not compute. Order counts, spend, and
@@ -23,6 +24,7 @@ import Loading from './Loading.jsx';
 import CustomerTimeline from './CustomerTimeline.jsx';
 import CustomerCrm from './CustomerCrm.jsx';
 import ConversationState from './ConversationState.jsx';
+import { MedicationJourneysPanel } from './MedicationJourneys.jsx';
 
 const STATUS_TONE = {
   active: 'bg-teal-50 text-teal-700',
@@ -57,10 +59,16 @@ function naira(n) {
 export default function CustomerProfile({ customerId, onBack, onOpenConversation, onNavigate }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  // Bumped after a medication change so the profile re-reads the server's
+  // numbers rather than patching them locally — every figure on this screen
+  // comes from the API, including the refill counts that just changed.
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    setData(null);
+    // Only a different patient blanks the screen. A reload after recording a
+    // refill keeps the current profile on screen until the fresh one lands.
+    if (reload === 0) setData(null);
     setError(null);
     fetch(`/api/customers/${customerId}`)
       .then(async (r) => {
@@ -70,7 +78,7 @@ export default function CustomerProfile({ customerId, onBack, onOpenConversation
       })
       .catch((e) => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
-  }, [customerId]);
+  }, [customerId, reload]);
 
   if (error) {
     return (
@@ -86,7 +94,7 @@ export default function CustomerProfile({ customerId, onBack, onOpenConversation
     customer, orders, medicationJourneys, conversations, communication, activeConversation,
     // Defaulted so an older API response (or a cached one mid-deploy) renders
     // the empty state rather than throwing on `refills.due`.
-    refills = { due: 0, completed: 0 },
+    refills = { due: 0, overdue: 0, lapsed: 0, completed: 0 },
   } = data;
   // fullName first: it is what the customer told the pharmacy, verified
   // against their own typed words. displayName is whatever they set on their
@@ -274,54 +282,43 @@ export default function CustomerProfile({ customerId, onBack, onOpenConversation
           )}
         </section>
 
-        {/* ---- medication journeys — foundation only ---- */}
-        <section className="rounded-lg border border-slate-200 bg-white p-5">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Medication journeys</h3>
-          {medicationJourneys.length > 0 ? (
-            <ul className="mt-3 space-y-2">
-              {medicationJourneys.map((j) => (
-                <li key={j.id} className="text-sm text-slate-700">{j.name}</li>
-              ))}
-            </ul>
-          ) : (
-            <div className="mt-3 rounded border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center">
-              <p className="text-sm text-slate-500">No active medication journeys yet.</p>
-              <p className="mt-1 text-xs text-slate-400">
-                Medication journeys will appear here when a customer is enrolled in a medication follow-up workflow.
-              </p>
-            </div>
-          )}
-        </section>
+        {/* ---- medications followed (0052) ---- */}
+        <MedicationJourneysPanel
+          customerId={customer.id}
+          journeys={medicationJourneys}
+          onChanged={() => setReload((n) => n + 1)}
+        />
 
-        {/* ---- refills — foundation only ----
+        {/* ---- refills ----
 
-            Deliberately shows nothing rather than a plausible number. A
-            pharmacist who reads "1 due" will act on it: ring the customer,
-            pull the stock off the shelf. A placeholder here is not a harmless
-            mock, it is a false instruction to do clinical work. */}
+            Every number is the server's (refillCountsFrom). A pharmacist who
+            reads "1 due" will act on it: ring the customer, pull the stock off
+            the shelf — so nothing here is ever a placeholder or a local sum. */}
         <section className="rounded-lg border border-slate-200 bg-white p-5">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Refills</h3>
           {refills.due > 0 || refills.completed > 0 ? (
             <div className="mt-2 flex items-baseline gap-6">
               <div>
-                <p className={`text-2xl font-semibold ${refills.due > 0 ? 'text-amber-700' : 'text-slate-900'}`}>
+                <p className={`text-2xl font-semibold tabular-nums ${refills.due > 0 ? 'text-amber-700' : 'text-slate-900'}`}>
                   {refills.due}
                 </p>
-                <p className="text-xs text-slate-500">due</p>
+                <p className="text-xs text-slate-500">
+                  due
+                  {/* Of the due count, the ones already out of medicine —
+                      each the server's own figure, never added up here. */}
+                  {refills.overdue > 0 && <span className="tabular-nums"> · {refills.overdue} overdue</span>}
+                  {refills.lapsed > 0 && <span className="tabular-nums"> · {refills.lapsed} lapsed</span>}
+                </p>
               </div>
               <div>
-                <p className="text-2xl font-semibold text-slate-900">{refills.completed}</p>
+                <p className="text-2xl font-semibold tabular-nums text-slate-900">{refills.completed}</p>
                 <p className="text-xs text-slate-500">completed</p>
               </div>
             </div>
           ) : (
-            <div className="mt-3 rounded border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center">
-              <p className="text-sm text-slate-500">No refill activity yet.</p>
-              <p className="mt-1 text-xs text-slate-400">
-                Refills are driven by medication journeys, so they will start appearing here once that
-                follow-up workflow is enrolled.
-              </p>
-            </div>
+            <p className="mt-3 text-sm text-slate-500">
+              No refills yet. They are counted from the medicines followed above.
+            </p>
           )}
         </section>
 

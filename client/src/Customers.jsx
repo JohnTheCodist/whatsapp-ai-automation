@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import CustomerProfile from './CustomerProfile.jsx';
 import Loading from './Loading.jsx';
+import { RefillQueue } from './MedicationJourneys.jsx';
 
 const TIER_LABEL = { active: 'Active', quiet: 'Quiet', dormant: 'Dormant', unknown: '—' };
 const TIER_TONE = {
@@ -171,6 +172,10 @@ export default function Customers({ onOpenConversation, onNavigate, initialQuery
   if (selectedId) {
     return (
       <CustomerProfile
+        // Keyed so a different patient is always a fresh component: the
+        // profile keeps its data on screen across a reload, and must never
+        // keep one patient's data on screen while another's loads.
+        key={selectedId}
         customerId={selectedId}
         onBack={() => setSelectedId(null)}
         onOpenConversation={onOpenConversation}
@@ -186,6 +191,11 @@ export default function Customers({ onOpenConversation, onNavigate, initialQuery
 
   return (
     <div className="space-y-4">
+      {/* First, because it is the only thing on this screen with a deadline:
+          patients whose medicine is running out or has run out. Renders
+          nothing when nobody is due. */}
+      <RefillQueue onOpen={setSelectedId} />
+
       {/* Above the full list: a pharmacy scanning for "who is on blood
           pressure medicine" should not have to open records one by one to
           find out. Renders nothing at all when no condition has patients. */}

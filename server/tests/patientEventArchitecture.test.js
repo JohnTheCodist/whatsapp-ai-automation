@@ -101,16 +101,36 @@ test('accepts an event type whose feature does not exist yet', { skip: SKIP && s
 });
 
 test('a reserved entity type with no table yet is accepted, not verified into failure', { skip: SKIP && skipReason }, async () => {
-  // medication_journey has no table. The entity check must skip rather than
-  // throw, or Segment 2 could never reference its own records.
+  // delivery has no table. The entity check must skip rather than throw, or
+  // the delivery feature could never reference its own records.
+  //
+  // This test used medication_journey until 0052 gave that type a table.
+  // The rule is unchanged; only the example moved to a type that is still
+  // reserved. The test below pins what medication_journey does now.
   const id = await recordEvent(db, {
     ...base(),
-    eventType: PATIENT_EVENTS.MEDICATION_REMINDER_SENT,
-    entityType: 'medication_journey',
+    eventType: PATIENT_EVENTS.DELIVERY_REQUESTED,
+    entityType: 'delivery',
     entityId: crypto.randomUUID(),
-    idempotencyKey: `reminder:${crypto.randomUUID()}`,
+    idempotencyKey: `delivery:${crypto.randomUUID()}`,
   });
   assert.ok(id);
+});
+
+test('once its table exists, a medication journey that is not there is refused', { skip: SKIP && skipReason }, async () => {
+  // The reserved-type exemption must end when the table arrives. Otherwise a
+  // refill event could point at any uuid at all, including another
+  // pharmacy's journey, and the timeline would link to it.
+  await assert.rejects(
+    () => recordEvent(db, {
+      ...base(),
+      eventType: PATIENT_EVENTS.MEDICATION_REMINDER_SENT,
+      entityType: 'medication_journey',
+      entityId: crypto.randomUUID(),
+      idempotencyKey: `reminder:${crypto.randomUUID()}`,
+    }),
+    /medication_journey .* was not found in pharmacy/,
+  );
 });
 
 // ---- vocabulary --------------------------------------------------------

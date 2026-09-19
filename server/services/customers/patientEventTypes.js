@@ -217,10 +217,11 @@ const ACTOR_TYPES = Object.freeze(['customer', 'ai', 'pharmacist', 'staff', 'sys
  * tenant's timeline from ever referencing another tenant's order. An entity
  * type with no table here is structurally unverifiable, so it is not allowed.
  *
- * `medication_journey`, `refill` and `payment` are listed with null tables:
- * the type is accepted so a future module can reference it, but until the
- * table exists there is nothing to verify against and recordEvent says so
- * rather than silently skipping the check.
+ * `payment` and `delivery` are listed with null tables: the type is accepted
+ * so a future module can reference it, but until the table exists there is
+ * nothing to verify against and recordEvent says so rather than silently
+ * skipping the check. (`medication_journey` and `refill` were reserved the
+ * same way until 0052 created their tables.)
  */
 const ENTITY_TABLES = Object.freeze({
   customer: 'customers',
@@ -252,9 +253,12 @@ const ENTITY_TABLES = Object.freeze({
   evidence_reference: 'evidence_references',
   protocol_recommendation: 'protocol_recommendations',
   recommendation_evaluation: 'recommendation_evaluations',
+  // Medication journeys and refills (0052). Verified like every other
+  // entity now that the tables exist: a MEDICATION_STARTED pointing at
+  // another pharmacy's journey is refused rather than linked.
+  medication_journey: 'medication_journeys',
+  refill: 'refills',
   // reserved, no table yet
-  medication_journey: null,
-  refill: null,
   payment: null,
   delivery: null,
 });

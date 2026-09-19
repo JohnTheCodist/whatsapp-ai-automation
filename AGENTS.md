@@ -382,6 +382,27 @@ worth testing individually, and this one is the counterexample: the body
 shape WAS the bug, and nothing else would have caught either side renaming
 its half of the contract.
 
+**Medication journeys and the refill call list, 2026-09-19 → measured
+1686/1207/472/7.** Measured first on HEAD `bf0e185` with no change applied:
+1620/1166/447/7. So the 133 tests `main` gained after the 2026-09-09 figures
+were all database-free — the skipped ceiling had not moved, and the gate was
+right to pass them. This change adds 66. **41 always run**: `refillSchedule`
+(30 — the Lagos calendar day, the run-out date, the due/overdue/lapsed
+boundaries, the profile counts) and `refillInput` (11 — the request-body
+contract; dashboard forms send `"30"`, and without that layer every UI
+enrolment would have failed while every service test passed). **25 need a
+database** — `medicationJourneys` (24: tenant isolation on every write and
+read, the one-active-journey index, the same-day duplicate refused under a
+real concurrent race, the call list agreeing with the schedule rules at the
+boundary day) and one in `patientEventArchitecture` — which moves the
+SKIPPED ceiling 447 → 472, declared here per the rule below. That one is
+also the only existing test edited: its "reserved entity type is accepted"
+example moved from `medication_journey` (which 0052 gave a table) to
+`delivery` (still reserved), with the reason in a comment, and a new test
+pins that `medication_journey` is now verified. With a local test database
+the same tree measures **1686/1681/0/5** against **1620/1615/0/5** before
+— the same five names, the four in A+C plus the flaky pre-keys test.
+
 `test-baseline.json` holds the machine-readable copy that `npm run test:ci`
 reads. **The two are updated in the same commit or not at all.**
 
@@ -531,11 +552,11 @@ After `npm test`, compare:
 
 | Observation | Meaning |
 |---|---|
-| **No test database:** 1033 pass / 442 skip / 7 fail, categories A+B | No regression. Proceed. |
-| **Test database configured:** ~1384 pass / 0 skip / 4 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. The figure is derived, not observed: the last measured configured run was 1381 on 2026-09-05, before three database-free tests were added. Re-measure and replace this with a real number rather than trusting the arithmetic. |
+| **No test database:** 1207 pass / 472 skip / 7 fail, categories A+B | No regression. Proceed. |
+| **Test database configured:** 1681 pass / 0 skip / 4 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. Measured, not derived: 1686/1681/0/5 on 2026-09-19 against a local PostgreSQL 17.10, where the fifth failure was the known-flaky pre-keys test (see below), not a fifth known failure. |
 | Any failure NOT among the 9 | **You broke something.** Fix the code, not the test. |
-| Fewer than 1033 passing | Something stopped running. Find out what. |
-| More than 442 skipped | A suite started skipping. That is a silent loss of coverage, not a pass — unless you added tests that skip, in which case say so and move the ceiling in the same commit. |
+| Fewer than 1207 passing | Something stopped running. Find out what. |
+| More than 472 skipped | A suite started skipping. That is a silent loss of coverage, not a pass — unless you added tests that skip, in which case say so and move the ceiling in the same commit. |
 | "writing pre-keys costs a constant number of round trips" fails | Known flaky against a local database, ~1 run in 4. Not in the baseline on purpose. Do not re-run until green — read the entry above and fix the yardstick. |
 
 (These numbers were stale before 2026-09-05: the table read 768/386 while the

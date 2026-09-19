@@ -220,6 +220,9 @@ app.use('/api/customers', require('./routes/customers'));    // patient identity
 // condition profile is a fact about a customer, and giving it a second noun in
 // the URL space would imply a second record that does not exist.
 app.use('/api/customers', require('./routes/conditions'));   // purchase-based condition profiles
+// Same prefix again, same reason: what a patient takes is a fact about them.
+app.use('/api/customers', require('./routes/medications'));  // medication journeys (0052)
+app.use('/api/refills', require('./routes/refills'));        // refill call list
 app.use('/api/orders', require('./routes/orders'));               // Phase 5 — order queue
 app.use('/api/billing', require('./routes/billing'));        // plan, trial clock, payments
 
