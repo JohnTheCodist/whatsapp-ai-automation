@@ -94,6 +94,31 @@ The top of the sidebar is the workspace row, in the shape of the desk's
 "Stock / ERPNext" header: the emerald R tile, the pharmacy's name, and
 "RxNaija" beneath it.
 
+### The sidebar collapses
+
+Like the desk, the sidebar has two shapes, switched by a **Collapse** button
+at its foot:
+
+- **Expanded (214px):** icon + label rows, group labels, the WhatsApp panel
+  in full, count pills at the end of each row.
+- **Collapsed (56px):** the icon strip — the R tile alone, 36px icon tiles,
+  groups separated by a hairline rule instead of a label, the active item on
+  the same white tile, counts riding each icon's corner (9+ past nine), and
+  the WhatsApp state as a dot on its icon.
+
+Collapsed, every item keeps its name: as `sr-only` text for screen readers
+and as a `title` on hover, which is the only way to learn an icon strip.
+Every row renders through one `RailButton` in `App.jsx`, so the two shapes
+cannot drift apart.
+
+The choice is **per device** (`client/src/sidebarPreference.js`,
+localStorage), like the alert-sound setting — the counter tablet and the
+back-office laptop want different things. With no saved choice, a screen
+under 1024px starts collapsed; the choice is saved only when someone
+actually toggles it, so that automatic default is never mistaken for a
+preference. Storage that is missing or throws never breaks the page. No
+width animation: the switch is instant, per the motion stance.
+
 ### Data bars are ink, never the accent
 
 Anything whose LENGTH is the number — funnel steps, breakdown bars, the

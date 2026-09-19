@@ -38,7 +38,9 @@ import {
   IconOverview, IconConsultations, IconInbox, IconOrders, IconRequests,
   IconCustomers, IconSetup, IconSearch, IconVolumeOn, IconVolumeOff, IconLink, IconAi,
   IconInventory, IconUpload, IconDeals, IconBilling, IconAlertTriangle, IconWebsite,
+  IconSidebarCollapse, IconSidebarExpand,
 } from './Icons.jsx';
+import { browserStorage, readSidebarCollapsed, writeSidebarCollapsed } from './sidebarPreference.js';
 import Billing from './Billing.jsx';
 /**
  * The whole Website section, in its own chunk.
@@ -190,6 +192,63 @@ function sectionFor(tab) {
   return PARENT_OF[tab] || SECTIONS.find((s) => s.id === tab) || SECTIONS[0];
 }
 
+const RAIL_ACTIVE = 'bg-[var(--ui-sidebar-active)] text-[var(--ui-ink)] shadow-[var(--ui-shadow-pill)]';
+const RAIL_IDLE = 'text-[var(--ui-ink-soft)] hover:bg-[var(--ui-sunk)] hover:text-[var(--ui-ink)]';
+
+/**
+ * One sidebar row, in either shape.
+ *
+ * EXPANDED: icon + label, and a count pill at the end of the row.
+ * COLLAPSED: the icon alone on a 36px tile, the count riding its corner —
+ * the desk's icon strip. The label stays in the DOM as sr-only text, so a
+ * screen reader hears "Consult, 2" in both shapes; `title` gives sighted
+ * users the name on hover, which is the only way to learn an icon strip.
+ *
+ * The active marker is a shape, not just a tint: a white tile lifted off the
+ * grey column by a hairline shadow. Colour alone would lose "you are here"
+ * for anyone who cannot separate two greys.
+ *
+ * `tone` is semantic, never decorative: red only for Consultations (a person
+ * waiting), amber for queued work — see design.md.
+ */
+function RailButton({
+  collapsed, active, onClick, Icon, label, count = 0, tone = 'amber', dot = null, className = '',
+}) {
+  const toneBg = tone === 'red' ? 'bg-red-500' : 'bg-amber-500';
+  const dotBg = dot === 'red' ? 'bg-red-500' : 'bg-amber-500';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? 'page' : undefined}
+      title={collapsed ? (count > 0 ? `${label} (${count})` : label) : undefined}
+      className={`relative flex items-center rounded-lg text-left transition
+        ${collapsed ? 'mx-auto h-9 w-9 justify-center' : 'w-full gap-2.5 px-2.5 py-[7px]'}
+        ${active ? RAIL_ACTIVE : RAIL_IDLE} ${className}`}
+    >
+      <span className="shrink-0"><Icon width={collapsed ? 20 : 22} height={collapsed ? 20 : 22} /></span>
+      <span className={collapsed ? 'sr-only' : 'min-w-0 flex-1 truncate text-[14px] font-medium'}>{label}</span>
+      {count > 0 && (
+        <span
+          className={collapsed
+            ? `absolute -right-1 -top-1 min-w-[16px] rounded-full px-1 text-center text-[9px] font-semibold leading-[16px] text-white ring-2 ring-[var(--ui-sidebar)] ${toneBg}`
+            : `ml-auto min-w-[19px] shrink-0 rounded-full px-1.5 text-center text-[10px] font-semibold leading-[18px] text-white ${toneBg}`}
+        >
+          {collapsed ? (count > 9 ? '9+' : count) : (count > 99 ? '99+' : count)}
+        </span>
+      )}
+      {dot && (
+        <span
+          aria-hidden="true"
+          className={collapsed
+            ? `absolute right-1 top-1 h-1.5 w-1.5 rounded-full ${dotBg}`
+            : `ml-auto h-1.5 w-1.5 shrink-0 rounded-full ${dotBg}`}
+        />
+      )}
+    </button>
+  );
+}
+
 export default function App({ onSignOut, pharmacy = null, memberships = [], email = '' }) {
   const [tab, setTab] = useState(() => readTabFromUrl() || 'overview');
   // The website builder ships behind a server-side flag, and while it is off
@@ -232,6 +291,19 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
     const stored = localStorage.getItem('staffNotificationSound');
     return stored === null ? true : stored === 'true';
   });
+  // Icon strip or full labels, per device. See sidebarPreference.js: with no
+  // saved choice a small screen starts collapsed; once someone toggles it,
+  // their choice wins. Saved only on a real toggle, so the automatic
+  // small-screen default is never mistaken for a choice.
+  const [collapsed, setCollapsed] = useState(() => readSidebarCollapsed({
+    storage: browserStorage(),
+    width: typeof window === 'undefined' ? undefined : window.innerWidth,
+  }));
+  function toggleSidebar() {
+    const next = !collapsed;
+    setCollapsed(next);
+    writeSidebarCollapsed(browserStorage(), next);
+  }
   const [openConversationId, setOpenConversationId] = useState(null);
   const [consultationsWaiting, setConsultationsWaiting] = useState(0);
   const [alarmSilenced, setAlarmSilenced] = useState(false);
@@ -390,31 +462,39 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
       {/* ---------------------------------------------------------------- rail */}
       <nav
         aria-label="Sections"
-        className="sticky top-0 flex h-screen w-[214px] shrink-0 flex-col gap-1 border-r border-[var(--ui-line)] bg-[var(--ui-surface)] px-3 py-4"
+        data-collapsed={collapsed ? 'true' : 'false'}
+        className={`sticky top-0 flex h-screen shrink-0 flex-col gap-1 overflow-y-auto overflow-x-hidden border-r border-[var(--ui-line)] bg-[var(--ui-surface)] py-4
+          ${collapsed ? 'w-14 px-2' : 'w-[214px] px-3'}`}
       >
         {/* The workspace row, in the shape of the desk's "Stock / ERPNext"
             header: the brand tile, then whose workspace this is and whose
-            product it runs on. The R is the same mark the sign-in screen and
+            product it runs on. Collapsed, the tile stands alone and names the
+            pharmacy on hover. The R is the same mark the sign-in screen and
             the tab icon use. */}
-        <div className="mb-4 flex min-w-0 items-center gap-2.5 px-1.5">
+        <div className={collapsed ? 'mb-4 flex justify-center' : 'mb-4 flex min-w-0 items-center gap-2.5 px-1.5'}>
           <span
             role="img"
             aria-label="RxNaija"
+            title={collapsed ? (pharmacyName || 'RxNaija') : undefined}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ui-focus)] text-[15px] font-semibold leading-none text-white"
           >
             R
           </span>
-          <span className="min-w-0 leading-tight">
-            <span className="block truncate text-[14px] font-semibold text-[var(--ui-ink)]">
-              {pharmacyName || 'Your pharmacy'}
+          {!collapsed && (
+            <span className="min-w-0 leading-tight">
+              <span className="block truncate text-[14px] font-semibold text-[var(--ui-ink)]">
+                {pharmacyName || 'Your pharmacy'}
+              </span>
+              <span className="block text-[12px] text-[var(--ui-ink-faint)]">RxNaija</span>
             </span>
-            <span className="block text-[12px] text-[var(--ui-ink-faint)]">RxNaija</span>
-          </span>
+          )}
         </div>
 
-        <span className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ui-ink-faint)]">
-          Workspace
-        </span>
+        {!collapsed && (
+          <span className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ui-ink-faint)]">
+            Workspace
+          </span>
+        )}
 
         {SECTIONS
           // Website is in SECTIONS so every derived structure keeps working,
@@ -435,39 +515,23 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
           const count = children
             ? children.reduce((n, c) => n + (badges[c.id] || 0), 0)
             : (badges[id] || 0);
-          // Consultations is the only red badge. Everything else is queued
-          // work; that one is a person waiting, and the colour has to say so
-          // from across the room.
-          const urgent = id === 'consultations';
           return (
-            <button
+            <RailButton
               key={id}
-              type="button"
+              collapsed={collapsed}
+              active={isActive}
               // A group opens on its FIRST segment only when you are not
               // already inside it — clicking "Manage Deals" while reading an
               // order must not throw you back to the Inbox.
               onClick={() => setTab(children ? (isActive ? tab : children[0].id) : id)}
-              aria-current={isActive ? 'page' : undefined}
-              className={`relative flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-left transition
-                ${isActive
-                  ? 'bg-[var(--ui-sidebar-active)] text-[var(--ui-ink)] shadow-[var(--ui-shadow-pill)]'
-                  : 'text-[var(--ui-ink-soft)] hover:bg-[var(--ui-sunk)] hover:text-[var(--ui-ink)]'}`}
-            >
-              {/* The active marker is a shape, not just a tint: a white pill
-                  lifted off the grey column by a hairline shadow, the desk's
-                  "you are here". Colour alone would lose it for anyone who
-                  cannot separate two greys. */}
-              <span className="shrink-0"><Icon /></span>
-              <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{label}</span>
-              {count > 0 && (
-                <span
-                  className={`ml-auto min-w-[19px] shrink-0 rounded-full px-1.5 text-center text-[10px] font-semibold leading-[18px] text-white
-                    ${urgent ? 'bg-red-500' : 'bg-amber-500'}`}
-                >
-                  {count > 99 ? '99+' : count}
-                </span>
-              )}
-            </button>
+              Icon={Icon}
+              label={label}
+              count={count}
+              // Consultations is the only red badge. Everything else is
+              // queued work; that one is a person waiting, and the colour has
+              // to say so from across the room.
+              tone={id === 'consultations' ? 'red' : 'amber'}
+            />
           );
         })}
 
@@ -475,72 +539,107 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
           {/* Sign out is no longer here — it lives in the account menu at the
               top right, next to the name of the account it signs you out of.
               It used to sit directly above this connection panel, which put a
-              destructive once-a-day action in the corner staff scan most. */}
-          <span className="block px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ui-ink-faint)]">
-            Connection
-          </span>
+              destructive once-a-day action in the corner staff scan most.
+
+              Collapsed, the group label becomes a hairline divider — the
+              desk's icon strip separates its groups with rules, not words. */}
+          {collapsed ? (
+            <hr className="mx-1 mb-2 border-slate-300" />
+          ) : (
+            <span className="block px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ui-ink-faint)]">
+              Connection
+            </span>
+          )}
           {/* Live socket state, in the rail rather than buried in Setup: if
-              WhatsApp drops, nothing else on any screen is true. */}
-          <div
-            title={connected ? 'Connected to WhatsApp' : `Not connected (${health?.status || 'checking'})`}
-            className="flex items-center gap-2.5 rounded-[9px] border border-[var(--ui-line)] px-2.5 py-2"
-          >
-            <span
-              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-                connected ? 'bg-[var(--ui-accent-wash)] text-[var(--ui-accent-ink)]' : 'bg-red-50 text-red-600'
-              }`}
+              WhatsApp drops, nothing else on any screen is true. Collapsed,
+              the state rides the icon as a dot, and the words stay for screen
+              readers. */}
+          {collapsed ? (
+            <div
+              title={connected ? 'WhatsApp: live' : `WhatsApp: down (${health?.status || 'checking'})`}
+              className="relative mx-auto flex h-9 w-9 items-center justify-center"
             >
-              <IconLink width={15} height={15} />
-            </span>
-            <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--ui-ink-soft)]">WhatsApp</span>
-            <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                connected ? 'bg-[var(--ui-accent-wash)] text-[var(--ui-accent-ink)]' : 'bg-red-50 text-red-700'
-              }`}
+              <span
+                className={`flex h-7 w-7 items-center justify-center rounded-lg ${
+                  connected ? 'bg-[var(--ui-accent-wash)] text-[var(--ui-accent-ink)]' : 'bg-red-50 text-red-600'
+                }`}
+              >
+                <IconLink width={15} height={15} />
+              </span>
+              <span
+                aria-hidden="true"
+                className={`absolute right-0.5 top-0.5 h-2 w-2 rounded-full ring-2 ring-[var(--ui-sidebar)] ${
+                  connected ? 'bg-[var(--ui-accent)]' : 'bg-red-500'
+                }`}
+              />
+              <span className="sr-only">WhatsApp {connected ? 'live' : 'down'}</span>
+            </div>
+          ) : (
+            <div
+              title={connected ? 'Connected to WhatsApp' : `Not connected (${health?.status || 'checking'})`}
+              className="flex items-center gap-2.5 rounded-lg border border-[var(--ui-line)] px-2.5 py-2"
             >
-              {connected ? 'Live' : 'Down'}
-            </span>
-          </div>
+              <span
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                  connected ? 'bg-[var(--ui-accent-wash)] text-[var(--ui-accent-ink)]' : 'bg-red-50 text-red-600'
+                }`}
+              >
+                <IconLink width={15} height={15} />
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--ui-ink-soft)]">WhatsApp</span>
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                  connected ? 'bg-[var(--ui-accent-wash)] text-[var(--ui-accent-ink)]' : 'bg-red-50 text-red-700'
+                }`}
+              >
+                {connected ? 'Live' : 'Down'}
+              </span>
+            </div>
+          )}
 
           {/* Setup, directly beneath the connection it configures. Both are
               about the installation rather than today's work, which is why
               they sit together at the foot of the rail instead of competing
               with the queues above. */}
-          <button
-            type="button"
+          <RailButton
+            collapsed={collapsed}
+            active={tab === SETUP.id}
             onClick={() => setTab(SETUP.id)}
-            aria-current={tab === SETUP.id ? 'page' : undefined}
-            className={`relative mt-1 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-left transition
-              ${tab === SETUP.id
-                ? 'bg-[var(--ui-sidebar-active)] text-[var(--ui-ink)] shadow-[var(--ui-shadow-pill)]'
-                : 'text-[var(--ui-ink-soft)] hover:bg-[var(--ui-sunk)] hover:text-[var(--ui-ink)]'}`}
-          >
-            <span className="shrink-0"><SETUP.Icon /></span>
-            <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{SETUP.label}</span>
-          </button>
+            Icon={SETUP.Icon}
+            label={SETUP.label}
+            className="mt-1"
+          />
 
-          {/* Billing, beneath Setup. Both are about the installation rather
-              than today's work. The dot appears when the trial is running
-              out or has run out — the one case where a monthly concern
-              becomes this week's. */}
+          {/* Billing, beneath Setup. The dot appears when the trial is
+              running out or has run out — the one case where a monthly
+              concern becomes this week's. */}
+          <RailButton
+            collapsed={collapsed}
+            active={tab === BILLING.id}
+            onClick={() => setTab(BILLING.id)}
+            Icon={BILLING.Icon}
+            label={BILLING.label}
+            dot={billing?.needsPayment ? 'red' : billing?.warn ? 'amber' : null}
+            className="mt-1"
+          />
+
+          {/* Collapse / expand. At the foot, where the desk keeps it, so it is
+              never mistaken for navigation. The accessible name contains the
+              visible word ("Collapse"), and aria-expanded says which state the
+              sidebar is in now. */}
           <button
             type="button"
-            onClick={() => setTab(BILLING.id)}
-            aria-current={tab === BILLING.id ? 'page' : undefined}
-            className={`relative mt-1 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-left transition
-              ${tab === BILLING.id
-                ? 'bg-[var(--ui-sidebar-active)] text-[var(--ui-ink)] shadow-[var(--ui-shadow-pill)]'
-                : 'text-[var(--ui-ink-soft)] hover:bg-[var(--ui-sunk)] hover:text-[var(--ui-ink)]'}`}
+            onClick={toggleSidebar}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={collapsed ? 'Expand sidebar' : undefined}
+            className={`mt-2 flex items-center rounded-lg text-[var(--ui-ink-faint)] transition hover:bg-[var(--ui-sunk)] hover:text-[var(--ui-ink)]
+              ${collapsed ? 'mx-auto h-9 w-9 justify-center' : 'w-full gap-2.5 px-2.5 py-[7px]'}`}
           >
-            <span className="shrink-0"><BILLING.Icon /></span>
-            <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{BILLING.label}</span>
-            {(billing?.warn || billing?.needsPayment) && (
-              <span
-                className={`ml-auto h-1.5 w-1.5 shrink-0 rounded-full ${
-                  billing.needsPayment ? 'bg-red-500' : 'bg-amber-500'}`}
-                aria-hidden="true"
-              />
-            )}
+            {collapsed
+              ? <IconSidebarExpand width={18} height={18} />
+              : <IconSidebarCollapse width={18} height={18} />}
+            {!collapsed && <span className="text-[13px] font-medium">Collapse</span>}
           </button>
         </div>
       </nav>

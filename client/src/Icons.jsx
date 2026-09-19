@@ -311,3 +311,24 @@ export const IconLink = (p) => (
     <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3A5 5 0 0 0 10.5 20.5L12 19" />
   </svg>
 );
+
+/**
+ * The sidebar toggle: a panel with its rail, and a chevron pointing the way
+ * the rail will move. Two icons rather than one rotated, so each reads
+ * correctly with no transform to get wrong.
+ */
+export const IconSidebarCollapse = (p) => (
+  <svg {...base} {...p}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M9 4v16" />
+    <path d="m16 10-2 2 2 2" />
+  </svg>
+);
+
+export const IconSidebarExpand = (p) => (
+  <svg {...base} {...p}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M9 4v16" />
+    <path d="m14 10 2 2-2 2" />
+  </svg>
+);
