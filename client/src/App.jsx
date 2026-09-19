@@ -37,8 +37,9 @@ import { playOrderChime, playConsultationAlarm, unlockChime, isUnlocked } from '
 import {
   IconOverview, IconConsultations, IconInbox, IconOrders, IconRequests,
   IconCustomers, IconSetup, IconSearch, IconVolumeOn, IconVolumeOff, IconLink, IconAi,
-  IconInventory, IconUpload, IconDeals, IconBilling, IconAlertTriangle, IconWebsite,
+  IconInventory, IconUpload, IconDeals, IconBilling, IconAlertTriangle, IconWebsite, IconHome,
 } from './Icons.jsx';
+import Launcher, { MarketingPending } from './Launcher.jsx';
 import Billing from './Billing.jsx';
 /**
  * The whole Website section, in its own chunk.
@@ -133,6 +134,21 @@ const SETUP = { id: 'setup', label: 'Setup', Icon: IconSetup, title: 'Setup' };
  */
 const BILLING = { id: 'billing', label: 'Billing', Icon: IconBilling, title: 'Billing' };
 
+/**
+ * Home — the module launcher (Launcher.jsx), and the screen a pharmacy lands
+ * on after signing in. Outside SECTIONS for the same reason as Setup: it is
+ * not a place in the sidebar, it is where the sidebar's modules are chosen
+ * from. The sidebar is not drawn on it at all, as on the desk's home.
+ */
+const HOME = { id: 'home', label: 'Home', title: 'Home' };
+
+/**
+ * Marketing has a tile on Home but no screen yet. It gets a real tab id so
+ * the tile, the URL and the breadcrumb all behave, and it lands on a page
+ * that says plainly it is not built (MarketingPending).
+ */
+const MARKETING = { id: 'marketing', label: 'Marketing', title: 'Marketing' };
+
 const SUBTITLE = {
   overview: 'How the pharmacy is doing',
   ai: 'What the assistant is handling, and what it is passing to you',
@@ -146,6 +162,7 @@ const SUBTITLE = {
   'inventory-upload': 'What the assistant can see and sell',
   setup: 'Connection, catalogue and assistant identity',
   billing: 'Your plan, and what happens when it ends',
+  marketing: 'Campaigns to your patients',
 };
 
 /** Flattened once, so a child tab can find its parent without a nested scan. */
@@ -167,6 +184,8 @@ const VALID_TABS = new Set([
   ...SECTIONS.flatMap((s) => [s.id, ...(s.children || []).map((c) => c.id)]),
   SETUP.id,
   BILLING.id,
+  HOME.id,
+  MARKETING.id,
 ]);
 
 /** Read the tab to open on load from the URL, or null if there isn't one. */
@@ -187,6 +206,8 @@ function sectionFor(tab) {
   // outside SECTIONS, so without this, opening Billing would fall through to
   // SECTIONS[0] and light "Overview" instead.
   if (tab === BILLING.id) return BILLING;
+  if (tab === HOME.id) return HOME;
+  if (tab === MARKETING.id) return MARKETING;
   return PARENT_OF[tab] || SECTIONS.find((s) => s.id === tab) || SECTIONS[0];
 }
 
@@ -253,7 +274,7 @@ function RailButton({
 }
 
 export default function App({ onSignOut, pharmacy = null, memberships = [], email = '' }) {
-  const [tab, setTab] = useState(() => readTabFromUrl() || 'overview');
+  const [tab, setTab] = useState(() => readTabFromUrl() || HOME.id);
   // The website builder ships behind a server-side flag, and while it is off
   // its routes are not mounted at all. There is no config endpoint to ask, so
   // the dashboard asks the feature itself: a 404 means absent, anything else
@@ -436,6 +457,8 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
 
   const connected = health?.status === 'ok';
   const active = sectionFor(tab);
+  // Home is the desk's launcher: no sidebar, logo left, search centred.
+  const isHome = tab === HOME.id;
   // The segments of the group currently open, or none. Drives both the
   // sub-nav and the "is this rail item lit" test below.
   const segments = active.children || null;
@@ -450,6 +473,7 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
   return (
     <div className="flex min-h-screen bg-[var(--ui-paper)]">
       {/* ---------------------------------------------------------------- rail */}
+      {!isHome && (<>
       {/* The strip's footprint. Always 56px in the page's flow, so the
           content beside it never moves; the panel inside opens OVER the
           page. Its right hairline is the strip's edge while the panel is
@@ -465,13 +489,15 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
             names arrive with the panel. The R is the same mark the sign-in
             screen and the tab icon use. */}
         <div className="mb-4 flex min-w-0 items-center gap-2.5 pl-1">
-          <span
-            role="img"
-            aria-label="RxNaija"
+          {/* The mark is also the way home, as the desk's logo is. */}
+          <button
+            type="button"
+            onClick={() => setTab(HOME.id)}
+            aria-label="RxNaija home"
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ui-focus)] text-[15px] font-semibold leading-none text-white"
           >
             R
-          </span>
+          </button>
           <span className="ui-rail-fade min-w-0 leading-tight" style={{ '--i': 0 }}>
             <span className="block truncate text-[14px] font-semibold text-[var(--ui-ink)]">
               {pharmacyName || 'Your pharmacy'}
@@ -600,6 +626,7 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
         </div>
       </nav>
       </div>
+      </>)}
 
       {/* -------------------------------------------------------------- column */}
       <div className="flex min-w-0 flex-1 flex-col">
@@ -610,16 +637,27 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
               takes you there; the last is where you already are. The
               pharmacy's name is in the sidebar's workspace row and the
               account chip, so it is not repeated here. */}
+          {isHome ? (
+            <div className="flex flex-1 items-center">
+              <span
+                role="img"
+                aria-label="RxNaija"
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--ui-focus)] text-[15px] font-semibold leading-none text-white"
+              >
+                R
+              </span>
+            </div>
+          ) : (
           <nav aria-label="Breadcrumb" className="min-w-0 flex-1 overflow-hidden">
             <ol className="flex min-w-0 items-center gap-1.5 text-[15px] whitespace-nowrap">
               <li className="flex items-center">
                 <button
                   type="button"
-                  onClick={() => setTab('overview')}
+                  onClick={() => setTab(HOME.id)}
                   aria-label="Home"
                   className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--ui-ink-soft)] hover:bg-[var(--ui-sunk)] hover:text-[var(--ui-ink)]"
                 >
-                  <IconOverview width={16} height={16} />
+                  <IconHome width={16} height={16} />
                 </button>
               </li>
               <li aria-hidden="true" className="text-[var(--ui-ink-faint)]">/</li>
@@ -646,11 +684,12 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
               )}
             </ol>
           </nav>
+          )}
 
           {/* The desk's "Search  Ctrl+K" pill. Submitting jumps to Patients
               with the term applied. Fill and focus come from the global
               field rule in index.css. */}
-          <form onSubmit={submitSearch} className="w-40 shrink-0 md:w-56 lg:w-72">
+          <form onSubmit={submitSearch} className={isHome ? 'w-full max-w-md' : 'w-40 shrink-0 md:w-56 lg:w-72'}>
             <label className="relative block">
               <span className="sr-only">Search patients by name or phone</span>
               <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--ui-ink-faint)]">
@@ -669,7 +708,7 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
             </label>
           </form>
 
-          <div className="flex items-center gap-1.5">
+          <div className={`flex items-center gap-1.5 ${isHome ? 'flex-1 justify-end' : ''}`}>
             {/* Browsers refuse to play audio until the user clicks something,
                 so this cannot be a passive setting — it has to be a real
                 click, and it has to say plainly whether sound is actually
@@ -816,7 +855,7 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
             {/* Setup is the one screen that titles itself: its heading names
                 the settings AREA you are in ("Customer contact"), which a
                 fixed "Setup" above it would only repeat one level too high. */}
-            {tab !== SETUP.id && (
+            {tab !== SETUP.id && !isHome && (
               <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
                 <div>
                   <h1 className="text-xl font-semibold tracking-tight text-[var(--ui-ink)]">{active.title}</h1>
@@ -904,6 +943,8 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
                 sections (needs-you, WhatsApp disconnected) moved into the
                 header's NotificationBell, which owns navigating from them
                 now. AiPerformance's cards still link out on their own. */}
+            {isHome && <Launcher onOpen={setTab} websiteEnabled={websiteEnabled} />}
+            {tab === MARKETING.id && <MarketingPending onHome={() => setTab(HOME.id)} />}
             {tab === 'overview' && <Overview />}
             {tab === 'ai' && <AiPerformance onNavigate={setTab} />}
             {tab === 'consultations' && (

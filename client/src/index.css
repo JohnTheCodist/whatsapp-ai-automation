@@ -503,6 +503,88 @@ nav[aria-label="Sections"] {
   }
 }
 
+/* ── home: the module launcher's tiles ──
+   The desk's app grid, made to feel like a product rather than a list: a
+   60px squircle-ish tile in a two-stop emerald gradient, a hairline of light
+   along its top edge and a darker one along its bottom (it reads as a
+   physical object catching light from above), and a soft emerald shadow
+   beneath. White line icons at 1.75 stroke.
+
+   The gradient stops are chosen for the icon, not the mood: white on the
+   lighter stop is ~3.8:1, over the 3:1 floor for graphics a person has to
+   recognise. A brighter, "friendlier" green fails it.
+
+   Motion: on load the tiles rise 8px and fade in, 50ms apart left to right
+   (fill-mode backwards, so each is visible the instant its own animation
+   ends and nothing is ever parked invisible). Hover lifts the tile 3px and
+   fades in a deeper shadow drawn on a pseudo-element — opacity and
+   transform only, no animated box-shadow. Press settles it back down and
+   in by 3%. */
+.ui-app-tile {
+  cursor: pointer;
+  animation: ui-tile-in 420ms var(--ui-ease-out) calc(40ms + var(--i, 0) * 50ms) backwards;
+}
+@keyframes ui-tile-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.ui-app-icon {
+  --ui-tile-top:    oklch(59% 0.120 163);
+  --ui-tile-bottom: oklch(47% 0.105 167);
+  position: relative;
+  isolation: isolate;          /* so the ::after shadow sits under the tile, above the page */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 17px;
+  color: oklch(100% 0 0);
+  background: linear-gradient(180deg, var(--ui-tile-top), var(--ui-tile-bottom));
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.30),
+    inset 0 -1px 0 oklch(25% 0.05 165 / 0.22),
+    0 1px 2px oklch(30% 0.06 165 / 0.22),
+    0 6px 14px -8px oklch(45% 0.10 165 / 0.60);
+  transition: transform 220ms var(--ui-ease-out);
+}
+.ui-app-icon::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  box-shadow: 0 16px 26px -12px oklch(42% 0.10 165 / 0.60);
+  opacity: 0;
+  transition: opacity 220ms var(--ui-ease-out);
+}
+.ui-app-tile:hover .ui-app-icon {
+  transform: translateY(-3px);
+}
+.ui-app-tile:hover .ui-app-icon::after {
+  opacity: 1;
+}
+.ui-app-tile:active .ui-app-icon {
+  transform: translateY(-1px) scale(0.97);
+  transition-duration: 90ms;
+}
+.ui-app-soon {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--ui-sunk);
+  color: var(--ui-ink-soft);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-app-tile { animation: none; }
+  .ui-app-icon,
+  .ui-app-icon::after { transition: none; }
+  .ui-app-tile:hover .ui-app-icon,
+  .ui-app-tile:active .ui-app-icon { transform: none; }
+}
+
 /* The header's search, the desk's "Search  Ctrl+K" pill: the same grey
    fill as every field, with the shortcut hint sitting inside it. */
 .ui-kbd {

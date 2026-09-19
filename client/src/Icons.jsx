@@ -40,6 +40,15 @@ const base = {
   'aria-hidden': 'true',
 };
 
+/** Home: the launcher. A plain house, as on the desk. */
+export const IconHome = (p) => (
+  <svg {...base} {...p}>
+    <path d="M3.5 10.5 12 4l8.5 6.5" />
+    <path d="M5.5 9v10a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V9" />
+    <path d="M10 20v-5.5h4V20" />
+  </svg>
+);
+
 export const IconOverview = (p) => (
   <svg {...base} {...p}>
     <path d="M3 13h4l2.5 6 4-14 2.5 8h5" />
@@ -309,5 +318,62 @@ export const IconLink = (p) => (
   <svg {...base} {...p}>
     <path d="M10 13a5 5 0 0 0 7.5.5l3-3A5 5 0 0 0 13.5 3.5L12 5" />
     <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3A5 5 0 0 0 10.5 20.5L12 19" />
+  </svg>
+);
+
+/* ── Module icons, for the home launcher's tiles ──────────────────────────
+   Drawn for white-on-emerald at 28px, stroke 1.75 (passed in by the
+   launcher): one continuous idea per module, no fills, no text, nothing a
+   small size would muddy. They share the base above — viewBox, round caps
+   and joins, currentColor — so they belong to the same family as every
+   other icon here. */
+
+/** Stock: a sealed carton, with its tape strip. */
+export const IconModuleStock = (p) => (
+  <svg {...base} {...p}>
+    <path d="M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3Z" />
+    <path d="m4 7.5 8 4.5 8-4.5" />
+    <path d="M12 12v9" />
+    <path d="m8 5.25 8 4.5" />
+  </svg>
+);
+
+/** Clinics: a stethoscope — earpieces, tubing, chest piece. */
+export const IconModuleClinics = (p) => (
+  <svg {...base} {...p}>
+    <path d="M5 3v5.5a4.5 4.5 0 0 0 9 0V3" />
+    <path d="M3.5 3h3M12.5 3h3" />
+    <path d="M9.5 13v2a5 5 0 0 0 10 0v-2.5" />
+    <circle cx="19.5" cy="10.5" r="2" />
+  </svg>
+);
+
+/** Patients: two people, one in front of the other. */
+export const IconModulePatients = (p) => (
+  <svg {...base} {...p}>
+    <circle cx="9" cy="8" r="3.5" />
+    <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+    <path d="M15.5 4.6a3.5 3.5 0 0 1 0 6.8" />
+    <path d="M18 14.2a6.5 6.5 0 0 1 3.5 5.8" />
+  </svg>
+);
+
+/** Marketing: a megaphone, and the sound leaving it. */
+export const IconModuleMarketing = (p) => (
+  <svg {...base} {...p}>
+    <path d="M4 9.5h3.5L15 5v14l-7.5-4.5H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1Z" />
+    <path d="M7.5 14.5 9 20h2.5l-1-4.2" />
+    <path d="M18 9.5a3.5 3.5 0 0 1 0 5" />
+    <path d="M20.5 7a7 7 0 0 1 0 10" />
+  </svg>
+);
+
+/** Branding: a pen nib — the mark a brand is drawn with. */
+export const IconModuleBranding = (p) => (
+  <svg {...base} {...p}>
+    <path d="M9 3.5h6" />
+    <path d="M9 3.5 5.5 12 12 21l6.5-9L15 3.5" />
+    <path d="M12 21v-7.2" />
+    <circle cx="12" cy="12" r="1.8" />
   </svg>
 );

@@ -129,6 +129,39 @@ icon does not move by a pixel as the panel opens. The motion itself is
 specified under Motion, below. `client/src/sidebarRail.test.js` pins the
 keyboard, touch, reduced-motion, clip-path and screen-reader rules.
 
+### Home: the module launcher
+
+**Added 2026-09-19, at the owner's request.** Signing in lands on Home, the
+desk's app launcher in this product's terms: no sidebar, the R logo at the
+left of the header, the search centred, and a grid of five module tiles —
+**Stock, Clinics, Patients, Marketing, Branding**, in that order. One click
+opens a module; the sidebar returns inside it, and the breadcrumb's house
+(or the R logo) comes back here. `client/src/Launcher.jsx`; the routing is
+the pure `moduleTarget`, pinned by `launcher.test.js`.
+
+| Tile | Opens |
+|---|---|
+| Stock | Inventory — the catalogue and its upload |
+| Clinics | Consultations — the pharmacist's clinical queue (clinic *bookings* are not built) |
+| Patients | Patients, with the refill call list |
+| Marketing | Not built: a "Soon" pill on the tile, and a one-sentence page saying so |
+| Branding | The website builder when the server has it on; otherwise Setup (pharmacy and assistant identity) |
+
+**The tile.** A 60px emerald tile (17px radius) in a two-stop gradient, a
+hairline of light along its top and a darker one along its bottom, and a
+soft emerald shadow — an object catching light from above. White line icons
+from `Icons.jsx` (`IconModule*`) at 28px, stroke 1.75. The lighter gradient
+stop keeps white icons at ~3.8:1, over the 3:1 floor for graphics; a
+brighter green fails it. Labels 14px / 600 ink beneath.
+
+**Motion.** On load the tiles rise 8px and fade in, 50ms apart. Hover lifts
+a tile 3px and fades in a deeper shadow drawn on a pseudo-element (opacity
+and transform only); press settles it back in by 3%. Reduced motion: none of
+it.
+
+**Layout.** Five in one row from tablet width up; three across on a phone
+(3 + 2) — never a lone tile on a row of its own.
+
 ### Data bars are ink, never the accent
 
 Anything whose LENGTH is the number — funnel steps, breakdown bars, the
