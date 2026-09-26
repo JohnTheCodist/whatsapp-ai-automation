@@ -36,6 +36,21 @@ const PATIENT_EVENTS = Object.freeze({
   // {from, to, reason} so "why did this thread jump to the top of the inbox"
   // is answerable after the fact, not just at the moment it happened.
   CONVERSATION_STATE_CHANGED: 'CONVERSATION_STATE_CHANGED',
+  // A staff member said what a conversation was ABOUT (0063). Carries
+  // {from, to} because a topic is a judgement, and one pharmacist relabelling
+  // another's thread is a thing the next reader should be able to see.
+  // Internal: the patient neither set it nor is shown it.
+  CONVERSATION_TOPIC_SET: 'CONVERSATION_TOPIC_SET',
+  // A record was attached to, or detached from, a conversation (0064).
+  // Carries {action, kind, refId} — a POINTER, never a copy of what the
+  // record says. Detaching is kept as an event because "this thread was
+  // once about that medicine" is a fact the row no longer holds.
+  CONVERSATION_LINK_CHANGED: 'CONVERSATION_LINK_CHANGED',
+  // A staff-to-staff thread about this patient was started (0066).
+  // Carries the SUBJECT only — never a note. An internal note is
+  // staff-to-staff and belongs in the thread, not spread across the
+  // patient's event log, which other screens read.
+  INTERNAL_THREAD_STARTED: 'INTERNAL_THREAD_STARTED',
 
   // ---- catalogue ----
   PRODUCT_VIEWED: 'PRODUCT_VIEWED',
@@ -175,6 +190,64 @@ const PATIENT_EVENTS = Object.freeze({
   // same as every other clinical action in this system.
   DIFFERENTIAL_SUGGESTED: 'DIFFERENTIAL_SUGGESTED',
 
+  // Allergies (0058). The safety-critical record, so every change to it is
+  // traceable: who recorded it, who confirmed or refuted it, and why. The
+  // status event carries before -> after and the reason in its metadata.
+  ALLERGY_RECORDED: 'ALLERGY_RECORDED',
+  ALLERGY_UPDATED: 'ALLERGY_UPDATED',
+  ALLERGY_STATUS_CHANGED: 'ALLERGY_STATUS_CHANGED',
+  // "No known allergies" asserted, or withdrawn (by a pharmacist, or
+  // automatically when an allergy is recorded).
+  ALLERGY_NKA_ASSERTED: 'ALLERGY_NKA_ASSERTED',
+  ALLERGY_NKA_CLEARED: 'ALLERGY_NKA_CLEARED',
+
+  // Conditions — the problem list (0059). Same shape as allergies: the
+  // status event carries before -> after and the reason; a deliberate
+  // duplicate ("continue anyway") is recorded on CONDITION_RECORDED.
+  CONDITION_RECORDED: 'CONDITION_RECORDED',
+  CONDITION_UPDATED: 'CONDITION_UPDATED',
+  CONDITION_STATUS_CHANGED: 'CONDITION_STATUS_CHANGED',
+
+  // Diagnostic tests (0060). A result is clinical evidence somebody may act
+  // on, so ordering it, reporting it and CORRECTING it are all traceable —
+  // the correction event carries the reason, and the old values are kept in
+  // patient_test_corrections.
+  TEST_ORDERED: 'TEST_ORDERED',
+  TEST_RESULT_RECORDED: 'TEST_RESULT_RECORDED',
+  TEST_UPDATED: 'TEST_UPDATED',
+  TEST_STATUS_CHANGED: 'TEST_STATUS_CHANGED',
+  TEST_CORRECTED: 'TEST_CORRECTED',
+
+  // Care programmes (0061). A programme organises months of care, so the
+  // questions it has to answer later are "when was this person enrolled, who
+  // by, what changed, and why did it stop" — the status event carries
+  // before -> after and the reason, and the two ending events are their own
+  // names because "it was completed" and "it was stopped" are different
+  // facts a pharmacist reads differently.
+  CARE_PROGRAM_ENROLLED: 'CARE_PROGRAM_ENROLLED',
+  CARE_PROGRAM_UPDATED: 'CARE_PROGRAM_UPDATED',
+  CARE_PROGRAM_STATUS_CHANGED: 'CARE_PROGRAM_STATUS_CHANGED',
+  CARE_PROGRAM_COMPLETED: 'CARE_PROGRAM_COMPLETED',
+  CARE_PROGRAM_DISCONTINUED: 'CARE_PROGRAM_DISCONTINUED',
+  // The plan inside a programme. Both point at the PROGRAMME, not at the goal
+  // or activity row: a goal can be deleted and its history should survive,
+  // which an event verified against a deleted row could not.
+  CARE_PROGRAM_GOAL_CHANGED: 'CARE_PROGRAM_GOAL_CHANGED',
+  CARE_PROGRAM_ACTIVITY_CHANGED: 'CARE_PROGRAM_ACTIVITY_CHANGED',
+
+  // Follow-ups (0062). What needs to happen next for this patient. The five
+  // acts are separate names because a pharmacist reading a record later asks
+  // different questions of each: when was this raised, when was it moved, was
+  // it ever done, and if not, who decided that and why. A follow-up raised
+  // inside a care programme keeps the CARE_PROGRAM_ACTIVITY_CHANGED trail it
+  // already had, so nothing about that section's history changes.
+  FOLLOWUP_CREATED: 'FOLLOWUP_CREATED',
+  FOLLOWUP_UPDATED: 'FOLLOWUP_UPDATED',
+  FOLLOWUP_RESCHEDULED: 'FOLLOWUP_RESCHEDULED',
+  FOLLOWUP_COMPLETED: 'FOLLOWUP_COMPLETED',
+  FOLLOWUP_CANCELLED: 'FOLLOWUP_CANCELLED',
+  FOLLOWUP_REOPENED: 'FOLLOWUP_REOPENED',
+
   // ---- RESERVED: no writer exists yet -------------------------------------
   //
   // Declared so the feature that implements them adds a caller, not a
@@ -258,6 +331,18 @@ const ENTITY_TABLES = Object.freeze({
   // another pharmacy's journey is refused rather than linked.
   medication_journey: 'medication_journeys',
   refill: 'refills',
+  // Allergies (0058).
+  patient_allergy: 'patient_allergies',
+  // Conditions — the problem list (0059).
+  patient_problem: 'patient_problems',
+  // Diagnostic tests (0060).
+  patient_test: 'patient_tests',
+  // Care programmes (0061). Goals and activities have no entity type of their
+  // own: their events point at the programme, which outlives them.
+  patient_care_program: 'patient_care_programs',
+  // Follow-ups (0062) — the same table a care-programme activity lives in,
+  // because a follow-up and an activity are the same kind of row.
+  patient_task: 'patient_tasks',
   // reserved, no table yet
   payment: null,
   delivery: null,

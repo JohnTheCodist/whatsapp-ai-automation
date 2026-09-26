@@ -601,3 +601,199 @@ test('GOLDEN-006: the platform health check does not depend on the database', ()
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+// GOLDEN-007 — a pharmacist's private note about a patient, sent to the patient
+// Date:       2026-09-26 (written WITH the feature, before it could happen)
+// Symptom:    none yet. This is the one entry in this file that is not a
+//             postmortem — internal threads (0066) create a kind of row that,
+//             if it ever reached the send path, would deliver staff-to-staff
+//             clinical discussion to the person being discussed.
+// Cause:      every outbound message in this product ends at one function,
+//             and a conversation row is a conversation row. An internal
+//             thread distinguished only by a flag is one missing WHERE clause
+//             away from being sent.
+// Protection: asserts the STRUCTURE that makes it impossible rather than any
+//             particular query being right — that the single send path reads
+//             the channel and refuses before it reaches the transport, and
+//             that the database has nowhere to record an internal note as
+//             having been sent.
+// ---------------------------------------------------------------------------
+
+test('GOLDEN-007a: the one send path refuses an internal thread, before the transport', () => {
+  const fs = require('node:fs');
+  const pathMod = require('node:path');
+
+  const src = fs.readFileSync(
+    pathMod.join(__dirname, '..', 'services', 'whatsapp', 'outboundMessage.js'), 'utf8',
+  );
+
+  // Sliced by index, not by regex: this function's destructured parameter
+  // list ends with "\n})", so a non-greedy match for a closing brace captures
+  // the ARGUMENTS and stops. That version of this test passed nothing useful
+  // and failed for the wrong reason.
+  const start = src.indexOf('async function sendAndRecordOutbound');
+  assert.ok(start > -1, 'sendAndRecordOutbound must still be the one send path');
+  const next = src.indexOf('\nasync function ', start + 10);
+  const body = src.slice(start, next === -1 ? src.length : next);
+
+  // It must read the channel from the conversation — not from anything the
+  // caller passed, because a caller that is wrong about which thread it is in
+  // is the failure this defends against.
+  assert.ok(
+    /select channel from conversations/.test(body),
+    'the send path must read the channel from the conversation itself',
+  );
+  assert.ok(
+    /INTERNAL_THREAD/.test(body),
+    'the send path must refuse an internal thread with a named error',
+  );
+
+  // ORDER IS THE GUARANTEE. The refusal has to come before the transport; a
+  // check after sendText() is a check that runs once the message has already
+  // arrived on somebody's phone.
+  const guard = body.indexOf('INTERNAL_THREAD');
+  const transport = body.indexOf('sessionManager.sendText');
+  assert.ok(transport > -1, 'the transport call must still be here to be ordered against');
+  assert.ok(
+    guard < transport,
+    'the internal-thread guard must run BEFORE sessionManager.sendText — a refusal '
+    + 'after the send is a refusal of a message the patient has already received',
+  );
+
+  // And before the consent check too, so a thread that may not be sent at all
+  // is never even evaluated for whether the patient consented to it.
+  const consent = body.indexOf('canSendMessage');
+  assert.ok(consent > -1, 'the consent check must still be here');
+  assert.ok(guard < consent, 'the channel guard must run before the consent decision');
+});
+
+test('GOLDEN-007b: an unknown conversation fails CLOSED, like the test-database guard', () => {
+  const fs = require('node:fs');
+  const pathMod = require('node:path');
+
+  const src = fs.readFileSync(
+    pathMod.join(__dirname, '..', 'services', 'whatsapp', 'outboundMessage.js'), 'utf8',
+  );
+  const start = src.indexOf('async function sendAndRecordOutbound');
+  const next = src.indexOf('\nasync function ', start + 10);
+  const body = src.slice(start, next === -1 ? src.length : next);
+
+  // GOLDEN-002c's lesson, applied here: a guard that answers confidently about
+  // something it could not find is not a guard. `postgres://` parsed to a
+  // confident identity naming no database; a conversation id naming no row
+  // must not parse to "not internal, therefore fine".
+  const refusal = /if \(!thread \|\| thread\.channel !== 'whatsapp'\)/.test(body);
+  assert.ok(
+    refusal,
+    'the guard must refuse when the conversation is MISSING as well as when it is '
+    + 'internal — "we could not find it" is not "it is safe to send"',
+  );
+});
+
+test('GOLDEN-007c: the database has nowhere to record an internal note as sent', () => {
+  const fs = require('node:fs');
+  const pathMod = require('node:path');
+
+  // The schema half. Even if every line of JavaScript above were deleted, an
+  // internal message carrying provider evidence would violate a CHECK — so the
+  // failure is a constraint violation in a transaction rather than a message
+  // on a patient's phone.
+  const sqlText = fs.readFileSync(
+    pathMod.join(__dirname, '..', '..', 'db', 'migrations', '0066_internal_threads.sql'), 'utf8',
+  );
+
+  assert.ok(
+    /messages_internal_was_never_sent/.test(sqlText),
+    '0066 must constrain internal messages to carry no evidence of having been sent',
+  );
+  for (const column of ['provider_message_id', 'delivery_status', 'category']) {
+    assert.ok(
+      new RegExp(`${column} is null`).test(sqlText),
+      `the internal-message CHECK must forbid ${column} — it is evidence of a send`,
+    );
+  }
+
+  assert.ok(
+    /conversations_internal_has_no_provider/.test(sqlText),
+    '0066 must constrain internal conversations to hold no provider reply window',
+  );
+
+  // The one-open invariant must still be there and must still be UNIQUE. 0066
+  // narrows WHERE it applies; a version that dropped it, or made it
+  // non-unique, would re-open the incident that dropped 16 live messages.
+  const index = /create unique index idx_conversations_one_open[\s\S]*?;/.exec(sqlText);
+  assert.ok(index, '0066 must re-create idx_conversations_one_open as UNIQUE');
+  assert.ok(
+    /where status = 'open' and channel = 'whatsapp'/.test(index[0]),
+    'the one-open rule must still apply to every open WhatsApp thread',
+  );
+});
+
+test('GOLDEN-007d: every send that NAMES a conversation goes through the one path', () => {
+  const fs = require('node:fs');
+  const pathMod = require('node:path');
+
+  // The guard above is worth exactly as much as the claim about what can reach
+  // the transport. Four modules call sendText directly, and this test pins that
+  // list closed — because each one is legitimate for a specific reason, and a
+  // FIFTH would be a send that never passes the channel check:
+  //
+  //   worker.js, orders.js   the `else` of `if (target.conversation_id)`. They
+  //                          send only where there is NO conversation to attach
+  //                          to, so they cannot be carrying an internal thread.
+  //   whatsapp.js            a self-test to the pharmacy's OWN connected
+  //                          number (account.display_phone_number).
+  //   staffAlert.js          the pharmacy's own configured notify number, never
+  //                          a patient, and no conversation.
+  //
+  // That is the invariant: an internal thread is a CONVERSATION, and every
+  // send that names one goes through sendAndRecordOutbound, which refuses it.
+  const root = pathMod.join(__dirname, '..');
+  const offenders = [];
+
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = pathMod.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name === 'tests') continue;
+        walk(full);
+        continue;
+      }
+      if (!entry.name.endsWith('.js')) continue;
+      const rel = pathMod.relative(root, full).replace(/\\/g, '/');
+      // The session manager IS the transport, and outboundMessage is the one
+      // path allowed through it.
+      if (rel === 'services/whatsapp/sessionManager.js') continue;
+      if (rel === 'services/whatsapp/outboundMessage.js') continue;
+      const text = fs.readFileSync(full, 'utf8');
+      if (/sessionManager\.sendText\s*\(/.test(text)) offenders.push(rel);
+    }
+  };
+  walk(root);
+
+  assert.deepEqual(
+    offenders.sort(),
+    [
+      'routes/orders.js',
+      'routes/whatsapp.js',
+      'services/orders/staffAlert.js',
+      'services/worker.js',
+    ],
+    'a NEW module calls the transport directly. Each existing one is allowed '
+    + 'because it has no conversation to attach to (see above), so it cannot '
+    + 'carry an internal thread. A new one has to prove the same thing before '
+    + 'it is added here — otherwise it is a send that skips the channel guard.',
+  );
+
+  // And the two that could have a conversation must still choose the guarded
+  // path when they do. A refactor that inverted either branch would send a
+  // patient's own thread around the guard.
+  for (const rel of ['services/worker.js', 'routes/orders.js']) {
+    const text = fs.readFileSync(pathMod.join(root, rel), 'utf8');
+    assert.ok(
+      /if \(target\.conversation_id\) \{[\s\S]*?sendAndRecordOutbound/.test(text),
+      rel + ' must still route a send WITH a conversation through sendAndRecordOutbound',
+    );
+  }
+});

@@ -193,7 +193,14 @@ app.get('/api/summary', require('./middleware/auth').requireAuth, async (req, re
         (select count(*)::int from orders
            where pharmacy_id = ${req.pharmacyId} and status = 'pending') as pending_orders,
         (select count(*)::int from product_requests
-           where pharmacy_id = ${req.pharmacyId} and status = 'open') as open_requests
+           where pharmacy_id = ${req.pharmacyId} and status = 'open') as open_requests,
+        -- The Marketing card's live line on the home launcher. Inside the
+        -- same single query rather than a request of its own: this endpoint
+        -- exists to be the one cheap poll (see App.jsx), and the partial index
+        -- on conversations (pharmacy_id, …) where status = 'open' (0023)
+        -- makes the count an index scan.
+        (select count(*)::int from conversations
+           where pharmacy_id = ${req.pharmacyId} and status = 'open') as open_conversations
     `;
     res.json(row);
   } catch (err) {
@@ -215,6 +222,16 @@ app.use('/api/sync', require('./routes/sync'));              // catalogue sync a
 app.use('/api/email', require('./routes/emailInbound'));
 app.use('/api/conversations', require('./routes/conversations')); // Phase 4 — staff inbox
 app.use('/api/requests', require('./routes/requests'));      // pharmacist alternatives
+// BEFORE the customers router: its GET /:id would otherwise take "search"
+// as a patient id.
+app.use('/api/customers', require('./routes/patientSearch')); // patient search + care details (0053)
+app.use('/api/customers', require('./routes/medications')); // the medication record (0055)
+app.use('/api/customers', require('./routes/allergies'));   // the allergy record (0058)
+app.use('/api/customers', require('./routes/problems'));    // conditions — the problem list (0059)
+app.use('/api/customers', require('./routes/tests'));       // diagnostic tests and results (0060)
+app.use('/api/customers', require('./routes/carePrograms')); // care programmes (0061)
+app.use('/api/customers', require('./routes/followups'));   // follow-ups — the patient's next actions (0062)
+app.use('/api/customers', require('./routes/patientMessages')); // the patient's communication history (0063)
 app.use('/api/customers', require('./routes/customers'));    // patient identity list
 // Mounted on the SAME prefix as customers, deliberately: a purchase-based
 // condition profile is a fact about a customer, and giving it a second noun in

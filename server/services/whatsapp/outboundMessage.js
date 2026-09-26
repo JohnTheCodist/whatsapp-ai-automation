@@ -121,6 +121,38 @@ async function sendAndRecordOutbound(sql, {
   pharmacyId, customerId, conversationId, accountId, to, body, author = 'system', delay,
   category, footer = null,
 }) {
+  // ---- an internal thread can never be sent (0066) -----------------------
+  //
+  // FIRST, before consent and long before the transport. §14 of the Messages
+  // brief: "Internal messages must never become visible to the patient." This
+  // is the line that makes that true rather than intended.
+  //
+  // It is here, in the ONE function that owns the send, for exactly the reason
+  // the consent check below is here: a caller that forgets produces a message
+  // that should never have been sent, and nothing downstream can tell. A new
+  // outbound site is covered by construction.
+  //
+  // It reads the channel from the CONVERSATION rather than trusting anything
+  // the caller passed, because a caller that can be wrong about which thread
+  // it is in is precisely the failure this defends against. GOLDEN-007 asserts
+  // this guard exists and runs before the transport.
+  if (conversationId) {
+    const [thread] = await sql`
+      select channel from conversations
+      where id = ${conversationId} and pharmacy_id = ${pharmacyId}
+    `;
+    // Unknown is refused too. A send naming a conversation this pharmacy does
+    // not have is not a send we can reason about, and failing closed costs a
+    // message that can be resent — the other way costs one that cannot be
+    // unsent.
+    if (!thread || thread.channel !== 'whatsapp') {
+      const err = new Error('An internal thread cannot be sent to a patient.');
+      err.code = 'INTERNAL_THREAD';
+      err.blocked = true;
+      throw err;
+    }
+  }
+
   // ---- consent, before the transport ------------------------------------
   //
   // The check is HERE rather than at each caller because a caller that

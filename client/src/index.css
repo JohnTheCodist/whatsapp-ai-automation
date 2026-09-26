@@ -112,6 +112,29 @@
   --ui-bar-track:  oklch(96.4% 0 0);
   --ui-radius-bar: 2px;
 
+/* ── status tones ───────────────────────────────────────────────────────
+     The three steps of "queued work", and one for "nothing pressing".
+
+     Lifted out of Tailwind's amber utilities on 2026-09-21. They were the one
+     place in the patients table where a colour was written as a utility class
+     rather than a named token, which meant the locked system could not see
+     them: a change to the app's amber had to be made in two files, and the
+     chips on one screen could drift from the chips on another.
+
+     AMBER THROUGHOUT, DEEPENING WITH URGENCY — never red. design.md reserves
+     red for "a person is waiting on a human" (Consultations). A lapsed refill
+     is a phone call to make, however long it has been, and colouring it the
+     same as somebody waiting in a chat is how both stop meaning anything.
+     `refillFormat.test.js` holds this rule against these very values. */
+  --ui-tone-quiet-bg: oklch(96.4% 0 0);
+  --ui-tone-quiet-fg: oklch(50.0% 0 0);
+  --ui-tone-1-bg:     oklch(98.0% 0.030 95);
+  --ui-tone-1-fg:     oklch(52.0% 0.130 66);
+  --ui-tone-2-bg:     oklch(95.5% 0.065 95);
+  --ui-tone-2-fg:     oklch(46.0% 0.115 61);
+  --ui-tone-3-bg:     oklch(91.5% 0.115 95);
+  --ui-tone-3-fg:     oklch(40.0% 0.097 56);
+
   /* Status pills, matching the desk's soft-tint indicators ("Not Saved",
      "Draft", "Submitted"). Semantic, not decorative — same meanings as the
      rest of this system. */
@@ -568,21 +591,2038 @@ nav[aria-label="Sections"] {
   transform: translateY(-1px) scale(0.97);
   transition-duration: 90ms;
 }
-.ui-app-soon {
-  padding: 1px 7px;
+/* "Needs you" — a dot riding the icon's top-right corner, ringed in the page
+   colour so it reads as a separate mark rather than a blemish on the tile.
+   Colour comes from the markup (red = someone waiting, amber = queued). */
+.ui-app-icon-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 12px;
+  height: 12px;
   border-radius: 999px;
-  background: var(--ui-sunk);
-  color: var(--ui-ink-soft);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 16px;
+  box-shadow: 0 0 0 2.5px var(--ui-paper);
+}
+
+/* ── the launcher's hover card ──
+   What a module is for, and how it stands, without putting a sentence on
+   the page: a white card opens beneath the icon on hover or keyboard focus.
+
+   Motion: after a 180ms hover-intent pause (a cursor crossing the row to
+   reach another tile must not flash every card on the way), it fades in and
+   rises the last 6px into place, growing from 98% — 200ms on --ui-ease-out,
+   anchored on its pointer so it seems to come out of the icon. It leaves
+   immediately and quickly: a card that lingers after the pointer has gone
+   covers the next tile. Opacity and transform only.
+
+   It is a sibling of the tile's button (see Launcher.jsx), so it is the
+   button's description and never part of its name. */
+.ui-module {
+  position: relative;
+}
+.ui-module:hover,
+.ui-module:has(:focus-visible) {
+  z-index: 5;                   /* above the next row's tiles */
+}
+.ui-module .ui-app-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+}
+.ui-module-pop {
+  --pop-x: -50%;
+  position: absolute;
+  top: calc(100% - 2px);
+  left: 50%;
+  width: 248px;
+  padding: 12px 14px;
+  border: 1px solid var(--ui-line);
+  border-radius: 12px;
+  background: var(--ui-surface);
+  box-shadow:
+    0 2px 6px oklch(20.5% 0 0 / 0.06),
+    0 16px 36px -14px oklch(20.5% 0 0 / 0.24);
+  text-align: left;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(var(--pop-x), 6px) scale(0.98);
+  transform-origin: 50% 0;
+  transition:
+    opacity 120ms var(--ui-ease-in-out),
+    transform 140ms var(--ui-ease-in-out);
+}
+/* The pointer: a rotated square sharing the card's border, aimed at the
+   icon's centre whichever way the card is aligned. */
+.ui-module-pop::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: var(--pop-caret, 50%);
+  width: 11px;
+  height: 11px;
+  margin-left: -5.5px;
+  background: var(--ui-surface);
+  border-top: 1px solid var(--ui-line);
+  border-left: 1px solid var(--ui-line);
+  border-top-left-radius: 3px;
+  transform: rotate(45deg);
+}
+/* The ends of the row open inward, so the card never runs off the screen.
+   The pointer still lands on the icon: the tile is centred in its column,
+   so the icon's centre is 50% of the column from its own edge. */
+.ui-module-pop[data-align="start"] {
+  --pop-x: 0%;
+  --pop-caret: 44px;
+  left: calc(50% - 44px);
+  transform-origin: 44px 0;
+}
+.ui-module-pop[data-align="end"] {
+  --pop-x: 0%;
+  --pop-caret: calc(100% - 44px);
+  left: auto;
+  right: calc(50% - 44px);
+  transform-origin: calc(100% - 44px) 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ui-module:hover .ui-module-pop {
+    opacity: 1;
+    transform: translate(var(--pop-x), 0) scale(1);
+    transition:
+      opacity 200ms var(--ui-ease-out) 180ms,
+      transform 240ms var(--ui-ease-out) 180ms;
+  }
+}
+/* Keyboard: no intent pause — focus is deliberate. */
+.ui-module:has(:focus-visible) .ui-module-pop {
+  opacity: 1;
+  transform: translate(var(--pop-x), 0) scale(1);
+  transition:
+    opacity 160ms var(--ui-ease-out),
+    transform 200ms var(--ui-ease-out);
+}
+
+/* The greeting settles in just before the tiles start to rise. */
+.ui-launcher-greeting {
+  animation: ui-tile-in 480ms var(--ui-ease-out) backwards;
 }
 @media (prefers-reduced-motion: reduce) {
-  .ui-app-tile { animation: none; }
+  .ui-app-tile,
+  .ui-launcher-greeting { animation: none; }
+  /* The card still appears — it carries the description — but by a short
+     cross-fade only, with no rise and no growth. */
+  .ui-module-pop,
+  .ui-module:hover .ui-module-pop,
+  .ui-module:has(:focus-visible) .ui-module-pop {
+    transform: translate(var(--pop-x), 0);
+    transition: opacity 120ms linear;
+  }
   .ui-app-icon,
   .ui-app-icon::after { transition: none; }
   .ui-app-tile:hover .ui-app-icon,
   .ui-app-tile:active .ui-app-icon { transform: none; }
+}
+
+/* ── the patient summary ────────────────────────────────────────────────
+   The identity card: the figure on the left, who they are on the right. */
+.ui-idcard {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 18px 20px;
+  border: 1px solid var(--ui-line);
+  border-radius: 14px;
+  background: var(--ui-surface);
+}
+/* The figure sits in a shallow well, so the drawing reads as an object on
+   the card rather than an illustration floating on white. */
+.ui-idcard-figure {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background:
+    radial-gradient(120% 90% at 50% 0%, oklch(97.5% 0.008 250), oklch(95.5% 0.006 250));
+  box-shadow: inset 0 0 0 1px var(--ui-line);
+}
+
+.ui-avatar { display: flex; flex-direction: column; align-items: center; }
+.ui-avatar-body path { stroke: none; }
+/* The contour lines that make a flat drawing read as a body. Decorative and
+   nothing else — they carry no data, and they never move. */
+.ui-avatar-contours path {
+  fill: none;
+  stroke: oklch(52% 0.04 55 / 0.30);
+  stroke-width: 0.8;
+}
+
+/* A region is a target, invisible until pointed at. The whole outline
+   lights, not a dot: half of what this figure is for is saying WHERE. */
+.ui-avatar-region { cursor: pointer; outline: none; }
+.ui-avatar-hit {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 1.5;
+  transition: fill 160ms ease, stroke 160ms ease;
+}
+.ui-avatar-region.is-on .ui-avatar-hit {
+  fill: var(--ui-accent);
+  fill-opacity: 0.22;
+  stroke: var(--ui-focus);
+}
+.ui-avatar-region:focus-visible .ui-avatar-hit {
+  stroke: var(--ui-focus);
+  stroke-width: 2;
+  stroke-dasharray: 3 2;
+}
+/* A marker means the pharmacy has something recorded against this region —
+   never a finding of its own. Amber: work to look at, the app's meaning for
+   it everywhere else, and never the red kept for a person waiting. */
+.ui-avatar-dot {
+  fill: oklch(72% 0.16 62);
+  stroke: oklch(100% 0 0);
+  stroke-width: 1.5;
+}
+.ui-avatar-region.has-mark .ui-avatar-dot {
+  animation: ui-avatar-pulse 2.6s var(--ui-ease-in-out) infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+@keyframes ui-avatar-pulse {
+  0%, 70%, 100% { transform: scale(1); }
+  82% { transform: scale(1.22); }
+}
+
+.ui-avatar-caption {
+  max-width: 240px;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+  color: var(--ui-ink-soft);
+}
+
+/* One section of the record, summarised. Flat, like every other card in the
+   app — the identity card above it is the only thing on this screen with
+   any depth, and that depth is the figure's well, not a lifted panel. */
+.ui-sumcard {
+  padding: 14px;
+  border: 1px solid var(--ui-line);
+  border-radius: 12px;
+  background: var(--ui-surface);
+  transition: border-color 140ms ease;
+}
+.ui-sumcard:hover { border-color: var(--ui-line-strong); }
+/* Something here needs looking at: a refill due, an open conversation, a
+   danger sign. Amber for queued work — never red. */
+.ui-sumcard-attention {
+  border-color: oklch(88% 0.075 75);
+  background: oklch(99% 0.012 85);
+}
+/* Nothing recorded. Quieter, so a screen of "Not recorded" does not shout
+   as loudly as the sections that hold something. */
+.ui-sumcard-quiet { background: var(--ui-sidebar); }
+
+.ui-sumcard-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 2px 6px;
+  margin: -2px -6px 0 0;
+  border-radius: 6px;
+  color: var(--ui-ink-faint);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.ui-sumcard-link:hover { background: var(--ui-sunk); color: var(--ui-ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-avatar-hit,
+  .ui-sumcard,
+  .ui-sumcard-link { transition: none; }
+  .ui-avatar-region.has-mark .ui-avatar-dot { animation: none; }
+}
+
+/* ── the patient summary: the patient on the left, their body on the right ── */
+/* THE BODY STANDS BESIDE THE INFORMATION, NOT UNDER IT.
+   The first version only went two-column at 1024px, so on the screen it was
+   actually being used on, the figure sat below eight collapsed sections —
+   a body nobody scrolled to is a body that is not there. It now splits at
+   720px, which every laptop and most tablets clear, and the information
+   takes the fluid column while the figure keeps a fixed one: a human figure
+   has a fixed aspect, and a column that grows only makes empty room beside
+   it.
+
+   Under 720px they stack, figure FIRST — on a phone the body is the thing
+   worth seeing before a list of section headings. */
+.ui-summary {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+}
+.ui-summary > .ui-summary-body { order: -1; }
+@media (min-width: 720px) {
+  .ui-summary {
+    grid-template-columns: minmax(0, 1fr) clamp(260px, 32vw, 400px);
+    gap: 18px;
+  }
+  /* Back in source order: information on the left, body on the right. */
+  .ui-summary > .ui-summary-body { order: 0; }
+}
+
+/* The patient, as ONE vertical list rather than a grid of cards. A record is
+   read top to bottom about one person; eight bordered boxes make eight equal
+   things out of it. Hairlines separate, nothing frames. */
+.ui-pprofile {
+  border: 1px solid var(--ui-line);
+  border-radius: 14px;
+  background: var(--ui-surface);
+  overflow: hidden;
+}
+.ui-pprofile-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--ui-line);
+}
+.ui-pavatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--ui-accent-wash);
+  color: var(--ui-accent-ink);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.ui-pfacts {
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid var(--ui-line);
+}
+.ui-pfact {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 5px 0;
+}
+.ui-pfact-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  flex: none;
+  margin-top: 1px;
+  color: var(--ui-ink-faint);
+}
+
+/* One section of the record. No border of its own — the hairline between
+   siblings is the whole separation. */
+.ui-psection + .ui-psection { border-top: 1px solid var(--ui-line); }
+.ui-psection-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 16px;
+  color: var(--ui-ink);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background-color 140ms ease;
+}
+.ui-psection-head:hover { background: var(--ui-sidebar); }
+.ui-psection-chevron {
+  flex: none;
+  color: var(--ui-ink-faint);
+  transform: rotate(-90deg);
+  transition: transform 200ms var(--ui-ease-out);
+}
+.ui-psection-chevron.is-open { transform: rotate(0deg); }
+.ui-psection-body { padding: 0 16px 12px 38px; }
+
+/* Something in this section needs looking at. Amber, the app's queued-work
+   colour; the red is kept for a person waiting. */
+.ui-pdot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 999px;
+  background: oklch(72% 0.16 62);
+}
+
+/* How many things are in this section. The count IS the summary — a section
+   that lists two medicines does not also need a sentence counting them. */
+.ui-pcount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--ui-sunk);
+  color: var(--ui-ink-soft);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The one thing in this section a pharmacist has to act on, in as few words
+   as it can be said: "1 refill due", "Danger sign", "2 open". Amber, the
+   app's queued-work colour; the red stays for a person waiting. */
+.ui-pflag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: oklch(96% 0.035 85);
+  color: oklch(52% 0.105 65);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* A fact about an item — "From purchases", "30 days supply". A pill, because
+   in a list of medicine names the source of each needs to be separable from
+   the name at a glance. */
+.ui-ppill {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--ui-sunk);
+  color: var(--ui-ink-soft);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.ui-psection-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  color: var(--ui-accent-ink);
+  font-size: 12px;
+  font-weight: 500;
+}
+.ui-psection-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* ── the body ───────────────────────────────────────────────────────────
+   A lit stage, so a pale body reads against it without the panel becoming
+   a picture frame. */
+/* The stage. It STAYS PUT while the sections scroll past it: the figure is
+   the one thing on this screen that is about the whole patient rather than
+   one section of them, so it should not leave when you read Meds.
+
+   Darker than the rest of the app on purpose, and the only place in the
+   product that is. A pale body needs something to be pale against, and an
+   illustration plate is lit against a ground, not against paper. */
+.ui-summary-body {
+  position: sticky;
+  top: 84px;
+  border: 1px solid var(--ui-line);
+  border-radius: 16px;
+  background:
+    radial-gradient(90% 60% at 50% 8%, oklch(99% 0.004 250) 0%, oklch(96.5% 0.006 250) 45%, oklch(93.5% 0.008 250) 100%);
+  box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.9);
+  overflow: hidden;
+}
+.ui-body3d { position: relative; display: flex; flex-direction: column; }
+/* Sized by the VIEWPORT, not by a number passed in from React. The panel
+   is sticky, and a sticky panel taller than the window scrolls away before
+   it ever pins — which is the whole reason it is sticky. */
+.ui-body3d-stage {
+  width: 100%;
+  height: clamp(340px, 56vh, 600px);
+  touch-action: none;
+  cursor: grab;
+}
+.ui-body3d-stage:active { cursor: grabbing; }
+
+.ui-body3d-loading,
+.ui-body3d-caption {
+  padding: 0 14px;
+  font-size: 12px;
+  color: var(--ui-ink-soft);
+  text-align: center;
+}
+.ui-body3d-loading { padding: 40px 14px; }
+/* Only on screen while a region is being pointed at, so it floats over the
+   stage rather than reserving a line of the panel forever. */
+.ui-body3d-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: oklch(100% 0 0 / 0.78);
+  box-shadow: inset 0 0 0 1px oklch(100% 0 0 / 0.85), 0 4px 14px -6px oklch(20.5% 0 0 / 0.3);
+  backdrop-filter: blur(10px);
+  color: var(--ui-ink);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ui-body3d-credit {
+  padding-bottom: 12px;
+  font-size: 10.5px;
+  color: var(--ui-ink-faint);
+}
+
+/* The layer switches, on the stage rather than under it: they change what
+   you are looking at, so they belong where you are looking. */
+/* The layer switches float on the stage, in a row across the bottom —
+   where a player's controls go, not stacked in a corner like a legend. They
+   change what you are looking at, so they belong where you are looking. */
+.ui-body3d-layers {
+  position: absolute;
+  left: 50%;
+  bottom: 58px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 999px;
+  background: oklch(100% 0 0 / 0.55);
+  box-shadow: inset 0 0 0 1px oklch(100% 0 0 / 0.8), 0 4px 14px -6px oklch(20.5% 0 0 / 0.28);
+  backdrop-filter: blur(10px) saturate(1.3);
+}
+.ui-body3d-layer {
+  padding: 5px 13px;
+  border-radius: 999px;
+  color: var(--ui-ink-soft);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 160ms var(--ui-ease-out), color 160ms ease;
+}
+.ui-body3d-layer:hover { background: oklch(100% 0 0 / 0.75); color: var(--ui-ink); }
+.ui-body3d-layer.is-on {
+  background: var(--ui-ink);
+  color: oklch(100% 0 0);
+  box-shadow: 0 1px 6px -2px oklch(20.5% 0 0 / 0.5);
+}
+
+.ui-body-fallback { padding: 18px 12px 12px; }
+
+/* ── vitals and biometrics ─────────────────────────────────────────────── */
+.ui-vitals {
+  border: 1px solid var(--ui-line);
+  border-radius: 14px;
+  background: var(--ui-surface);
+  overflow: hidden;
+}
+.ui-vitals-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 16px;
+  /* The one tinted header in the app, and it earns it: this strip carries
+     "when was this patient last measured", which is the question the whole
+     section exists to answer. */
+  background: oklch(98% 0.025 95);
+  border-bottom: 1px solid oklch(92% 0.04 90);
+}
+.ui-vitals-head h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ui-ink);
+}
+.ui-vitals-last {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ui-ink-soft);
+}
+.ui-vitals-record {
+  color: var(--ui-accent-ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+.ui-vitals-record:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* The desk's underline tabs, with the view switch riding the same rule. */
+.ui-vitals-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--ui-line);
+}
+.ui-vitals-tab {
+  position: relative;
+  padding: 10px 10px 9px;
+  color: var(--ui-ink-soft);
+  font-size: 13px;
+  font-weight: 500;
+}
+.ui-vitals-tab:hover { color: var(--ui-ink); }
+.ui-vitals-tab.is-on { color: var(--ui-ink); font-weight: 600; }
+.ui-vitals-tab.is-on::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--ui-ink);
+}
+
+.ui-vitals-views { display: flex; gap: 2px; margin-left: auto; }
+.ui-vitals-view {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  color: var(--ui-ink-faint);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.ui-vitals-view:hover { background: var(--ui-sunk); color: var(--ui-ink); }
+.ui-vitals-view.is-on { background: var(--ui-ink); color: oklch(100% 0 0); }
+
+.ui-vitals-tablewrap { overflow-x: auto; }
+.ui-vitals-table { width: 100%; font-size: 13px; border-collapse: collapse; }
+.ui-vitals-table th {
+  padding: 9px 14px;
+  background: var(--ui-sidebar);
+  color: var(--ui-ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+.ui-vitals-table td {
+  padding: 10px 14px;
+  border-top: 1px solid var(--ui-line);
+  color: var(--ui-ink);
+  font-variant-numeric: tabular-nums;
+}
+.ui-vitals-unit { font-weight: 400; color: var(--ui-ink-faint); }
+.ui-vitals-none { padding: 28px 14px; text-align: center; color: var(--ui-ink-soft); }
+
+/* A reading outside the usual ADULT range. Red here is not "danger" — it is
+   "look at this one", and the cell's tooltip says which way and against what.
+   Nothing is ever marked normal, and the server never flags a child, so a
+   healthy four-year-old's pulse of 120 stays black. */
+.ui-vitals-flag { color: oklch(52% 0.19 27); font-weight: 600; }
+
+.ui-vitals-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--ui-line);
+  color: var(--ui-ink-soft);
+  font-size: 12px;
+}
+.ui-vitals-pager { display: inline-flex; align-items: center; gap: 8px; }
+.ui-vitals-pager button {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--ui-ink-soft);
+}
+.ui-vitals-pager button:hover:not(:disabled) { background: var(--ui-sunk); color: var(--ui-ink); }
+.ui-vitals-pager button:disabled { color: var(--ui-line-strong); cursor: default; }
+
+/* ── the chart ─────────────────────────────────────────────────────────── */
+.ui-vitals-chartwrap { display: flex; flex-wrap: wrap; gap: 16px; padding: 14px; }
+.ui-chart-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: none;
+  width: 150px;
+}
+.ui-chart-picker-title {
+  padding: 0 8px 4px;
+  color: var(--ui-ink-faint);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.ui-chart-pick {
+  padding: 6px 8px;
+  border-radius: 7px;
+  color: var(--ui-ink-soft);
+  font-size: 12.5px;
+  text-align: left;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.ui-chart-pick:hover { background: var(--ui-sunk); color: var(--ui-ink); }
+.ui-chart-pick.is-on {
+  background: var(--ui-sunk);
+  color: var(--ui-ink);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--ui-ink);
+}
+.ui-chart-title { margin-bottom: 4px; font-size: 13px; font-weight: 600; color: var(--ui-ink); }
+
+.ui-chart { position: relative; min-width: 0; }
+.ui-chart-svg { width: 100%; height: auto; touch-action: none; }
+.ui-chart-empty { padding: 40px 14px; text-align: center; font-size: 13px; color: var(--ui-ink-soft); }
+
+/* The ruler, not the reading: hairline grid, no axis frame, small grey type. */
+.ui-chart-grid line { stroke: var(--ui-line); stroke-width: 1; }
+.ui-chart-grid .ui-chart-axis { stroke: var(--ui-line-strong); }
+.ui-chart-tick { fill: var(--ui-ink-faint); font-size: 10px; }
+.ui-chart-label { font-size: 10.5px; font-weight: 600; }
+.ui-chart-crosshair { stroke: var(--ui-line-strong); stroke-width: 1; stroke-dasharray: 3 3; }
+
+.ui-chart-tip {
+  position: absolute;
+  top: 4px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--ui-ink);
+  color: oklch(100% 0 0);
+  font-size: 11.5px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.ui-chart-tip-when { color: oklch(100% 0 0 / 0.65); font-size: 10.5px; }
+.ui-chart-tip-row { display: flex; gap: 10px; justify-content: space-between; }
+
+/* ── the record panel ──────────────────────────────────────────────────── */
+.ui-vital-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+  background: oklch(20.5% 0 0 / 0.28);
+  backdrop-filter: blur(2px);
+}
+.ui-vital-sheet-inner {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  height: 100%;
+  background: var(--ui-surface);
+  box-shadow: -12px 0 40px -16px oklch(20.5% 0 0 / 0.4);
+}
+.ui-vital-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--ui-line);
+}
+.ui-vital-sheet-head h3 { font-size: 14px; font-weight: 600; color: var(--ui-ink); }
+.ui-vital-sheet-body { flex: 1; overflow-y: auto; padding: 16px 18px 24px; }
+.ui-vital-group {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ui-ink-faint);
+}
+.ui-vital-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+}
+.ui-vital-field { display: flex; flex-direction: column; gap: 2px; }
+.ui-vital-label { font-size: 11.5px; color: var(--ui-ink-soft); }
+.ui-vital-input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+/* A number this reading cannot have: the field says so before the save does. */
+.ui-vital-input.is-wrong {
+  box-shadow: inset 0 0 0 1px oklch(52% 0.19 27);
+  color: oklch(52% 0.19 27);
+}
+/* Calculated, not typed — and never stored. */
+.ui-vital-input.is-derived {
+  display: block;
+  min-height: 37px;
+  background: var(--ui-sunk);
+  color: var(--ui-accent-ink);
+  font-weight: 600;
+}
+.ui-vital-unit { font-size: 11px; color: var(--ui-ink-faint); }
+.ui-vital-error {
+  margin-top: 14px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: oklch(96% 0.04 27);
+  color: oklch(45% 0.17 27);
+  font-size: 13px;
+}
+.ui-vital-sheet-foot { display: flex; border-top: 1px solid var(--ui-line); }
+.ui-vital-cancel,
+.ui-vital-save {
+  flex: 1;
+  padding: 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.ui-vital-cancel { background: var(--ui-ink); color: oklch(100% 0 0); }
+.ui-vital-save { background: var(--ui-accent-ink); color: oklch(100% 0 0); }
+.ui-vital-save:disabled { opacity: 0.6; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-vitals-view,
+  .ui-chart-pick { transition: none; }
+}
+
+/* ── vitals: motion ──────────────────────────────────────────────────────
+   Every animation here is doing a job. The rule, from design.md: motion
+   shows WHERE something came from or WHAT changed, and never decorates. If
+   a reader would not miss it, it should not be there.
+
+   All of it stops under prefers-reduced-motion, at the foot of this block. */
+
+/* A page of readings arrives as a page, top to bottom — 24ms apart, so
+   eleven rows take a quarter of a second in total. It is the difference
+   between a table that appeared and a table that was dealt. */
+@keyframes ui-row-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+.ui-vitals-table tbody tr {
+  animation: ui-row-in 260ms var(--ui-ease-out) both;
+  animation-delay: calc(var(--row-i, 0) * 24ms);
+}
+
+/* Switching table ↔ chart, or Vitals ↔ Biometrics, is a change of subject
+   rather than a move: the old view leaves by fading, not by sliding out of a
+   direction it never came from. */
+@keyframes ui-view-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.995); }
+  to   { opacity: 1; transform: none; }
+}
+.ui-vitals-view-in { animation: ui-view-in 220ms var(--ui-ease-out) both; }
+
+/* The record panel comes in from the edge it lives on, with the page
+   darkening behind it. Two curves, one duration: anything else and the
+   backdrop and the panel look like separate events. */
+@keyframes ui-sheet-in { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes ui-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+.ui-vital-sheet { animation: ui-backdrop-in 200ms ease both; }
+.ui-vital-sheet-inner { animation: ui-sheet-in 280ms var(--ui-ease-out) both; }
+
+/* The line draws itself in, once, left to right. `pathLength` normalises
+   every line to 1 regardless of its real length, so a four-point chart and a
+   forty-point chart take the same time — without it, a long line crawls. */
+@keyframes ui-line-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+.ui-chart-line {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: ui-line-draw 700ms var(--ui-ease-out) both;
+}
+@keyframes ui-area-in { from { opacity: 0; } to { opacity: 1; } }
+.ui-chart-area { animation: ui-area-in 700ms ease both; }
+
+/* Each point lands as the line reaches it. */
+@keyframes ui-dot-in { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: none; } }
+.ui-chart-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ui-dot-in 260ms var(--ui-ease-out) both;
+  animation-delay: var(--dot-delay, 0ms);
+  transition: r 120ms var(--ui-ease-out);
+}
+
+/* ── vitals: the things that make it readable ───────────────────────────── */
+
+/* The usual range, shaded behind the line. Grey, deliberately: it marks
+   ORDINARY, and a coloured band would read as the alarming thing on a chart
+   whose whole point is that the line is what matters. */
+.ui-chart-band rect {
+  fill: var(--ui-ink);
+  fill-opacity: 0.045;
+}
+.ui-chart-band-label {
+  fill: var(--ui-ink-faint);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+}
+
+/* The latest value, beside the chart's title: where this patient is now,
+   next to which way they are going. */
+.ui-chart-now {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-left: 10px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--ui-sunk);
+  color: var(--ui-ink);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.ui-chart-now.is-flagged {
+  background: oklch(96% 0.04 27);
+  color: oklch(52% 0.19 27);
+}
+.ui-chart-now-when {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ui-ink-faint);
+}
+.ui-chart-now.is-flagged .ui-chart-now-when { color: oklch(52% 0.19 27 / 0.75); }
+
+/* The newest reading, marked in the table. A pharmacist reading down a page
+   of dates is looking for "the last one" first, and finding it should not be
+   a date comparison done in the head. */
+.ui-vitals-table tbody tr:first-child td { background: oklch(99.2% 0.004 250); }
+.ui-vitals-table tbody tr:first-child td:first-child { box-shadow: inset 2px 0 0 var(--ui-accent); }
+.ui-vitals-table tbody tr:hover td { background: var(--ui-sidebar); }
+.ui-vitals-table tbody tr td { transition: background-color 120ms ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-vitals-table tbody tr,
+  .ui-vitals-view-in,
+  .ui-vital-sheet,
+  .ui-vital-sheet-inner,
+  .ui-chart-line,
+  .ui-chart-area,
+  .ui-chart-dot {
+    animation: none;
+  }
+  .ui-chart-dot,
+  .ui-vitals-table tbody tr td { transition: none; }
+}
+
+/* ── the patient record's navigation ────────────────────────────────────
+   The twelve sections of one patient's file, in a column beside them.
+
+   MANUAL, NEVER HOVER. The app's main rail opens when pointed at
+   (`.ui-rail`); this one opens only when its button is pressed. A record is
+   worked inside for minutes at a time with the cursor crossing this column
+   on the way to everything else, and a panel that opened each time would be
+   movement nobody asked for. There is deliberately NO :hover rule here that
+   changes the width.
+
+   WIDTH IS THE ANIMATED PROPERTY, on purpose. The main rail animates a
+   clip-path precisely so the page never re-lays-out; here the re-layout is
+   the point — collapsing is how the table beside it gets the room. One
+   transition on one flex item. */
+.ui-precord {
+  --precord-w: 240px;
+  --precord-label: 1;
+  --precord-label-x: 0px;
+
+  position: sticky;
+  top: 84px;                    /* clears the sticky header */
+  width: var(--precord-w);
+  flex: none;
+  align-self: flex-start;
+  max-height: calc(100vh - 104px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--ui-line);
+  border-radius: 12px;
+  background: var(--ui-sidebar);
+  transition: width 220ms var(--ui-ease-out);
+}
+.ui-precord[data-collapsed="true"] {
+  --precord-w: 56px;
+  --precord-label: 0;
+  --precord-label-x: -6px;
+}
+
+.ui-precord-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  height: 32px;
+  padding: 0 2px 0 8px;
+  margin-bottom: 6px;
+}
+.ui-precord-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--ui-ink-faint);
+  opacity: var(--precord-label);
+  transition: opacity 140ms ease;
+}
+/* The toggle. It stays put as the column narrows — the one control that is
+   in the same place in both states, so the way back out is never hunted
+   for. The arrow points the way the panel will move. */
+.ui-precord-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 8px;
+  color: var(--ui-ink-faint);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.ui-precord-toggle:hover { background: var(--ui-sunk-hover); color: var(--ui-ink); }
+.ui-precord-toggle svg {
+  transform: rotate(90deg);
+  transition: transform 220ms var(--ui-ease-out);
+}
+.ui-precord[data-collapsed="true"] .ui-precord-toggle svg { transform: rotate(-90deg); }
+/* Narrow, the heading gives up its WIDTH as well as its ink. Kept at
+   opacity alone it still occupied 50px of a 56px column and pushed the
+   toggle out of sight — and the toggle is the only way back out. It is a
+   decorative heading, not a control, so nothing is lost by collapsing it. */
+.ui-precord[data-collapsed="true"] .ui-precord-head {
+  justify-content: center;
+  padding: 0;
+}
+.ui-precord[data-collapsed="true"] .ui-precord-title {
+  width: 0;
+  overflow: hidden;
+}
+
+.ui-precord-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* A row is laid out ONCE, at full width, and the column's width crops it.
+   Nothing inside re-flows as it opens, so the icon does not move by a pixel:
+   8px of column padding + 9px of row padding + an 18px icon puts every icon
+   on x = 28px, the centre line of the 56px collapsed column — the same
+   geometry as the main rail. */
+.ui-precord-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 224px;
+  height: 36px;
+  padding: 0 9px;
+  border-radius: 8px;
+  color: var(--ui-ink-soft);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+.ui-precord-item:hover { color: var(--ui-ink); }
+
+/* The one highlight, shared by hover and "you are here": a tile behind the
+   icon while the column is closed, a full-width pill once it is open — the
+   same shape language as the main rail's `.ui-rail-pill`. */
+.ui-precord-pill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  border-radius: 8px;
+  opacity: 0;
+  transition: opacity 140ms ease, width 220ms var(--ui-ease-out);
+}
+.ui-precord-item:hover .ui-precord-pill {
+  background: var(--ui-sidebar-hover);
+  opacity: 1;
+}
+.ui-precord-item.is-on {
+  color: var(--ui-ink);
+  font-weight: 600;
+}
+.ui-precord-item.is-on .ui-precord-pill {
+  background: var(--ui-sidebar-active);
+  box-shadow: inset 0 0 0 1px var(--ui-line), 0 1px 2px oklch(20.5% 0 0 / 0.06);
+  opacity: 1;
+}
+.ui-precord[data-collapsed="true"] .ui-precord-pill { width: 38px; }
+
+.ui-precord-icon {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+}
+
+/* Labels leave and arrive by opacity and a 6px slide — never `display` or
+   `visibility`, so the accessibility tree is identical in both states and a
+   screen reader reads all twelve sections however the column is set.
+   Opening, they cascade 14ms apart from the top, so the panel reads as one
+   movement rather than twelve. */
+.ui-precord-label {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: var(--precord-label);
+  transform: translateX(var(--precord-label-x));
+  transition:
+    opacity 200ms ease calc(var(--precord-i) * 14ms),
+    transform 220ms var(--ui-ease-out) calc(var(--precord-i) * 14ms);
+}
+/* Closing, they all go together: a cascade on the way out is a panel that
+   takes longer to get out of the way than it did to arrive. */
+.ui-precord[data-collapsed="true"] .ui-precord-label {
+  transition: opacity 110ms ease, transform 110ms ease;
+}
+
+/* "Soon" — this section is in the record but has no screen yet. Amber, the
+   app's colour for queued work, never red. */
+.ui-precord-soon {
+  position: relative;
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: oklch(96% 0.035 85);
+  color: oklch(52% 0.105 65);
+  font-size: 10px;
+  font-weight: 600;
+  opacity: var(--precord-label);
+  transition: opacity 140ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-precord,
+  .ui-precord-pill,
+  .ui-precord-label,
+  .ui-precord-toggle svg,
+  .ui-precord[data-collapsed="true"] .ui-precord-label {
+    transition: none;
+  }
+}
+
+/* ── medications ─────────────────────────────────────────────────────────
+   A pharmacist's medication record. Deliberately NOT a product list: no
+   price, no pack, no cart, no "buy". The data-table idiom from design.md,
+   with one addition — a row opens in place, because comparing two medicines
+   must not cost the screen you were on. */
+.ui-meds {
+  border: 1px solid var(--ui-line);
+  border-radius: 14px;
+  background: var(--ui-surface);
+  overflow: hidden;
+}
+.ui-meds-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--ui-line);
+}
+.ui-meds-head h2 { font-size: 14px; font-weight: 600; color: var(--ui-ink); }
+/* The one primary action on the screen, in the desk's near-black. */
+.ui-meds-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: var(--ui-ink);
+  color: oklch(100% 0 0);
+  font-size: 13px;
+  font-weight: 500;
+  transition: opacity 140ms ease;
+}
+.ui-meds-add:hover { opacity: 0.88; }
+
+.ui-meds-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; padding: 14px 16px 16px; }
+.ui-meds-count { margin-bottom: 8px; font-size: 12px; color: var(--ui-ink-soft); }
+
+.ui-meds-filters { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
+.ui-quick-filter {
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: var(--ui-sunk);
+  color: var(--ui-ink-soft);
+  font-size: 12.5px;
+  font-weight: 500;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.ui-quick-filter:hover { background: var(--ui-sunk-hover); color: var(--ui-ink); }
+.ui-quick-filter.is-on { background: var(--ui-ink); color: oklch(100% 0 0); }
+
+/* ---- the table ---- */
+.ui-med-tablewrap {
+  overflow-x: auto;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+}
+.ui-med-table { width: 100%; min-width: 1060px; table-layout: fixed; border-collapse: collapse; font-size: 13px; }
+.ui-med-table thead th {
+  padding: 8px 12px;
+  background: var(--ui-sidebar);
+  border-bottom: 1px solid var(--ui-line-strong);
+  color: var(--ui-ink-soft);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+.ui-med-table tbody td {
+  padding: 9px 12px;
+  border-top: 1px solid var(--ui-line);
+  color: var(--ui-ink-soft);
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-med-table tbody tr:first-child td { border-top: 0; }
+.ui-med-row:hover td { background: var(--ui-sidebar); }
+
+@keyframes ui-med-row-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.ui-med-row { animation: ui-med-row-in 240ms var(--ui-ease-out) both; animation-delay: calc(var(--row-i, 0) * 18ms); }
+
+/* The medicine is the one thing at ink weight: it is what the eye looks for,
+   and everything else on the row describes it. */
+.ui-med-name { display: flex; align-items: flex-start; gap: 7px; width: 100%; text-align: left; }
+.ui-med-caret { flex: none; margin-top: 3px; color: var(--ui-ink-faint); transform: rotate(-90deg); transition: transform 180ms var(--ui-ease-out); }
+.ui-med-caret.is-open { transform: none; }
+.ui-med-title { display: block; color: var(--ui-ink); font-weight: 600; }
+/* "10 mg tablet" — what it IS, under what it is called. */
+.ui-med-sub { display: block; color: var(--ui-ink-faint); font-size: 11px; }
+.ui-med-dosing { color: var(--ui-ink); }
+.ui-med-quiet { color: var(--ui-ink-soft); }
+
+.ui-med-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+}
+/* ACTIVE IS THE ONLY GREEN ON THIS SCREEN. It is the answer to "what is this
+   patient taking"; everything else is history, and history is grey. */
+.ui-med-active { background: var(--ui-accent-wash); color: var(--ui-accent-ink); }
+/* A draft is not something the patient is taking — outlined, not filled, so
+   it reads as unfinished rather than as another state of the same thing. */
+.ui-med-draft {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ui-line-strong);
+  color: var(--ui-ink-soft);
+}
+/* Where a record came from, when it is not a prescription. */
+.ui-med-source { margin-left: 6px; color: var(--ui-ink-faint); font-size: 10.5px; }
+
+.ui-med-edit {
+  padding: 3px 9px;
+  border-radius: 6px;
+  color: var(--ui-ink-soft);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.ui-med-edit:hover { background: var(--ui-sunk); color: var(--ui-ink); }
+
+/* ---- the detail, opened in place ---- */
+@keyframes ui-med-detail-in { from { opacity: 0; } to { opacity: 1; } }
+.ui-med-detail-row td {
+  padding: 0 12px 12px 32px;
+  background: var(--ui-sidebar);
+  white-space: normal;
+  animation: ui-med-detail-in 200ms ease both;
+}
+.ui-med-detail {
+  display: grid;
+  gap: 8px 20px;
+  padding-top: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+.ui-med-detail dt { color: var(--ui-ink-faint); font-size: 11px; }
+.ui-med-detail dd { color: var(--ui-ink); font-size: 13px; }
+
+/* ---- history months ---- */
+.ui-med-month + .ui-med-month { margin-top: 16px; }
+.ui-med-month h3 {
+  margin-bottom: 6px;
+  color: var(--ui-ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ---- the context panel ---- */
+.ui-med-context {
+  flex: none;
+  width: 210px;
+  padding: 12px 14px;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-sidebar);
+}
+.ui-med-context > div + div { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ui-line); }
+.ui-med-context h3 {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 3px;
+  color: var(--ui-ink-faint);
+  font-size: 11px;
+  font-weight: 600;
+}
+.ui-med-context p { color: var(--ui-ink); font-size: 12.5px; line-height: 1.4; }
+.ui-med-context-none { color: var(--ui-ink-faint) !important; }
+.ui-med-context-when { display: block; color: var(--ui-ink-faint); font-size: 11px; }
+
+/* Under a wide desktop the context is a strip UNDER the table rather than
+   a column beside it. Kept beside, it takes 210px from a table that already
+   needs 1060, and the medicines — the thing the screen is for — end up read
+   through a scrollbar. */
+@media (max-width: 1240px) {
+  .ui-med-context { order: 2; width: 100%; display: flex; flex-wrap: wrap; gap: 20px; }
+  .ui-med-context > div + div { margin-top: 0; padding-top: 0; border-top: 0; }
+  .ui-med-context > div { min-width: 180px; flex: 1; }
+}
+
+/* ---- empty ---- */
+.ui-meds-empty {
+  padding: 40px 20px;
+  border: 1px dashed var(--ui-line-strong);
+  border-radius: 10px;
+  text-align: center;
+  color: var(--ui-ink-soft);
+  font-size: 13px;
+}
+.ui-meds-empty-title { margin-bottom: 4px; color: var(--ui-ink); font-size: 14px; font-weight: 600; }
+.ui-meds-empty .ui-meds-add { margin-top: 14px; }
+
+/* ---- the form ---- */
+.ui-med-field { display: block; }
+.ui-med-field + .ui-med-field { margin-top: 10px; }
+.ui-med-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  margin-top: 10px;
+}
+.ui-med-grid .ui-med-field + .ui-med-field { margin-top: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-med-row,
+  .ui-med-detail-row td { animation: none; }
+  .ui-med-caret,
+  .ui-med-edit,
+  .ui-meds-add,
+  .ui-quick-filter { transition: none; }
+}
+
+/* ── the medication review ───────────────────────────────────────────────
+   Hallmark · component: long-form record · genre: modern-minimal
+   theme: design.md (locked — ERPNext desk, neutral greys, Inter, emerald)
+   states: default · hover · focus-visible · active · disabled · saving · error · empty
+   pre-emit critique: P5 H5 E4 S5 R5 V4
+
+   IT IS NOT A SHEET. Adding a medicine is one fact and gets a modal; a
+   review is written while reading the medication list, and a panel over the
+   screen would hide the thing being reviewed. So it sits in the tab.
+
+   NO ALARM COLOUR. Poor adherence and a prescriber follow-up wear the amber
+   ramp — queued work. Red in this product means a person is waiting, and a
+   review is never that. */
+
+.ui-mrev-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.ui-mrev-head .ui-meds-count { margin-bottom: 2px; }
+.ui-mrev-blurb { max-width: 46ch; color: var(--ui-ink-faint); font-size: 12px; line-height: 1.45; }
+
+/* The draft, if one is open. It is the one unfinished thing on the screen,
+   so it is the one thing outlined rather than filled. */
+.ui-mrev-draft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px dashed var(--ui-line-strong);
+  border-radius: 10px;
+  background: var(--ui-sidebar);
+  color: var(--ui-ink-soft);
+  font-size: 12.5px;
+  text-align: left;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+.ui-mrev-draft:hover { background: var(--ui-sunk); border-color: var(--ui-ink-faint); }
+.ui-mrev-draft-tag {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px var(--ui-line-strong);
+  font-size: 11px;
+  font-weight: 600;
+}
+.ui-mrev-draft-go { margin-left: auto; color: var(--ui-ink); font-weight: 500; }
+
+/* ---- the history ---- */
+.ui-mrev-list { display: flex; flex-direction: column; gap: 8px; }
+.ui-mrev-card {
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-surface);
+  animation: ui-row-in 260ms var(--ui-ease-out) both;
+  animation-delay: calc(var(--row-i, 0) * 28ms);
+}
+.ui-mrev-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  transition: background-color 140ms ease;
+}
+.ui-mrev-card-head:hover { background: var(--ui-sunk); }
+.ui-mrev-card-head .ui-med-caret { margin-top: 0; }
+.ui-mrev-card-date { color: var(--ui-ink); font-size: 13px; font-weight: 600; }
+/* The count sits last and quiet: it is a count, not a verdict. */
+.ui-mrev-card-findings { margin-left: auto; color: var(--ui-ink-faint); font-size: 12px; }
+
+.ui-mrev-card-body {
+  padding: 2px 14px 12px 32px;
+  border-top: 1px solid var(--ui-line);
+  animation: ui-med-detail-in 200ms ease both;
+}
+.ui-mrev-card-body > * { margin-top: 10px; }
+
+/* Each problem, with the interventions that answer it INDENTED UNDER IT.
+   That nesting is the whole point of the three tables: a flat list beside a
+   flat list cannot say which interaction the prescriber was rung about. */
+.ui-mrev-findings { display: flex; flex-direction: column; gap: 10px; }
+.ui-mrev-problem { color: var(--ui-ink); font-size: 13px; font-weight: 600; }
+.ui-mrev-about { margin-left: 8px; color: var(--ui-ink-faint); font-size: 11.5px; font-weight: 400; }
+.ui-mrev-actions {
+  margin-top: 4px;
+  padding-left: 12px;
+  border-left: 2px solid var(--ui-line);
+  color: var(--ui-ink-soft);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.ui-mrev-note { color: var(--ui-ink-faint); font-size: 12px; line-height: 1.45; }
+.ui-mrev-follow {
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--ui-tone-1-bg);
+  color: var(--ui-tone-1-fg);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.ui-mrev-by { color: var(--ui-ink-faint); font-size: 11px; }
+
+/* ---- writing one ---- */
+.ui-mrev-editor {
+  border: 1px solid var(--ui-line);
+  border-radius: 12px;
+  background: var(--ui-surface);
+  animation: ui-view-in 220ms var(--ui-ease-out) both;
+}
+.ui-mrev-editor-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--ui-line);
+}
+.ui-mrev-editor-head h3 { color: var(--ui-ink); font-size: 14px; font-weight: 600; }
+.ui-mrev-editor-body { padding: 4px 14px 14px; }
+
+/* One question per section, asked in the order a pharmacist works: how are
+   they taking them, what did you find, what did you do, how was it left. */
+.ui-mrev-section { padding-top: 14px; }
+.ui-mrev-section + .ui-mrev-section { margin-top: 14px; border-top: 1px solid var(--ui-line); }
+.ui-mrev-section h4 { margin-bottom: 8px; color: var(--ui-ink); font-size: 13px; font-weight: 600; }
+
+.ui-mrev-choices { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.ui-mrev-choice {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--ui-sunk);
+  color: var(--ui-ink-soft);
+  font-size: 12.5px;
+  font-weight: 500;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.ui-mrev-choice:hover { background: var(--ui-sunk-hover); color: var(--ui-ink); }
+.ui-mrev-choice.is-on { background: var(--ui-ink); color: oklch(100% 0 0); }
+.ui-mrev-choice.is-wrong { box-shadow: inset 0 0 0 1px var(--ui-tone-3-fg); }
+
+/* A finding is one line: what · which medicine · what exactly. Three boxes
+   on one row, because that is one thought, and a stacked form would make it
+   read as three. */
+.ui-mrev-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) minmax(140px, 1.4fr) 30px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+@media (max-width: 720px) {
+  .ui-mrev-row { grid-template-columns: minmax(0, 1fr) 30px; }
+  .ui-mrev-row > :nth-child(3) { grid-column: 1 / -1; }
+}
+.ui-mrev-add {
+  padding: 5px 10px;
+  border-radius: 7px;
+  color: var(--ui-ink-soft);
+  font-size: 12.5px;
+  font-weight: 500;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.ui-mrev-add:hover { background: var(--ui-sunk); color: var(--ui-ink); }
+
+.ui-mrev-followup {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-bottom: 10px;
+}
+.ui-mrev-text {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ui-mrev-editor-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--ui-line);
+  background: var(--ui-sidebar);
+  border-radius: 0 0 12px 12px;
+}
+/* What is missing, said BEFORE the button is pressed. Quiet — it is an
+   unfinished sentence, not an error. */
+.ui-mrev-blocking { max-width: 60ch; color: var(--ui-ink-soft); font-size: 12px; line-height: 1.45; }
+.ui-mrev-saved { color: var(--ui-accent-ink); font-size: 12px; font-weight: 500; }
+.ui-mrev-editor-buttons { display: flex; gap: 8px; margin-left: auto; }
+/* The review's own buttons. Not the record panel's: those fill a sheet's
+   footer edge to edge, which in a card reads as a black bar, not a button. */
+.ui-mrev-btn {
+  flex: none;
+  padding: 6px 13px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color 140ms ease, border-color 140ms ease, opacity 140ms ease;
+}
+.ui-mrev-btn:hover:not(:disabled) { background: var(--ui-sunk); }
+.ui-mrev-btn:focus-visible { outline: 2px solid var(--ui-accent-ink); outline-offset: 2px; }
+.ui-mrev-btn:active:not(:disabled) { transform: translateY(1px); }
+/* Signing is the one primary act, in the desk's near-black like every other
+   primary action on this screen. */
+.ui-mrev-btn.is-primary { border-color: var(--ui-ink); background: var(--ui-ink); color: oklch(100% 0 0); }
+.ui-mrev-btn.is-primary:hover:not(:disabled) { background: var(--ui-ink); opacity: 0.88; }
+.ui-mrev-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-mrev-card,
+  .ui-mrev-editor,
+  .ui-mrev-card-body { animation: none; }
+  .ui-mrev-draft,
+  .ui-mrev-card-head,
+  .ui-mrev-choice,
+  .ui-mrev-add,
+  .ui-mrev-btn { transition: none; }
+}
+
+
+/* ── the patients table ──────────────────────────────────────────────────
+   Hallmark · component: data-table · genre: modern-minimal
+   theme: design.md (locked — ERPNext desk, neutral greys, Inter, emerald)
+   states: default · hover · focus-visible · active · loading · empty
+   pre-emit critique: P5 H5 E4 S5 R5 V4
+
+   REDESIGNED 2026-09-21 at the owner's request: the previous table read as
+   generated. The five things that made it read that way, and the rule that
+   replaces each:
+
+   1. NO PRIMARY COLUMN. Nine columns at one size in one grey. Now the
+      patient is the only thing at ink weight; everything else is secondary
+      by construction, so the eye lands in the same place on every row.
+   2. ROWS OF RANDOM HEIGHT, because a three-medicine cell wrapped and a
+      one-medicine cell did not. Fixed layout, one line per cell, `+N` for
+      the rest. A table whose rows are all the same height is most of what
+      "designed" means for a table.
+   3. A COMPOUND "Age · Gender" COLUMN. Split, and the number right-aligned
+      on tabular figures so the column has an edge to read down.
+   4. ABSENCE AS LOUD AS DATA — six full-weight em-dashes a row. Now a
+      hairline at 30%: present, quiet, not an answer.
+   5. NO VERTICAL RHYTHM. Hairlines between rows only, a stronger rule under
+      the head, and 44px rows — dense enough to compare, open enough to read.
+
+   Sizes here are deliberately smaller than the app's 14px default: a data
+   table is read by scanning down a column, not by reading a sentence, and
+   12–13px with tabular figures scans better than 14px. */
+.ui-ptable-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--ui-line);
+  border-radius: 12px;
+  background: var(--ui-surface);
+}
+.ui-ptable {
+  width: 100%;
+  min-width: 1096px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+/* The head is a label strip, not a row of content: 11.5px, soft, and set on
+   the sunk grey the desk uses for table heads. */
+.ui-ptable thead th {
+  padding: 9px 14px;
+  background: var(--ui-sidebar);
+  border-bottom: 1px solid var(--ui-line-strong);
+  color: var(--ui-ink-soft);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ui-ptable tbody td {
+  height: 44px;
+  padding: 0 14px;
+  border-top: 1px solid var(--ui-line);
+  color: var(--ui-ink-soft);
+  /* One line, always. The tooltip carries the rest. */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+.ui-ptable tbody tr:first-child td { border-top: 0; }
+
+/* ---- the one primary column ---- */
+.ui-ptable-who { line-height: 1.25; }
+.ui-ptable-name {
+  display: block;
+  color: var(--ui-ink);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The phone sits under the name as part of one identity block, not as a
+   second column of equal grey. Tabular so the numbers line up down the page. */
+.ui-ptable-phone {
+  display: block;
+  color: var(--ui-ink-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+/* ---- figures ---- */
+.ui-ptable-num {
+  text-align: right;
+  color: var(--ui-ink);
+  font-variant-numeric: tabular-nums;
+}
+.ui-ptable-sex { text-align: center; }
+.ui-ptable-sex abbr {
+  color: var(--ui-ink);
+  text-decoration: none;
+  cursor: help;
+}
+.ui-ptable-quiet { color: var(--ui-ink-soft); }
+.ui-ptable-unassigned { color: var(--ui-ink-faint); }
+
+/* ---- folded lists ---- */
+.ui-ptable-fold { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ui-ptable-fold-first {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* "+2" — how much is folded away, never what it is. Reading it is the
+   tooltip's job; this is only the count that says there is more. */
+.ui-ptable-more {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--ui-sunk);
+  color: var(--ui-ink-faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Nothing recorded. An en-dash at 30% — it holds the column's rhythm without
+   competing with the rows that do have something to say. */
+.ui-ptable-blank { color: var(--ui-line-strong); }
+
+/* ---- chips ----
+   Smaller and flatter than the old pills. A status on a dense row is a mark,
+   not a button, and it must not out-weigh the patient's name. */
+.ui-ptable-chips { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.ui-ptable-chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- the row itself ---- */
+.ui-ptable-row {
+  cursor: pointer;
+  transition: background-color 110ms ease;
+}
+.ui-ptable-row:hover td { background: var(--ui-sidebar); }
+.ui-ptable-row:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: -2px;
+}
+/* Pressed: the row takes the sunk grey for the length of the click, so a tap
+   on a phone is acknowledged before the record opens. */
+.ui-ptable-row:active td { background: var(--ui-sunk); }
+
+.ui-ptable-actions { text-align: right; padding-right: 10px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-ptable-row { transition: none; }
+}
+
+/* The status tones as classes, so a component names a MEANING ("this is the
+   second step of urgency") instead of a colour. Swapping the app's amber is
+   now one edit to the tokens above, and every chip on every screen follows. */
+.ui-tone-quiet { background: var(--ui-tone-quiet-bg); color: var(--ui-tone-quiet-fg); }
+.ui-tone-1     { background: var(--ui-tone-1-bg);     color: var(--ui-tone-1-fg); }
+.ui-tone-2     { background: var(--ui-tone-2-bg);     color: var(--ui-tone-2-fg); }
+.ui-tone-3     { background: var(--ui-tone-3-bg);     color: var(--ui-tone-3-fg); }
+
+/* ── the patients table: motion ─────────────────────────────────────────
+   Three moments. Each one is information; none is decoration.
+
+   A PAGE OF PATIENTS IS DEALT, rows 18ms apart. It is faster than the vitals
+   table's 24ms because this list is longer — ten rows land in under a fifth
+   of a second. What it buys: a page that changes under you (a filter, the
+   chronic switch, page 2) is visibly a NEW page rather than the same grid
+   with different words in it. */
+@keyframes ui-ptable-row-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: none; }
+}
+.ui-ptable-row {
+  animation: ui-ptable-row-in 240ms var(--ui-ease-out) both;
+  animation-delay: calc(var(--row-i, 0) * 18ms);
+}
+
+/* THE ACTIONS ARRIVE FROM THE EDGE THEY LIVE ON. They were already hidden
+   until hover; sliding the last 4px in from the right is what makes them read
+   as coming out of the row's end rather than blinking into existence. */
+.ui-row-actions {
+  transform: translateX(4px);
+  transition: opacity 140ms ease, transform 180ms var(--ui-ease-out);
+}
+tr:hover .ui-row-actions,
+tr:focus-within .ui-row-actions,
+.ui-row-actions:focus-within { transform: none; }
+
+/* THE RESULT SET CROSS-FADES when the query changes. Keyed on the query in
+   PatientSearch.jsx, so it fires when the ANSWER changes and not when the
+   same answer is re-fetched — a table that flickers on every keystroke is
+   worse than one that never moves. */
+@keyframes ui-ptable-in { from { opacity: 0; } to { opacity: 1; } }
+.ui-ptable-wrap { animation: ui-ptable-in 200ms ease both; }
+
+/* While a slower answer is still coming, the current one stays legible and
+   says it is stale by standing down — never a spinner over a table that is
+   still perfectly readable. */
+.ui-ptable-stale { opacity: 0.55; transition: opacity 160ms ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-ptable-row,
+  .ui-ptable-wrap { animation: none; }
+  .ui-row-actions {
+    transform: none;
+    transition: opacity 120ms ease;
+  }
+  .ui-ptable-stale { transition: none; }
+}
+
+/* ── the patients toolbar ──
+   A row of three separate controls on the page, not one card around them:
+   a bordered search box, the funnel, then the switch. Amended 2026-09-20 at
+   the owner's request, from a Docker Desktop screenshot — the search field
+   there is its own outlined box of a fixed width rather than a full-width
+   bar, which stops it reading as "type here to use this screen" when most
+   visits start by filtering instead.
+
+   The search box is the one outlined field on the screen (design.md's fields
+   are grey-filled and borderless). It earns the exception by being the only
+   control a person aims at without looking: an outline is a target, a fill
+   is a surface. */
+.ui-searchbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  max-width: 360px;
+  height: 38px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  transition: border-color 140ms ease;
+}
+.ui-searchbox:hover { border-color: var(--ui-ink-faint); }
+.ui-searchbox:focus-within {
+  border-color: var(--ui-focus);
+  outline: 2px solid var(--ui-focus);
+  outline-offset: -1px;
+}
+/* The field itself carries nothing: the box is its frame, and a grey fill
+   inside an outlined box is a second frame around the same thing. */
+.ui-toolbar-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ui-ink);
+  font-size: 14px;
+}
+.ui-toolbar-input::placeholder { color: var(--ui-ink-faint); }
+.ui-toolbar-input:focus { outline: none; }
+
+.ui-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  color: var(--ui-ink-faint);
+  font-size: 16px;
+  line-height: 1;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.ui-icon-btn:hover { background: var(--ui-sunk); color: var(--ui-ink); }
+
+/* The funnel. Borderless and outside the search box, so the row reads as
+   three controls rather than one compound widget. */
+.ui-toolbar-filters {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 8px;
+  color: var(--ui-ink-soft);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.ui-toolbar-filters:hover,
+.ui-toolbar-filters.is-open { background: var(--ui-sunk); color: var(--ui-ink); }
+/* How many filters are applied, on the button that opens them — the one
+   number that says the list is not everybody. It rides the funnel's corner
+   because the button has no room beside the glyph. */
+.ui-toolbar-count {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--ui-ink);
+  color: oklch(100% 0 0);
+  font-size: 10px;
+  font-weight: 600;
+  box-shadow: 0 0 0 2px var(--ui-paper);
+}
+
+/* The chronic switch. A labelled switch, not a pill: the label says what it
+   does while it is off, which a pill only tells you once you have pressed
+   it. The whole row is the control, so the words are as clickable as the
+   track — a 30px target beside a 24px one, for the same action, is a
+   drafting error people feel as a missed tap. */
+.ui-switch-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--ui-ink-soft);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.ui-switch-row:hover { background: var(--ui-sunk); color: var(--ui-ink); }
+.ui-switch-row.is-on { color: var(--ui-accent-ink); }
+
+.ui-switch {
+  position: relative;
+  display: inline-block;
+  width: 32px;
+  height: 18px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--ui-line-strong);
+  transition: background-color 180ms var(--ui-ease-out);
+}
+.ui-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: oklch(100% 0 0);
+  box-shadow: 0 1px 2px oklch(20.5% 0 0 / 0.30);
+  transition: transform 180ms var(--ui-ease-out);
+}
+/* On is the brand green — the one place on this screen that fills with
+   colour, which is what makes "I am looking at a subset" legible at a
+   glance from across the counter. */
+.ui-switch-row.is-on .ui-switch { background: var(--ui-focus); }
+.ui-switch-row.is-on .ui-switch-knob { transform: translateX(14px); }
+
+/* The filter panel. Grid rows 0fr → 1fr opens it to exactly its own height:
+   no measuring in JavaScript, and no fixed max-height for the content to
+   outgrow later. */
+.ui-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 240ms var(--ui-ease-out);
+}
+.ui-panel[data-open="true"] { grid-template-rows: 1fr; }
+/* Its own hairline card now that the toolbar is a bare row: the panel has
+   to read as a surface that opened, not as content that appeared. */
+.ui-panel-inner { overflow: hidden; }
+.ui-panel[data-open="true"] .ui-panel-card {
+  border: 1px solid var(--ui-line);
+  border-radius: 12px;
+  background: var(--ui-surface);
+}
+
+/* An applied filter, below the card: what it filters, what to, and a way to
+   drop just that one. */
+.ui-chip-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 4px 0 10px;
+  border-radius: 999px;
+  background: var(--ui-sunk);
+  color: var(--ui-ink);
+  font-size: 12px;
+}
+.ui-chip-filter button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  color: var(--ui-ink-faint);
+  font-size: 14px;
+  line-height: 1;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.ui-chip-filter button:hover { background: var(--ui-sunk-hover); color: var(--ui-ink); }
+
+/* Row actions — open the record, or ring the patient.
+   Quiet until the row is under the cursor or holds focus, so a list of 80
+   patients is 80 names rather than 160 buttons; always visible on a touch
+   screen, where there is no hover to reveal them with, and always visible
+   to a keyboard once anything inside the row is focused. */
+.ui-row-actions {
+  display: inline-flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+tr:hover .ui-row-actions,
+tr:focus-within .ui-row-actions,
+.ui-row-actions:focus-within { opacity: 1; }
+@media (hover: none) {
+  .ui-row-actions { opacity: 1; }
+}
+
+.ui-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--ui-ink-soft);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.ui-action-btn:hover { background: var(--ui-sunk-hover); color: var(--ui-ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-panel,
+  .ui-toolbar-filters svg { transition: none; }
 }
 
 /* The header's search, the desk's "Search  Ctrl+K" pill: the same grey
@@ -675,3 +2715,970 @@ nav[aria-label="Sections"] {
      state's only content, not decoration on top of it. */
   .ui-loading-dot { animation: none; opacity: 0.6; }
 }
+
+/* ── allergies ────────────────────────────────────────────────────────────
+   Hallmark · component: clinical record · genre: modern-minimal
+   theme: design.md (locked — ERPNext desk, neutral greys, Inter, emerald)
+   states: default · hover · focus-visible · active · disabled · saving · error · empty
+   pre-emit critique: P5 H5 E4 S5 R5 V4
+
+   THE STATE LINE COMES FIRST and is the loudest thing on the screen,
+   because "does this patient have allergies" is the question the tab
+   exists for. Three looks for three states:
+     known         the amber attention ramp + ⚠ + words
+     none known    the brand wash + ✓ — a pharmacist said so
+     not assessed  dashed and grey + ⓘ — unfinished, never "safe"
+   NO RED. design.md keeps red for "a person is waiting" (owner, 2026-09-22).
+   Every state carries an icon and a word, so colour is never the signal. */
+
+.ui-allergy-body { display: flex; flex-direction: column; gap: 16px; padding: 14px 16px 16px; }
+
+.ui-allergy-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  animation: ui-view-in 220ms var(--ui-ease-out) both;
+}
+.ui-allergy-state-icon { flex: none; }
+.ui-allergy-state-label { font-size: 15px; font-weight: 650; line-height: 1.3; }
+.ui-allergy-state-sub { margin-top: 2px; font-size: 12px; line-height: 1.45; opacity: 0.85; }
+.ui-allergy-state-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.ui-allergy-known {
+  border-color: var(--ui-tone-2-bg);
+  background: var(--ui-tone-1-bg);
+  color: var(--ui-tone-3-fg);
+}
+.ui-allergy-none {
+  border-color: var(--ui-accent-wash);
+  background: var(--ui-accent-wash);
+  color: var(--ui-accent-ink);
+}
+.ui-allergy-unassessed {
+  border: 1px dashed var(--ui-line-strong);
+  background: var(--ui-sidebar);
+  color: var(--ui-ink);
+}
+.ui-allergy-unassessed .ui-allergy-state-sub { color: var(--ui-ink-soft); opacity: 1; }
+
+.ui-allergy-heading { margin-bottom: 6px; color: var(--ui-ink-soft); font-size: 12px; font-weight: 600; }
+
+/* A confirmed allergy is filled; an unconfirmed one is outlined (the
+   medication "draft" look) — unfinished, and not to be read as settled. */
+.ui-allergy-confirmed { background: var(--ui-sunk); color: var(--ui-ink); }
+
+/* History is read, not acted on: quieter, never struck through — a refuted
+   allergy is still part of what happened. */
+.ui-allergy-table tr.is-history .ui-med-title { color: var(--ui-ink-soft); font-weight: 500; }
+
+.ui-allergy-history { border-top: 1px solid var(--ui-line); padding-top: 12px; }
+.ui-allergy-history > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--ui-ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  list-style: none;
+}
+.ui-allergy-history > summary::-webkit-details-marker { display: none; }
+.ui-allergy-history > summary:hover { color: var(--ui-ink); }
+.ui-allergy-history > summary:focus-visible { outline: 2px solid var(--ui-accent-ink); outline-offset: 2px; border-radius: 4px; }
+.ui-allergy-history[open] > summary .ui-med-caret { transform: none; }
+.ui-allergy-history[open] > summary { margin-bottom: 10px; }
+.ui-allergy-history-note { color: var(--ui-ink-faint); font-weight: 400; }
+
+/* ---- the detail, opened in place ---- */
+.ui-allergy-detail .ui-med-detail > .is-wide { grid-column: 1 / -1; }
+.ui-allergy-by { margin-top: 10px; color: var(--ui-ink-faint); font-size: 11px; }
+.ui-allergy-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+/* ---- the form ---- */
+.ui-allergy-help { display: block; margin-top: 3px; color: var(--ui-ink-faint); font-size: 11px; line-height: 1.35; }
+.ui-allergy-reactions { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Anaphylaxis is the one reaction that must not be missed on a re-read. */
+.ui-mrev-choice.is-serious.is-on { background: var(--ui-tone-3-fg); color: oklch(100% 0 0); }
+.ui-allergy-date { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
+
+.ui-allergy-search { position: relative; }
+.ui-allergy-suggestions {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  box-shadow: 0 8px 24px oklch(0% 0 0 / 0.08);
+}
+.ui-allergy-suggestions button {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--ui-ink);
+  font-size: 13px;
+  text-align: left;
+}
+.ui-allergy-suggestions button:hover,
+.ui-allergy-suggestions button:focus-visible { background: var(--ui-sunk); outline: none; }
+.ui-allergy-suggestion-kind { flex: none; color: var(--ui-ink-faint); font-size: 11px; text-transform: capitalize; }
+
+/* ---- dialogs (status change, assess) ---- */
+.ui-allergy-dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: oklch(0% 0 0 / 0.32);
+  animation: ui-med-detail-in 160ms ease both;
+}
+.ui-allergy-dialog {
+  width: min(460px, 100%);
+  padding: 18px;
+  border-radius: 12px;
+  background: var(--ui-surface);
+  box-shadow: 0 20px 48px oklch(0% 0 0 / 0.18);
+  animation: ui-view-in 200ms var(--ui-ease-out) both;
+}
+.ui-allergy-dialog h3 { margin-bottom: 6px; color: var(--ui-ink); font-size: 15px; font-weight: 600; }
+.ui-allergy-dialog > p { margin-bottom: 10px; color: var(--ui-ink-soft); font-size: 13px; line-height: 1.5; }
+.ui-allergy-dialog-note { color: var(--ui-ink-faint) !important; font-size: 12px !important; }
+.ui-allergy-dialog-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.ui-allergy-dialog-choices { display: grid; gap: 8px; }
+.ui-allergy-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 10px;
+  color: var(--ui-ink);
+  text-align: left;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+.ui-allergy-choice:hover { background: var(--ui-sunk); border-color: var(--ui-ink-faint); }
+.ui-allergy-choice:focus-visible { outline: 2px solid var(--ui-accent-ink); outline-offset: 2px; }
+.ui-allergy-choice svg { flex: none; margin-top: 2px; }
+.ui-allergy-choice strong { display: block; font-size: 13.5px; font-weight: 600; }
+.ui-allergy-choice span span { display: block; color: var(--ui-ink-soft); font-size: 12px; }
+
+/* ---- could not load ---- */
+.ui-allergy-failed {
+  margin: 14px 16px 16px;
+  padding: 28px 20px;
+  border: 1px dashed var(--ui-line-strong);
+  border-radius: 10px;
+  text-align: center;
+  color: var(--ui-ink-soft);
+  font-size: 13px;
+}
+.ui-allergy-failed .ui-meds-add { margin-top: 12px; }
+
+@media (max-width: 720px) {
+  .ui-allergy-state { align-items: flex-start; }
+  .ui-allergy-date { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-allergy-state,
+  .ui-allergy-dialog,
+  .ui-allergy-dialog-scrim { animation: none; }
+  .ui-allergy-choice { transition: none; }
+}
+
+/* ── allergies, everywhere else ─────────────────────────────────────────
+   The strip above every patient-record section, and the compact list in
+   the Medications panel and the Review. Same three looks as the tab's state
+   line (ui-allergy-known / -none / -unassessed), smaller. */
+
+.ui-precord-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 16px;
+}
+
+.ui-allergy-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(100%, 460px);
+  min-width: 0;
+  padding: 5px 11px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: filter 140ms ease, box-shadow 140ms ease;
+}
+.ui-allergy-strip svg { flex: none; }
+.ui-allergy-strip:hover { filter: brightness(0.97); }
+.ui-allergy-strip:focus-visible { outline: 2px solid var(--ui-accent-ink); outline-offset: 2px; }
+.ui-allergy-strip.ui-allergy-unassessed { font-weight: 500; }
+.ui-allergy-strip-placeholder { display: inline-block; width: 1px; height: 28px; }
+
+.ui-allergy-safety h3 {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 4px;
+  color: var(--ui-ink-faint);
+  font-size: 11px;
+  font-weight: 600;
+}
+.ui-allergy-safety > p { color: var(--ui-ink); font-size: 12.5px; line-height: 1.4; }
+.ui-allergy-safety ul { display: flex; flex-direction: column; gap: 5px; }
+.ui-allergy-safety li { line-height: 1.35; }
+.ui-allergy-safety-name { display: block; color: var(--ui-tone-3-fg); font-size: 12.5px; font-weight: 600; }
+.ui-allergy-safety-reaction { display: block; color: var(--ui-ink-soft); font-size: 11.5px; }
+.ui-allergy-safety .ui-psection-link { margin-top: 6px; }
+
+/* In the Review it is the first thing in the editor, set apart so it is read
+   before the medicines are. */
+.ui-mrev-safety {
+  margin-top: 12px;
+  padding: 10px 12px !important;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  /* Neutral since it holds conditions and vitals too (2026-09-22): the
+     allergy names inside keep their own amber, so the warning is still
+     where the warning is. */
+  background: var(--ui-sidebar);
+}
+.ui-mrev-safety + .ui-mrev-section { border-top: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-allergy-strip { transition: none; }
+}
+
+/* ── conditions — the problem list ──────────────────────────────────────
+   Hallmark · component: clinical record · genre: modern-minimal
+   theme: design.md (locked — ERPNext desk, neutral greys, Inter, emerald)
+   states: default · hover · focus-visible · active · disabled · saving · error · empty
+   pre-emit critique: P5 H5 E4 S5 R5 V4
+
+   The Allergies tab's layout, so the two records read alike. What is new
+   here is making UNCERTAINTY visible: a condition that is not confirmed
+   has a softer name and an outlined chip, so "Possible asthma" never looks
+   like "Asthma · Confirmed". The purchase inference sits in its own tinted
+   block, labelled for what it is. */
+
+.ui-cond-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ui-cond-toolbar .ui-meds-filters { margin-bottom: 0; }
+
+/* Confirmed reads plainly — filled, neutral. The only green on a condition
+   row is its Active status, as on the medication list. */
+.ui-cond-confirmed { background: var(--ui-sunk); color: var(--ui-ink); }
+
+/* Not confirmed: the name itself is quieter, not only the chip. */
+.ui-cond-table tr.is-uncertain .ui-med-title { color: var(--ui-ink-soft); font-weight: 500; }
+.ui-cond-table tr.is-history .ui-med-title { color: var(--ui-ink-soft); font-weight: 500; }
+
+/* ---- purchase suggestions ---- */
+.ui-cond-suggest {
+  padding: 12px 14px;
+  border: 1px dashed var(--ui-line-strong);
+  border-radius: 10px;
+  background: var(--ui-sidebar);
+}
+.ui-cond-suggest h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--ui-ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+.ui-cond-suggest ul { display: flex; flex-direction: column; gap: 6px; }
+.ui-cond-suggest li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ui-cond-suggest-name { display: block; color: var(--ui-ink); font-size: 13px; font-weight: 500; }
+.ui-cond-suggest-basis { display: block; color: var(--ui-ink-faint); font-size: 11.5px; }
+
+/* ---- the form's hints: information, never a warning colour ---- */
+.ui-cond-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--ui-sunk);
+  color: var(--ui-ink-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ui-cond-hint svg { flex: none; margin-top: 2px; }
+.ui-cond-hint-link {
+  color: var(--ui-accent-ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ui-cond-hint-link:focus-visible { outline: 2px solid var(--ui-accent-ink); outline-offset: 2px; border-radius: 3px; }
+
+.ui-cond-readings { display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow-y: auto; }
+.ui-cond-reading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  color: var(--ui-ink);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.ui-cond-reading:hover { background: var(--ui-sunk); }
+.ui-cond-reading input { accent-color: var(--ui-accent-ink); }
+
+/* ── clinical context (Medications panel, the Review) ───────────────────
+   Conditions · allergies · recent vitals, compact and linked. Three short
+   columns on a wide screen, stacked on a narrow one. */
+.ui-clinical-context-title { margin-bottom: 8px; color: var(--ui-ink-soft); font-size: 12px; font-weight: 600; }
+.ui-clinical-context-grid {
+  display: grid;
+  gap: 12px 20px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+}
+.ui-cond-brief-name { display: block; color: var(--ui-ink); font-size: 12.5px; font-weight: 600; }
+.ui-allergy-safety li.is-uncertain .ui-cond-brief-name { color: var(--ui-ink-soft); font-weight: 500; }
+.ui-cond-brief-suggested { margin-top: 5px; color: var(--ui-ink-faint) !important; font-size: 11.5px !important; }
+
+/* ── tests — diagnostic results ─────────────────────────────────────────
+   Hallmark · component: clinical record · genre: modern-minimal
+   theme: design.md (locked — ERPNext desk, neutral greys, Inter, emerald)
+   states: default · hover · focus-visible · active · disabled · saving · error · empty
+   pre-emit critique: P5 H5 E4 S5 R5 V4
+
+   THE RESULT IS THE POINT. The value sits in the row in the ink colour,
+   slightly larger, with its reading beside it: "108 mg/dL  High ▲". A
+   pharmacist should never open a record to find out what came back.
+
+   ABNORMAL IS AMBER. CRITICAL IS RED — the only red on a patient record.
+   design.md keeps red for "a person is waiting", and a critically high
+   potassium is exactly that. The word is always written beside the colour. */
+
+.ui-test-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+
+/* The count rides inside its filter, so the filters ARE the summary. */
+.ui-test-count {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: oklch(0% 0 0 / 0.08);
+  font-size: 11px;
+  font-weight: 600;
+}
+.ui-quick-filter.is-on .ui-test-count { background: oklch(100% 0 0 / 0.22); }
+
+.ui-test-search { display: flex; flex-wrap: wrap; gap: 8px; }
+.ui-test-search .ui-vital-input { width: auto; min-width: 150px; }
+
+.ui-test-value { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ui-test-value > span:first-child { color: var(--ui-ink); font-size: 13.5px; font-weight: 600; }
+.ui-test-pending { color: var(--ui-ink-faint); font-size: 12.5px; }
+
+/* The one red on the record, and never alone: the chip carries the words
+   "Critically high" and a warning icon. */
+.ui-test-critical {
+  background: oklch(95.5% 0.045 25);
+  color: oklch(45% 0.17 25);
+  font-weight: 700;
+}
+.ui-test-table tr.is-critical .ui-med-title { color: oklch(45% 0.17 25); }
+
+/* ---- the detail ---- */
+.ui-test-results { width: 100%; margin-bottom: 12px; border-collapse: collapse; }
+.ui-test-results th {
+  padding: 4px 10px 4px 0;
+  color: var(--ui-ink-faint);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+}
+.ui-test-results td { padding: 4px 10px 4px 0; color: var(--ui-ink-soft); font-size: 12.5px; vertical-align: top; }
+.ui-test-value-cell { color: var(--ui-ink) !important; font-weight: 600; white-space: nowrap; }
+
+.ui-test-related, .ui-test-corrections, .ui-test-trend { margin-top: 12px; }
+.ui-test-related h4, .ui-test-corrections h4, .ui-test-trend h4 {
+  margin-bottom: 5px;
+  color: var(--ui-ink-faint);
+  font-size: 11px;
+  font-weight: 600;
+}
+.ui-test-related ul { display: flex; flex-direction: column; gap: 3px; }
+.ui-test-related-link {
+  color: var(--ui-ink);
+  font-size: 12.5px;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--ui-line-strong);
+  text-underline-offset: 2px;
+}
+.ui-test-related-link:hover { text-decoration-color: var(--ui-ink); }
+.ui-test-related-link:focus-visible { outline: 2px solid var(--ui-accent-ink); outline-offset: 2px; border-radius: 3px; }
+
+/* What a report said before it was corrected — quiet, and never deleted. */
+.ui-test-corrections ul { display: flex; flex-direction: column; gap: 8px; }
+.ui-test-corrections li {
+  padding-left: 10px;
+  border-left: 2px solid var(--ui-line);
+  color: var(--ui-ink-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ui-test-corrections li > span { display: block; }
+.ui-test-correction-when { color: var(--ui-ink-faint); font-size: 11px; }
+.ui-test-correction-was { color: var(--ui-ink-faint); }
+
+.ui-test-trend { padding-top: 4px; }
+
+/* ---- the form ---- */
+.ui-test-result-row {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(130px, 1.4fr) 110px repeat(4, minmax(70px, 1fr)) 120px 30px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.ui-test-span2 { grid-column: span 2; }
+.ui-test-span4 { grid-column: span 4; }
+@media (max-width: 900px) {
+  .ui-test-result-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 30px; }
+  .ui-test-span2, .ui-test-span4 { grid-column: 1 / -2; }
+}
+.ui-test-historical { display: flex; align-items: flex-start; gap: 8px; }
+.ui-test-historical input { margin-top: 3px; accent-color: var(--ui-accent-ink); }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ui-test-critical {
+    background: oklch(30% 0.09 25);
+    color: oklch(88% 0.09 25);
+  }
+}
+
+
+/* ── care programmes (the patient record's Care program section) ─────────
+   Hallmark · component: record-section · genre: modern-minimal
+   theme: design.md (locked — ERPNext desk, neutral greys, Inter, emerald)
+   states: default · hover · focus-visible · active · empty · overdue
+   pre-emit critique: P5 H5 E4 S5 R5 V4
+
+   Two shapes only, because a programme is read two ways: a CARD when you are
+   choosing which programme to look at, and the record's existing table idiom
+   once you are inside one. Nothing new is invented for the inside — goals and
+   the care plan wear .ui-med-table, like every other list on this record.
+
+   NO RED ANYWHERE IN HERE. design.md reserves it for a person waiting; a task
+   past its date is amber (ui-tone-3) and says "overdue" in words beside it. */
+
+.ui-cprog-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+
+.ui-cprog-card {
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-surface);
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+.ui-cprog-card:hover { border-color: var(--ui-line-strong); }
+/* A finished programme is read, not worked: quieter, never struck through. */
+.ui-cprog-card.is-past { background: var(--ui-sidebar); }
+.ui-cprog-card.is-past .ui-cprog-name { color: var(--ui-ink-soft); font-weight: 500; }
+
+.ui-cprog-open {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 11px 13px;
+  text-align: left;
+}
+.ui-cprog-open:focus-visible { outline: 2px solid var(--ui-accent-ink); outline-offset: -2px; border-radius: 10px; }
+
+.ui-cprog-card-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ui-cprog-name { color: var(--ui-ink); font-size: 13.5px; font-weight: 600; }
+.ui-cprog-card-meta { display: block; color: var(--ui-ink-faint); font-size: 12px; }
+.ui-cprog-quiet { color: var(--ui-ink-faint); }
+
+/* The counts. Each part is its own span so the overdue one can be toned on
+   its own — and so nothing here can become a single percentage. */
+.ui-cprog-progress { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--ui-ink-soft); font-size: 12px; }
+.ui-cprog-progress > span.ui-tone-3 {
+  padding: 0 6px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.ui-cprog-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--ui-sunk);
+  color: var(--ui-ink-soft);
+  font-size: 12.5px;
+}
+.ui-cprog-banner svg { flex: none; }
+
+/* ---- inside one programme ---- */
+.ui-cprog-head { align-items: flex-start; }
+.ui-cprog-head h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ui-cprog-back {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ui-ink-faint);
+  font-size: 12px;
+}
+.ui-cprog-back:hover { color: var(--ui-ink); }
+.ui-cprog-back:focus-visible { outline: 2px solid var(--ui-accent-ink); outline-offset: 2px; border-radius: 4px; }
+
+.ui-cprog-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.ui-cprog-rowactions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+
+/* A count beside a section's name: how many tasks are waiting. */
+.ui-cprog-pill {
+  margin-left: 5px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--ui-sunk);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ui-cprog-overview {
+  display: grid;
+  gap: 16px 24px;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 900px) {
+  .ui-cprog-overview { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+}
+.ui-cprog-counts {
+  padding: 12px 14px;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-sidebar);
+  align-self: start;
+}
+.ui-cprog-next { margin-top: 6px; color: var(--ui-ink); font-size: 13px; }
+.ui-cprog-jump { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+
+/* A goal's current value opens the section that holds it — the value lives
+   there, and this is a pointer, never a second copy. */
+.ui-cprog-link {
+  color: var(--ui-accent-ink);
+  font-size: 12.5px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ui-cprog-link:focus-visible { outline: 2px solid var(--ui-accent-ink); outline-offset: 2px; border-radius: 3px; }
+
+/* ---- the task list ---- */
+.ui-cprog-tasks { display: flex; flex-direction: column; gap: 6px; }
+.ui-cprog-task {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--ui-line);
+  border-radius: 9px;
+  background: var(--ui-surface);
+}
+/* Past its date: an amber edge, and the words say so too. */
+.ui-cprog-task.is-late { border-left: 3px solid var(--ui-tone-3-fg); }
+.ui-cprog-task-title { color: var(--ui-ink); font-size: 13px; font-weight: 500; }
+.ui-cprog-task-meta { color: var(--ui-ink-faint); font-size: 12px; }
+
+/* ---- enrolling ---- */
+.ui-cprog-pick { display: flex; flex-direction: column; gap: 6px; }
+.ui-cprog-pick-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-line);
+  border-radius: 9px;
+  background: var(--ui-surface);
+  text-align: left;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+.ui-cprog-pick-btn:hover { border-color: var(--ui-line-strong); background: var(--ui-sunk); }
+.ui-cprog-pick-btn:focus-visible { outline: 2px solid var(--ui-accent-ink); outline-offset: -2px; }
+
+/* What enrolling WOULD create, before anything is saved. */
+.ui-cprog-preview {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px dashed var(--ui-line-strong);
+  border-radius: 10px;
+  background: var(--ui-sidebar);
+}
+.ui-cprog-preview h4 { margin-top: 10px; }
+.ui-cprog-preview h4:first-child { margin-top: 0; }
+.ui-cprog-preview-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 4px; }
+.ui-cprog-preview-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ui-ink);
+  font-size: 12.5px;
+}
+
+.ui-cprog-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ui-ink);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.ui-cprog-check input { accent-color: var(--ui-accent-ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-cprog-card,
+  .ui-cprog-pick-btn { transition: none; }
+}
+
+/* ---- the connections: monitoring, related records, the timeline ----------
+   Phase 2. None of these three sections HOLDS anything — monitoring reads
+   Vitals and Tests, related records read the sections that own them, and the
+   timeline reads events already written. The styling says so by making every
+   value a link back to where it lives. */
+
+.ui-cprog-side { margin-top: 14px; }
+.ui-cprog-related { margin-top: 14px; grid-column: 1 / -1; }
+.ui-cprog-related-list { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
+.ui-cprog-related-list li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 9px;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  font-size: 12.5px;
+}
+.ui-cprog-related-kind {
+  display: block;
+  color: var(--ui-ink-faint);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ui-cprog-metrics {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  margin-bottom: 10px;
+}
+.ui-cprog-metric {
+  padding: 11px 13px;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-surface);
+  min-width: 0;
+}
+.ui-cprog-metric-name { color: var(--ui-ink-soft); font-size: 12px; font-weight: 600; }
+/* The number, at reading size. A metric nobody has measured wears the quiet
+   ink instead, because "Not measured" is a statement about the record. */
+.ui-cprog-metric-value { margin-top: 2px; color: var(--ui-ink); font-size: 19px; font-weight: 600; }
+.ui-cprog-metric-meta { color: var(--ui-ink-faint); font-size: 11.5px; line-height: 1.5; }
+
+.ui-cprog-timeline { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.ui-cprog-timeline li {
+  display: grid;
+  gap: 4px 14px;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--ui-line);
+}
+@media (min-width: 640px) {
+  .ui-cprog-timeline li { grid-template-columns: 170px minmax(0, 1fr); }
+}
+.ui-cprog-timeline li:last-child { border-bottom: 0; }
+.ui-cprog-stamp { color: var(--ui-ink-faint); font-size: 12px; white-space: nowrap; }
+.ui-cprog-said { min-width: 0; }
+.ui-cprog-said-text { display: block; color: var(--ui-ink); font-size: 13px; font-weight: 500; }
+
+
+/* ── follow-ups (the patient record's Follow-up section) ─────────────────
+   Hallmark · component: action-queue · genre: modern-minimal
+   theme: design.md (locked — ERPNext desk, neutral greys, Inter, emerald)
+   states: default · hover · focus-visible · overdue · urgent · done · empty
+   pre-emit critique: P5 H5 E4 S5 R5 V4
+
+   A CLINICAL ACTION QUEUE, not a reminder app. One row per thing to do, the
+   due line on the right where the eye lands, and the reason underneath. No
+   cards, no calendar, no progress rings.
+
+   NO RED. Overdue wears the amber left edge and says "4 days overdue" in
+   words; urgent is a small word-mark, not an alarm. design.md keeps red for
+   a person waiting, and a queue where everything shouts is a queue nobody
+   reads. */
+
+.ui-followup-head { margin-bottom: 12px; }
+.ui-followup-counts { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--ui-ink); font-size: 13px; }
+.ui-followup-counts > span.ui-tone-3 { padding: 0 6px; border-radius: 999px; font-weight: 600; }
+.ui-followup-next { margin-top: 3px; color: var(--ui-ink-soft); font-size: 12.5px; }
+
+.ui-followup-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+
+.ui-followup {
+  display: grid;
+  gap: 6px 12px;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 10px 13px;
+  border: 1px solid var(--ui-line);
+  border-left: 3px solid transparent;
+  border-radius: 9px;
+  background: var(--ui-surface);
+  transition: border-color 140ms ease;
+}
+@media (min-width: 720px) {
+  .ui-followup { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+}
+.ui-followup:hover { border-color: var(--ui-line-strong); }
+.ui-followup.is-late { border-left-color: var(--ui-tone-3-fg); }
+/* Done is read, not worked: quieter, never struck through — it happened. */
+.ui-followup.is-done { background: var(--ui-sidebar); }
+.ui-followup.is-done .ui-followup-title span:first-child { color: var(--ui-ink-soft); font-weight: 500; }
+
+.ui-followup-main { min-width: 0; }
+.ui-followup-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  width: 100%;
+  color: var(--ui-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+}
+.ui-followup-title:focus-visible { outline: 2px solid var(--ui-accent-ink); outline-offset: 2px; border-radius: 4px; }
+.ui-followup-due { flex: none; font-size: 12px; font-weight: 600; }
+.ui-followup-due.ui-tone-3 { padding: 0 6px; border-radius: 999px; }
+.ui-followup-context { color: var(--ui-ink-faint); font-size: 12px; line-height: 1.5; }
+
+/* Urgent is a word. It never becomes the row's colour. */
+.ui-followup-urgent {
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 999px;
+  color: var(--ui-ink-soft);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ui-followup-detail {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ui-line);
+}
+.ui-followup-subject { margin-bottom: 8px; color: var(--ui-ink); font-size: 13.5px; font-weight: 600; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-followup { transition: none; }
+}
+
+/* ---- follow-up phase 2: the history, and a reading recorded at completion --
+   The history reuses the care-programme timeline's rows (.ui-cprog-timeline)
+   rather than growing a second set of identical styles: one timeline shape,
+   two features. */
+
+.ui-followup-history { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--ui-line); }
+.ui-followup-history .ui-cprog-timeline li { padding: 6px 0; }
+
+/* The measurement boxes. Narrow, in a row, because a pharmacist is copying
+   numbers off a cuff and not filling in a form. */
+.ui-followup-reading {
+  display: grid;
+  gap: 8px 10px;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+}
+
+.ui-mrev-follow-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* ---- Patient record → Messages (MESSAGES_PLAN.md phase 1) ---------------
+   A professional communication record, not a chat app (§32): no big bubbles,
+   no reactions, no animation. Every message NAMES its sender rather than
+   relying on which side it sits on — §6 says do not indicate the sender by
+   colour alone, and a transcript that is printed or read by somebody
+   colour-blind must still say who spoke. */
+
+.ui-msg-transcript { display: flex; flex-direction: column; gap: 14px; margin: 12px 0; }
+
+.ui-msg-day {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 0 6px;
+  padding: 3px 0;
+  color: var(--ui-ink-faint);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--ui-paper);
+}
+
+.ui-msg-list { display: flex; flex-direction: column; gap: 8px; list-style: none; margin: 0; padding: 0; }
+
+.ui-msg {
+  max-width: 78%;
+  padding: 8px 11px;
+  border: 1px solid var(--ui-line);
+  border-radius: 9px;
+  background: var(--ui-surface);
+}
+/* The patient's own words sit left and unfilled; the pharmacy's sit right on
+   a faint fill. The position is a convenience, never the signal. */
+.ui-msg-them { align-self: flex-start; }
+.ui-msg-us { align-self: flex-end; background: var(--ui-sunk); }
+/* A system note is neither side: it is the product talking about the thread. */
+.ui-msg-note {
+  align-self: center;
+  max-width: 100%;
+  border-style: dashed;
+  background: transparent;
+  color: var(--ui-ink-soft);
+}
+/* The one message that needs a person to do something. */
+.ui-msg-failed { border-color: var(--ui-tone-1-fg); background: var(--ui-tone-1-bg); }
+
+.ui-msg-head { display: flex; gap: 10px; align-items: baseline; justify-content: space-between; }
+.ui-msg-who { color: var(--ui-ink); font-size: 12px; font-weight: 600; }
+.ui-msg-time { color: var(--ui-ink-faint); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
+.ui-msg-body { margin: 3px 0 0; color: var(--ui-ink); font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ui-msg-media { display: inline-block; margin-top: 5px; color: var(--ui-ink-soft); font-size: 12px; text-decoration: underline; }
+.ui-msg-delivery { margin: 4px 0 0; color: var(--ui-ink-faint); font-size: 11.5px; }
+
+.ui-msg-topic { display: flex; gap: 8px; align-items: center; margin: 8px 0 4px; font-size: 12.5px; }
+
+.ui-msg-composer { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-top: 12px; }
+.ui-msg-composer textarea {
+  flex: 1 1 260px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  font: inherit;
+  font-size: 13.5px;
+  resize: vertical;
+}
+.ui-msg-composer > p { flex: 1 0 100%; }
+
+/* ---- Messages phase 2: links, unread, follow-up ------------------------- */
+
+.ui-msg-links { margin: 12px 0; padding: 10px 12px; border: 1px solid var(--ui-line); border-radius: 9px; background: var(--ui-surface); }
+.ui-msg-links > h4 { margin: 0 0 6px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+
+.ui-msg-linklist { display: flex; flex-direction: column; gap: 6px; list-style: none; margin: 0 0 8px; padding: 0; }
+.ui-msg-linklist > li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font-size: 13px; }
+/* A record deleted from its own section keeps its link and says so, rather
+   than the row vanishing — which would lose that it was ever attached. */
+.ui-msg-linklist > li.is-gone .ui-cond-brief-name { color: var(--ui-ink-faint); font-style: italic; }
+
+.ui-msg-attach { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12.5px; }
+.ui-msg-followup { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin: 10px 0; font-size: 12.5px; }
+.ui-msg-followup label { display: flex; flex-direction: column; gap: 3px; }
+.ui-msg-followup > p { flex: 1 0 100%; }
+
+/* This reader's unread. Amber, for the same reason the waiting banner is:
+   design.md gives red to a person waiting on a human and says only
+   Consultations earns it. */
+.ui-msg-unread {
+  align-self: flex-start;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--ui-tone-1-bg);
+  color: var(--ui-tone-1-fg);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* ---- Messages phase 3: internal threads --------------------------------- */
+
+/* §14: "The UI should make this distinction obvious." A banner on every
+   internal surface, in words rather than in colour alone — a pharmacist
+   glancing at a thread must know in one line that the person being discussed
+   cannot see it. Amber, not red: design.md gives red to a person waiting on a
+   human and says only Consultations earns it. */
+.ui-msg-internal-banner {
+  margin: 8px 0;
+  padding: 5px 10px;
+  border: 1px solid var(--ui-tone-1-fg);
+  border-radius: 7px;
+  background: var(--ui-tone-1-bg);
+  color: var(--ui-tone-1-fg);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* The whole internal view sits on a different surface, so the two kinds of
+   thread never look alike even at a glance. */
+.ui-msg-internal { border-left: 3px solid var(--ui-tone-1-fg); padding-left: 12px; }
+
+.ui-msg-notes { display: flex; flex-direction: column; gap: 8px; list-style: none; margin: 10px 0; padding: 0; }
+.ui-msg-notes > li {
+  padding: 8px 11px;
+  border: 1px solid var(--ui-line);
+  border-radius: 9px;
+  background: var(--ui-sunk);
+}
+
+/* The unread count beside the Internal tab. */
+.ui-cprog-pill > .ui-msg-unread { margin-left: 6px; }
