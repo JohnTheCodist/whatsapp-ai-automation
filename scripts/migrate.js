@@ -16,12 +16,55 @@ require('dotenv').config({ path: path.join(__dirname, '..', 'server', '.env'), q
 
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'db', 'migrations');
 
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+/**
+ * Refuse to alter a database that is not on this machine unless the caller
+ * says, in so many words, that it means to.
+ *
+ * WHY. server/.env's DATABASE_URL is the live Supabase project on a
+ * developer's machine, and `node scripts/migrate.js` run from a checkout —
+ * meaning to migrate a local copy — applied six unreleased migrations to
+ * production on 2026-09-21. Nothing asked. The script could not tell a
+ * deploy from a slip, because it had no way to be told.
+ *
+ * THE FLAG, NOT NODE_ENV. The deploy scripts (deploy/update.sh,
+ * deploy/setup.sh) pass --production. NODE_ENV would have been quieter, but
+ * it is set in an env file that lives only on the server, and a guard that
+ * depends on a file nobody can see from the repo is a guard nobody can check.
+ * A local database needs no flag, so nothing about everyday use changes.
+ */
+function refuseUnconfirmedRemote(url) {
+  let host;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    host = null;
+  }
+  if (host && LOCAL_HOSTS.has(host)) return;
+  if (process.argv.includes('--production')) return;
+  // `npm run migrate:test` has already proved this is a test database with
+  // useTestDatabase(), which may legitimately be a second remote project.
+  if (global.__rxnaijaVerifiedTestDatabase && global.__rxnaijaVerifiedTestDatabase === url) return;
+
+  console.error(
+    `\n  Refusing to migrate ${host || 'an unparseable DATABASE_URL'} — it is not a local database.\n\n`
+    + '  If you meant to change the production schema, run:\n'
+    + '    npm run migrate -- --production\n\n'
+    + '  If you meant a local copy, point DATABASE_URL at it first (the local-run\n'
+    + '  env.sh does), or use `npm run migrate:test` for the test database.\n',
+  );
+  process.exit(1);
+}
+
 async function main() {
   const url = process.env.DATABASE_URL;
   if (!url) {
     console.error('DATABASE_URL is not set. Copy server/.env.example to server/.env first.');
     process.exit(1);
   }
+
+  refuseUnconfirmedRemote(url);
 
   // prepare:false for the same reason server/services/db.js sets it: a
   // pooled connection (pgbouncer/Supabase in transaction mode) can hand this

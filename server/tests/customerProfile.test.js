@@ -202,9 +202,21 @@ test('the response has no clinical fields anywhere — this is a CRM, not an EHR
     }
   }(profile));
 
-  for (const banned of ['diagnos', 'allerg', 'vital', 'labresult', 'treatmentplan', 'clinicalnote']) {
+  // AMENDED 2026-09-21, with the owner's decision on the record
+  // (MEDICATIONS_PLAN.md §6.2). This list used to include "allerg" and
+  // "vital", on the grounds that a CRM keeps no clinical record at all. That
+  // is no longer what this product is: it keeps vitals (0054) and a
+  // medication record with dose, route, indication and prescriber (0055).
+  //
+  // The rule that survives is the one that matters, and it is narrower and
+  // sharper: the software RECORDS WHAT A PHARMACIST OBSERVED OR WAS TOLD,
+  // and never forms a clinical judgement of its own. So a diagnosis, a
+  // severity, a triage category, a treatment plan and an interaction verdict
+  // are still forbidden by name — and a test that quietly dropped to nothing
+  // would have been worse than no test.
+  for (const banned of ['diagnos', 'severity', 'triage', 'treatmentplan', 'recommendation', 'interactionrisk']) {
     const hit = keys.find((k) => k.includes(banned));
-    assert.ok(!hit, `profile exposes a clinical field "${hit}" — this is a CRM, not an EHR`);
+    assert.ok(!hit, `profile exposes "${hit}" — this product records observations, it does not form clinical judgements`);
   }
 });
 
@@ -238,4 +250,76 @@ test('a customer with no orders or conversations still returns a complete, non-t
   // from first_seen_at, not from any activity.
   assert.equal(profile.timeline.length, 1);
   assert.equal(profile.timeline[0].eventType, 'PATIENT_CREATED');
+});
+
+/**
+ * Conditions and consultation counts on the profile (2026-09-20).
+ *
+ * Both were added for the patient summary, which shows a line per section of
+ * the record and links through. The tests that matter are the tenant ones:
+ * a condition or a consultation belonging to another pharmacy's patient must
+ * never appear here, and both read through a join that could lose the scope
+ * in a refactor without any visible symptom.
+ */
+test('conditions come back with their status, so "confirmed by purchase" is never shown as a diagnosis', { skip: SKIP && skipReason }, async () => {
+  await db`
+    insert into patient_condition (pharmacy_id, customer_id, condition_code, condition_name, status, evidence_strength)
+    values (${ctx.a.id}, ${ctx.customer.id}, 'HYPERTENSION', 'Hypertension', 'CONFIRMED_BY_PURCHASE', 'STRONG')
+    on conflict do nothing
+  `;
+  const profile = await getCustomerProfile(ctx.a.id, ctx.customer.id);
+  const found = profile.conditions.find((c) => c.code === 'HYPERTENSION');
+  assert.ok(found, 'the condition is on the profile');
+  assert.equal(found.name, 'Hypertension');
+  // The status travels with it. A screen that only had the name could not
+  // tell a pharmacist this came from a till, not a doctor.
+  assert.equal(found.status, 'CONFIRMED_BY_PURCHASE');
+  assert.equal(found.evidence, 'STRONG');
+});
+
+test('another pharmacy\'s condition on the same customer id is not returned', { skip: SKIP && skipReason }, async () => {
+  // Pharmacy B writes a condition against A's customer id. Nothing stops a
+  // row existing; the query must refuse to read it.
+  await db`
+    insert into patient_condition (pharmacy_id, customer_id, condition_code, condition_name, status, evidence_strength)
+    values (${ctx.b.id}, ${ctx.customer.id}, 'ASTHMA', 'Asthma', 'CONFIRMED_BY_PURCHASE', 'STRONG')
+    on conflict do nothing
+  `;
+  const profile = await getCustomerProfile(ctx.a.id, ctx.customer.id);
+  assert.ok(!profile.conditions.some((c) => c.code === 'ASTHMA'), 'pharmacy B\'s condition leaked into A\'s profile');
+});
+
+test('consultation counts are counts only — the encounters themselves are not on the profile', { skip: SKIP && skipReason }, async () => {
+  const [pp] = await db`
+    insert into patient_profiles (pharmacy_id, customer_id) values (${ctx.a.id}, ${ctx.customer.id})
+    returning id
+  `;
+  await db`
+    insert into clinical_encounters (pharmacy_id, patient_profile_id, red_flags_detected, started_at)
+    values (${ctx.a.id}, ${pp.id}, ${db.json(['chest pain'])}, now() - interval '2 days')
+  `;
+  await db`
+    insert into clinical_encounters (pharmacy_id, patient_profile_id, red_flags_detected, started_at)
+    values (${ctx.a.id}, ${pp.id}, ${db.json([])}, now() - interval '9 days')
+  `;
+  const profile = await getCustomerProfile(ctx.a.id, ctx.customer.id);
+  assert.equal(profile.clinical.encounters, 2);
+  assert.equal(profile.clinical.redFlagEncounters, 1);
+  assert.ok(profile.clinical.lastEncounterAt, 'the most recent consultation is dated');
+  // Counts, not content: what was said in a consultation is a section of the
+  // record behind its own request, never a field on the summary payload.
+  assert.deepEqual(Object.keys(profile.clinical).sort(), ['encounters', 'lastEncounterAt', 'redFlagEncounters']);
+});
+
+test('a patient with no conditions and no consultations gets honest zeroes', { skip: SKIP && skipReason }, async () => {
+  const [bare] = await db`
+    insert into customers (pharmacy_id, identity_key, wa_phone, wa_jid, display_name, first_seen_at)
+    values (${ctx.a.id}, '2349080000077', '2349080000077', '2349080000077@s.whatsapp.net', 'No History', now())
+    returning id
+  `;
+  const profile = await getCustomerProfile(ctx.a.id, bare.id);
+  assert.deepEqual(profile.conditions, []);
+  assert.equal(profile.clinical.encounters, 0);
+  assert.equal(profile.clinical.redFlagEncounters, 0);
+  assert.equal(profile.clinical.lastEncounterAt, null);
 });

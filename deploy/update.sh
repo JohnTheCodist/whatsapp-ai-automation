@@ -401,7 +401,7 @@ as_app '
   set -eo pipefail
   cd '"$APP_DIR"'
   set -a; . ./.env.production; set +a
-  npm run migrate
+  npm run migrate -- --production
 '
 
 restart_and_verify

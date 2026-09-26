@@ -25,6 +25,7 @@ import CustomerTimeline from './CustomerTimeline.jsx';
 import CustomerCrm from './CustomerCrm.jsx';
 import ConversationState from './ConversationState.jsx';
 import { MedicationJourneysPanel } from './MedicationJourneys.jsx';
+import PatientCare from './PatientCare.jsx';
 
 const STATUS_TONE = {
   active: 'bg-teal-50 text-teal-700',
@@ -83,7 +84,7 @@ export default function CustomerProfile({ customerId, onBack, onOpenConversation
   if (error) {
     return (
       <div className="space-y-3">
-        <button onClick={onBack} className="text-sm text-slate-500 hover:text-slate-700">&larr; Back to customers</button>
+        {onBack && <button onClick={onBack} className="text-sm text-slate-500 hover:text-slate-700">&larr; Back to customers</button>}
         <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
       </div>
     );
@@ -104,7 +105,10 @@ export default function CustomerProfile({ customerId, onBack, onOpenConversation
 
   return (
     <div className="space-y-5">
-      <button onClick={onBack} className="text-sm text-slate-500 hover:text-slate-700">&larr; Back to customers</button>
+      {/* Only when this profile is the whole screen. Inside a patient
+            record (PatientRecord.jsx) the record owns the way back, and two
+            back links on one page is a question about which one leaves. */}
+      {onBack && <button onClick={onBack} className="text-sm text-slate-500 hover:text-slate-700">&larr; Back to customers</button>}
 
       {/* ---- header ---- */}
       <div className="rounded-lg border border-slate-200 bg-white p-5">
@@ -130,6 +134,9 @@ export default function CustomerProfile({ customerId, onBack, onOpenConversation
           </div>
         </div>
       </div>
+
+      {/* ---- care details: assigned pharmacist, age, gender (0053) ---- */}
+      <PatientCare customerId={customer.id} />
 
       {/* ---- what is happening right now ----
           Above the aggregate cards on purpose. Counts describe the

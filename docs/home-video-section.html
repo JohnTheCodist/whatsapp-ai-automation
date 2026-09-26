@@ -1,0 +1,303 @@
+<!--
+  ═══════════════════════════════════════════════════════════════════════
+  "See it work" — the video section for home.html
+  ═══════════════════════════════════════════════════════════════════════
+
+  WHERE IT GOES
+  Immediately AFTER the closing </section> of `.steps` (the "Three steps.
+  Then it runs itself." block) and before <section class="stage">. That
+  puts it where a reader has just been told how simple setup is and is
+  primed to want proof — and it keeps the dark/light alternation the page
+  already has: steps (paper) → video (band) → stage (paper).
+
+  WHY A FACADE AND NOT AN <iframe> OR AN AUTOLOADING <video>
+  A YouTube iframe is roughly 900KB of JavaScript and three tracking
+  cookies before anybody presses play, and it loads whether or not they
+  ever do. On a Nigerian mobile connection that is the difference between
+  a page that arrives and one that is abandoned. So this ships a poster
+  image and a play button, and only builds the real player on click.
+
+  The poster is a still — it costs one image, it can be the LCP element
+  safely, and the visitor gets to decide whether to spend the bandwidth.
+
+  NO AUTOPLAY. An unprompted video that starts talking is the single most
+  reliable way to make somebody close a tab, and on a metered connection
+  it spends their money without asking.
+
+  ═══════════════════════════════════════════════════════════════════════
+  1 · CSS — paste inside the existing <style> block, anywhere after the
+      `.steps` rules so the section reads in source order.
+  ═══════════════════════════════════════════════════════════════════════
+-->
+<style>
+/* ─── the film ────────────────────────────────────────────────────────
+   The dark band between two paper sections. Same treatment as .growth and
+   .vault so it belongs to the page's existing rhythm rather than reading
+   as a bolted-on embed.                                                  */
+.film {
+  position: relative; isolation: isolate; overflow: hidden;
+  background: var(--color-band);
+  color: var(--color-band-ink);
+  padding-block: var(--pad-section);
+}
+.film::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background: radial-gradient(76% 58% at 50% -6%, oklch(29% 0.058 168) 0%, transparent 62%);
+}
+
+.film-head { text-align: center; max-width: 46ch; margin-inline: auto; }
+.film-k {
+  display: inline-flex; align-items: center; gap: var(--space-xs);
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--color-accent);
+}
+.film-k::before {
+  content: ""; width: 7px; height: 7px; border-radius: var(--radius-pill);
+  background: var(--color-accent);
+}
+.film h2 {
+  margin-top: var(--space-lg);
+  font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(1.9rem, 4.4vw, 3.1rem);
+  line-height: 1.02; letter-spacing: -0.044em;
+  overflow-wrap: anywhere; min-width: 0;
+}
+.film-head p {
+  margin-top: var(--space-lg);
+  color: var(--color-band-muted);
+  font-size: var(--text-lg);
+}
+
+/* the frame */
+.film-stage {
+  position: relative;
+  margin: var(--space-2xl) auto 0;
+  max-width: 940px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: var(--rule-hair) solid var(--color-band-rule);
+  box-shadow: var(--shadow-card);
+  background: oklch(23% 0.016 168);
+  /* Reserved BEFORE anything loads. Without this the poster's arrival
+     shoves the rest of the page down — the layout shift that Core Web
+     Vitals measures and that readers experience as the page jumping
+     under their thumb. */
+  aspect-ratio: 16 / 9;
+}
+.film-stage img,
+.film-stage video,
+.film-stage iframe {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  display: block; object-fit: cover;
+  border: 0;
+}
+
+/* the button — its own element so it is focusable and announced, rather
+   than a click handler bolted onto the poster */
+.film-play {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  border: 0; padding: 0; margin: 0;
+  background: linear-gradient(180deg,
+    oklch(19% 0.017 168 / 0.10) 0%,
+    oklch(19% 0.017 168 / 0.42) 100%);
+  cursor: pointer;
+  transition: background var(--dur-mid) var(--ease-out);
+}
+.film-play:hover { background: oklch(19% 0.017 168 / 0.28); }
+.film-play:focus-visible { outline: 3px solid var(--color-accent); outline-offset: -3px; }
+
+.film-play span {
+  width: clamp(58px, 7vw, 76px);
+  aspect-ratio: 1;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  display: grid; place-items: center;
+  box-shadow: 0 18px 40px -14px oklch(21% 0.02 165 / 0.7);
+  transition: transform var(--dur-mid) var(--ease-out);
+}
+.film-play:hover span { transform: scale(1.07); }
+.film-play:active span { transform: scale(0.98); }
+.film-play svg { width: 38%; height: 38%; margin-left: 8%; }
+
+/* the runtime, sat on the frame so the visitor knows what they are
+   committing to before they spend the data */
+.film-len {
+  position: absolute; right: var(--space-md); bottom: var(--space-md);
+  padding: 4px 9px; border-radius: var(--radius-sm);
+  background: oklch(19% 0.017 168 / 0.72);
+  color: var(--color-band-ink);
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+}
+
+.film-note {
+  margin: var(--space-lg) auto 0;
+  max-width: 52ch; text-align: center;
+  font-size: var(--text-sm); color: oklch(58% 0.014 165);
+}
+.film-note a { color: var(--color-accent); text-decoration: none; }
+.film-note a:hover { text-decoration: underline; }
+
+@media (prefers-reduced-motion: reduce) {
+  .film-play span, .film-play { transition: none; }
+}
+</style>
+
+
+<!--
+  ═══════════════════════════════════════════════════════════════════════
+  2 · HTML — paste between </section> of .steps and <section class="stage">
+  ═══════════════════════════════════════════════════════════════════════
+
+  REPLACE BEFORE SHIPPING:
+    /media/how-it-works.mp4     your video
+    /media/how-it-works.webm    optional, smaller — serve both if you can
+    /media/how-it-works.jpg     the poster still
+    /media/how-it-works.vtt     captions (see the note at the bottom)
+    2:14                        the real runtime
+-->
+<section class="film" id="film">
+  <div class="shell">
+
+    <div class="film-head">
+      <span class="film-k">See it work</span>
+      <h2>Two minutes, one real conversation.</h2>
+      <p>
+        A customer messages the pharmacy's own WhatsApp number. Watch what the
+        assistant answers from the shelf — and where it stops and calls a
+        pharmacist instead.
+      </p>
+    </div>
+
+    <div class="film-stage" id="filmStage">
+      <img src="/media/how-it-works.jpg"
+           alt="RxNaija answering a customer on WhatsApp, showing a price read from the pharmacy's own catalogue."
+           width="1280" height="720" loading="lazy" decoding="async" />
+
+      <button class="film-play" type="button" id="filmPlay" aria-label="Play the two-minute walkthrough">
+        <span aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </span>
+      </button>
+
+      <span class="film-len" aria-hidden="true">2:14</span>
+    </div>
+
+    <p class="film-note">
+      No sound needed — it is captioned throughout.
+      Prefer to try it yourself? <a href="#close">Ask it something below.</a>
+    </p>
+
+  </div>
+</section>
+
+
+<!--
+  ═══════════════════════════════════════════════════════════════════════
+  3 · JS — paste at the end of the existing <script>, before </script>
+  ═══════════════════════════════════════════════════════════════════════
+-->
+<script>
+/* ── the walkthrough ──
+   Builds the player on click and not before. Everything above this point
+   costs one poster image; the video itself is only fetched by somebody who
+   has asked for it, which on a metered Nigerian connection is the
+   difference between a considerate page and an expensive one. */
+(function () {
+  var stage = document.getElementById('filmStage');
+  if (!stage) return;
+  var btn = document.getElementById('filmPlay');
+
+  btn.addEventListener('click', function () {
+    var v = document.createElement('video');
+    v.controls = true;
+    v.autoplay = true;          // safe: this is a direct response to a click
+    v.playsInline = true;       // iOS otherwise hijacks it into fullscreen
+    v.preload = 'auto';
+    v.setAttribute('poster', '/media/how-it-works.jpg');
+
+    // WebM first: browsers pick the first source they can play, and where
+    // both are supported the VP9/AV1 file is meaningfully smaller.
+    [['/media/how-it-works.webm', 'video/webm'],
+     ['/media/how-it-works.mp4',  'video/mp4']].forEach(function (s) {
+      var el = document.createElement('source');
+      el.src = s[0]; el.type = s[1];
+      v.appendChild(el);
+    });
+
+    // Captions, default ON. Most of this will be watched with the sound off,
+    // and a walkthrough nobody can follow silently is a walkthrough nobody
+    // finishes.
+    var t = document.createElement('track');
+    t.kind = 'captions'; t.srclang = 'en'; t.label = 'English';
+    t.src = '/media/how-it-works.vtt'; t.default = true;
+    v.appendChild(t);
+
+    stage.innerHTML = '';
+    stage.appendChild(v);
+    v.focus();
+  });
+})();
+</script>
+
+
+<!--
+  ═══════════════════════════════════════════════════════════════════════
+  IF YOU WOULD RATHER USE YOUTUBE
+  ═══════════════════════════════════════════════════════════════════════
+
+  Self-hosting is better here — no cookie banner, no "watch next" grid of
+  someone else's videos at the end, and no third party learning who visits
+  your site. But it costs bandwidth on your shared host, and a 1080p file
+  served from Nigeria to Nigeria over shared hosting can be slower than
+  YouTube's edge.
+
+  If you go with YouTube, keep the facade: replace the button handler above
+  with this, and nothing loads from Google until somebody clicks.
+
+    btn.addEventListener('click', function () {
+      var f = document.createElement('iframe');
+      f.src = 'https://www.youtube-nocookie.com/embed/VIDEO_ID'
+            + '?autoplay=1&rel=0&modestbranding=1&cc_load_policy=1';
+      f.allow = 'accelerated-mobile-playback; autoplay; encrypted-media; picture-in-picture';
+      f.allowFullscreen = true;
+      f.title = 'RxNaija walkthrough';
+      stage.innerHTML = '';
+      stage.appendChild(f);
+    });
+
+  youtube-nocookie.com, not youtube.com: it defers the tracking cookie until
+  playback, which is the difference between needing a consent banner and not.
+
+
+  ═══════════════════════════════════════════════════════════════════════
+  WHAT TO ACTUALLY RECORD
+  ═══════════════════════════════════════════════════════════════════════
+
+  Encode:
+    MP4   H.264 + AAC, 1280x720, ~2500 kbps  → the compatibility floor
+    WebM  VP9 + Opus,  1280x720, ~1600 kbps  → served first where supported
+    Poster  1280x720 JPEG, under 150 KB
+    Captions  WebVTT
+
+    ffmpeg -i raw.mov -vf scale=1280:-2 -c:v libx264 -crf 23 -preset slow \
+           -c:a aac -b:a 96k -movflags +faststart how-it-works.mp4
+
+    -movflags +faststart matters: without it the index sits at the END of
+    the file and the browser must download the whole thing before the first
+    frame appears.
+
+  Content — 90 seconds is plenty, and the order is the argument:
+    1. A real phone, the pharmacy's real number. Not a mockup.
+    2. "How much is Panadol?" → a price read from the catalogue.
+    3. Change the price in the dashboard, ask again, get the new one.
+       This is the moment that separates you from a chatbot.
+    4. "How much paracetamol for my 2 year old?" → it REFUSES and calls a
+       pharmacist. End on this. It is the strongest thing the product does
+       and the thing a pharmacist is actually worried about.
+
+  Do not narrate features. Show the refusal.
+-->

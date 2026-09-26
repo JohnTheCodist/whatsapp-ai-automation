@@ -20,7 +20,7 @@
  * ever the accent — so an alert can never be mistaken for "the active tab".
  */
 
-import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import Overview from './Overview.jsx';
 import AiPerformance from './AiPerformance.jsx';
 import UploadCatalogue from './UploadCatalogue.jsx';
@@ -28,18 +28,23 @@ import Consultations from './Consultations.jsx';
 import Inbox from './Inbox.jsx';
 import Orders from './Orders.jsx';
 import Requests from './Requests.jsx';
-import Customers from './Customers.jsx';
+import Customers, { ChronicRegister } from './Customers.jsx';
 import Settings from './Settings.jsx';
 import AccountMenu from './AccountMenu.jsx';
 import NotificationBell from './NotificationBell.jsx';
 import Favicon from './Favicon.jsx';
 import { playOrderChime, playConsultationAlarm, unlockChime, isUnlocked } from './orderChime.js';
 import {
-  IconOverview, IconConsultations, IconInbox, IconOrders, IconRequests,
-  IconCustomers, IconSetup, IconSearch, IconVolumeOn, IconVolumeOff, IconLink, IconAi,
-  IconInventory, IconUpload, IconDeals, IconBilling, IconAlertTriangle, IconWebsite, IconHome,
+  IconSetup, IconSearch, IconVolumeOn, IconVolumeOff, IconLink, IconBilling, IconAlertTriangle, IconHome,
 } from './Icons.jsx';
-import Launcher, { MarketingPending } from './Launcher.jsx';
+import Launcher from './Launcher.jsx';
+import CatalogueSync from './CatalogueSync.jsx';
+import TradeQrCode from './TradeQrCode.jsx';
+import { TemplatesPanel } from './MetaReviewTest.jsx';
+import { RefillQueue } from './MedicationJourneys.jsx';
+import {
+  MODULES, MODULE_TABS, moduleOfTab, itemOfTab, sidebarFor, moduleHome,
+} from './modules.js';
 import Billing from './Billing.jsx';
 /**
  * The whole Website section, in its own chunk.
@@ -54,139 +59,62 @@ import Billing from './Billing.jsx';
 const WebsitePanel = lazy(() => import('./website/WebsitePanel.jsx'));
 import { isWebsiteBuilderEnabled } from './website/api.js';
 
-const SECTIONS = [
-  { id: 'overview', label: 'Overview', Icon: IconOverview, title: 'Overview' },
-  // Directly after Overview, because it answers the follow-up question rather
-  // than a new one: Overview says how the business is doing, this says how
-  // much of that the assistant is responsible for. It used to be five
-  // sections stacked underneath Overview, which pushed the alerts — the only
-  // thing on that screen that is ever urgent — below the fold.
-  { id: 'ai', label: 'AI', Icon: IconAi, title: 'AI performance' },
-  // Ahead of Inbox deliberately. The Inbox is every conversation; this is
-  // only people waiting on a pharmacist, and a clinical question left sitting
-  // behind a general list is the one thing here that can actually harm
-  // someone.
-  { id: 'consultations', label: 'Consult', Icon: IconConsultations, title: 'Consultations' },
-  // Inbox, Orders and Requests are ONE rail item and three segments, not
-  // three rail items. They are the same job at three stages — someone asked,
-  // it became an order, or we could not supply it — and as siblings in the
-  // rail they read as unrelated places, so working a single customer meant
-  // hopping the sidebar and losing your position each time.
-  //
-  // Their tab ids are deliberately UNCHANGED. Every onNavigate('orders') in
-  // the app still lands exactly where it did; the grouping is presentation,
-  // so nothing that already navigates here had to be touched.
-  {
-    id: 'deals',
-    label: 'Manage Deals',
-    Icon: IconDeals,
-    title: 'Manage Deals',
-    children: [
-      { id: 'inbox', label: 'Inbox', Icon: IconInbox },
-      { id: 'orders', label: 'Orders', Icon: IconOrders },
-      { id: 'requests', label: 'Requests', Icon: IconRequests },
-    ],
-  },
-  { id: 'customers', label: 'Patients', Icon: IconCustomers, title: 'Patients' },
-  // After Patients and before Inventory, which is where its rhythm puts it:
-  // a pharmacy sets its website up once and revisits it a few times a year.
-  // That is not daily work like the queues above, and not configuration like
-  // Setup at the foot of the rail — so it sits between them.
-  //
-  // Present in SECTIONS unconditionally so VALID_TABS, PARENT_OF and
-  // sectionFor all stay derived rather than special-cased; the RAIL hides it
-  // when the server has the feature switched off. See websiteEnabled below.
-  { id: 'website', label: 'Website', Icon: IconWebsite, title: 'Website' },
-  // Inventory is daily work, not configuration. Buried in Setup it sat beside
-  // one-off things like the WhatsApp pairing and the assistant's name, so the
-  // one screen a pharmacy touches every week lived behind the screens they
-  // touch once. Two segments, because uploading a file and checking what the
-  // assistant can actually sell are different jobs done at different times.
-  {
-    id: 'inventory',
-    label: 'Inventory',
-    Icon: IconInventory,
-    title: 'Inventory',
-    children: [
-      { id: 'inventory', label: 'Products', Icon: IconInventory },
-      { id: 'inventory-upload', label: 'Upload', Icon: IconUpload },
-    ],
-  },
-];
+/*
+ * WHERE EVERY SCREEN LIVES is decided in modules.js: five modules, each with
+ * its own sidebar. This file keeps only what belongs to no module — Setup,
+ * Billing and Home — and the words shown under each screen's title. See
+ * MODULES_PLAN.md for the audit behind every placement.
+ */
 
 /**
- * Setup is deliberately NOT in SECTIONS.
- *
- * It is configuration, not work — connection, catalogue mapping, assistant
- * identity, opening hours. Sitting in the same list as the queues gave it
- * equal weight with screens that carry live customer work, and it is opened
- * roughly once a month. It now lives with the connection status at the foot
- * of the rail, which is the other thing on this screen that is about the
- * installation rather than the day.
+ * Setup is configuration, not work — connection, assistant identity, opening
+ * hours — so it belongs to no module. It sits with the connection status at
+ * the foot of every workspace's sidebar, which is the other thing on screen
+ * about the installation rather than the day.
  */
 const SETUP = { id: 'setup', label: 'Setup', Icon: IconSetup, title: 'Setup' };
 
-/**
- * Billing sits beside Setup for the same reason Setup sits at the foot of
- * the rail: it is about the installation, not about today's work. Nobody
- * opens this daily, and putting it above the queues would give a monthly
- * concern the same weight as the people currently waiting.
- */
+/** Beside Setup, for the same reason: about the installation, not today. */
 const BILLING = { id: 'billing', label: 'Billing', Icon: IconBilling, title: 'Billing' };
 
 /**
- * Home — the module launcher (Launcher.jsx), and the screen a pharmacy lands
- * on after signing in. Outside SECTIONS for the same reason as Setup: it is
- * not a place in the sidebar, it is where the sidebar's modules are chosen
- * from. The sidebar is not drawn on it at all, as on the desk's home.
+ * Home — the module launcher (Launcher.jsx), and where a pharmacy lands after
+ * signing in. No sidebar is drawn on it: it is where modules are chosen from,
+ * not a place inside one.
  */
 const HOME = { id: 'home', label: 'Home', title: 'Home' };
 
-/**
- * Marketing has a tile on Home but no screen yet. It gets a real tab id so
- * the tile, the URL and the breadcrumb all behave, and it lands on a page
- * that says plainly it is not built (MarketingPending).
- */
-const MARKETING = { id: 'marketing', label: 'Marketing', title: 'Marketing' };
+const GLOBAL = { [SETUP.id]: SETUP, [BILLING.id]: BILLING, [HOME.id]: HOME };
 
 const SUBTITLE = {
   overview: 'How the pharmacy is doing',
-  ai: 'What the assistant is handling, and what it is passing to you',
-  consultations: 'People waiting to speak to a pharmacist',
-  inbox: 'Every conversation on this number',
+  inventory: 'What the assistant can see and sell',
+  'inventory-upload': 'Add or replace your catalogue from a spreadsheet',
+  'stock-sync': 'Keep the catalogue current from your stock software',
   orders: 'Reservations awaiting confirmation',
   requests: 'Asked for, not in the catalogue',
-  customers: 'One record per person, per pharmacy',
+  wholesale: 'The QR code that signs businesses up for wholesale prices',
+  consultations: 'People waiting to speak to a pharmacist',
+  customers: "View all your customers' details",
+  refills: 'Patients whose medicine is running out',
+  conditions: 'Patients grouped by the conditions they buy for',
+  inbox: 'Every conversation on this number',
+  templates: 'Messages WhatsApp lets you send at any time',
+  ai: 'What the assistant is handling, and what it is passing to you',
   website: 'Your pharmacy on the web, and the WhatsApp button on it',
-  inventory: 'What the assistant can see and sell',
-  'inventory-upload': 'What the assistant can see and sell',
   setup: 'Connection, catalogue and assistant identity',
   billing: 'Your plan, and what happens when it ends',
-  marketing: 'Campaigns to your patients',
 };
 
-/** Flattened once, so a child tab can find its parent without a nested scan. */
-const PARENT_OF = Object.fromEntries(
-  SECTIONS.flatMap((s) => (s.children || []).map((c) => [c.id, s])),
-);
-
 /**
- * Every id `tab` state is allowed to hold — derived from SECTIONS/SETUP
- * rather than hand-listed, so it can never drift out of sync with the rail
- * as sections are added or renamed.
+ * Every id `tab` state may hold — the modules' screens plus the three global
+ * ones. Derived, never hand-listed, so it cannot drift from the sidebars.
  *
- * Used to validate whatever comes back out of the URL on load: a query
- * string is user-editable and outlives a code change, so a stale or
- * hand-typed `?tab=` must fall back to Overview rather than rendering a
- * blank canvas with no matching branch below.
+ * Validates whatever comes out of the URL on load: a query string is
+ * user-editable and outlives a code change, so a stale or hand-typed ?tab=
+ * lands on Home rather than rendering a blank canvas.
  */
-const VALID_TABS = new Set([
-  ...SECTIONS.flatMap((s) => [s.id, ...(s.children || []).map((c) => c.id)]),
-  SETUP.id,
-  BILLING.id,
-  HOME.id,
-  MARKETING.id,
-]);
+const VALID_TABS = new Set([...MODULE_TABS, ...Object.keys(GLOBAL)]);
 
 /** Read the tab to open on load from the URL, or null if there isn't one. */
 function readTabFromUrl() {
@@ -194,21 +122,30 @@ function readTabFromUrl() {
   return t && VALID_TABS.has(t) ? t : null;
 }
 
+/** The title a screen carries: its sidebar label, or the global screen's name. */
 /**
- * The rail item that should look active for a given tab — itself, or its
- * parent. SETUP is checked explicitly because it deliberately lives outside
- * SECTIONS now (see its own note); without this, opening Setup would fall
- * through to SECTIONS[0] and light "Overview" instead.
+ * Where the page heading is NOT the sidebar's wording.
+ *
+ * The sidebar row has to be distinguishable from its neighbours inside the
+ * Patients module — "All patients" beside "Refills due" and "Conditions" —
+ * but the page it opens is the patient list itself, and "All patients" over
+ * a list that is usually filtered contradicts what is on the screen. The
+ * heading says where you are; the subtitle says what you can do here.
  */
-function sectionFor(tab) {
-  if (tab === SETUP.id) return SETUP;
-  // Same explicit check as SETUP, and for the same reason: BILLING lives
-  // outside SECTIONS, so without this, opening Billing would fall through to
-  // SECTIONS[0] and light "Overview" instead.
-  if (tab === BILLING.id) return BILLING;
-  if (tab === HOME.id) return HOME;
-  if (tab === MARKETING.id) return MARKETING;
-  return PARENT_OF[tab] || SECTIONS.find((s) => s.id === tab) || SECTIONS[0];
+const PAGE_TITLE = {
+  customers: 'Patients',
+};
+
+function titleFor(tab) {
+  return PAGE_TITLE[tab] || crumbFor(tab);
+}
+
+/** The breadcrumb always says what the sidebar says, so the trail a person
+ *  clicked matches the trail they are reading. Patients is the case that
+ *  proves it: the crumb is "Patients / All patients" while the heading over
+ *  the list is "Patients". */
+function crumbFor(tab) {
+  return itemOfTab(tab)?.label || GLOBAL[tab]?.title || '';
 }
 
 /**
@@ -305,6 +242,16 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
   // sees that someone is waiting in Consultations. A count only visible from
   // inside the tab it describes is useless.
   const [badges, setBadges] = useState({ consultations: 0, orders: 0, requests: 0 });
+  // The same poll, kept as "not known yet" (null) until its first answer, for
+  // the launcher's live lines — a card must not claim "No orders waiting"
+  // before anybody has asked. The badges above can default to 0 because a
+  // zero badge renders nothing.
+  const [summary, setSummary] = useState(null);
+  // Refills due and Conditions list patients; choosing one opens THE patient
+  // profile under All patients. One profile, reached from three screens —
+  // never a second copy of it on each.
+  const [patientToOpen, setPatientToOpen] = useState(null);
+  const clearPatientToOpen = useCallback(() => setPatientToOpen(null), []);
   // Defaults ON, not off — a pharmacy team should not have to discover and
   // flip a switch before an actionable alert (a new order, a pharmacist
   // handoff) makes any sound. Read from localStorage so the choice survives
@@ -408,6 +355,13 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
           }
           prevPending.current = pending;
           setConsultationsWaiting(s?.open_handoffs || 0);
+          setSummary({
+            orders: pending,
+            handoffs: s?.open_handoffs || 0,
+            // ?? null: an older server without this count leaves the
+            // Marketing card's line blank rather than claiming zero.
+            openConversations: s?.open_conversations ?? null,
+          });
         }
       } catch { /* the sections still work without badges */ }
     };
@@ -456,12 +410,21 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
   }, [consultationsWaiting, alarmSilenced, soundOn]);
 
   const connected = health?.status === 'ok';
-  const active = sectionFor(tab);
   // Home is the desk's launcher: no sidebar, logo left, search centred.
   const isHome = tab === HOME.id;
-  // The segments of the group currently open, or none. Drives both the
-  // sub-nav and the "is this rail item lit" test below.
-  const segments = active.children || null;
+  /**
+   * Patients is the second screen with no sidebar, at the owner's request
+   * (2026-09-20). The list is wide — nine columns — and inside a patient the
+   * record grows its OWN navigation of twelve sections (PatientRecord.jsx),
+   * which beside the module rail would be two vertical menus for one screen.
+   */
+  const isBare = isHome || tab === 'customers';
+  // The module this screen belongs to, or null on Setup and Billing — where
+  // the sidebar lists the modules instead, so there is always a way back in.
+  const currentModule = moduleOfTab(tab);
+  const pageTitle = titleFor(tab);
+  const crumbTitle = crumbFor(tab);
+  const openPatient = (id) => { setPatientToOpen(id); setTab('customers'); };
 
   function submitSearch(e) {
     e.preventDefault();
@@ -473,7 +436,7 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
   return (
     <div className="flex min-h-screen bg-[var(--ui-paper)]">
       {/* ---------------------------------------------------------------- rail */}
-      {!isHome && (<>
+      {!isBare && (<>
       {/* The strip's footprint. Always 56px in the page's flow, so the
           content beside it never moves; the panel inside opens OVER the
           page. Its right hairline is the strip's edge while the panel is
@@ -506,48 +469,42 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
           </span>
         </div>
 
+        {/* The group label names the module you are in — the desk's
+            workspace header. On Setup and Billing, which belong to no
+            module, it offers the modules instead. */}
         <span className="ui-rail-fade px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ui-ink-faint)]">
-          Workspace
+          {currentModule ? currentModule.label : 'Modules'}
         </span>
 
-        {SECTIONS
-          // Website is in SECTIONS so every derived structure keeps working,
-          // but it must not appear in the rail until the server says the
-          // feature is mounted. `null` is "not asked yet" and hides it too:
-          // a tab that appears and then vanishes is worse than one that
-          // arrives a moment late.
-          .filter((s) => s.id !== 'website' || websiteEnabled === true)
-          .map(({ id, label, Icon, children }, i) => {
-          // A group is lit when any of its segments is open, so "Manage Deals"
-          // stays highlighted while you move between Inbox, Orders and
-          // Requests — the rail should say which room you are in, not go dark
-          // because you changed desk.
-          const isActive = children ? children.some((c) => c.id === tab) : tab === id;
-          // A group carries the sum of its segments. Collapsing three items
-          // must not also collapse the reason to look at them: if two orders
-          // and a request are waiting, the rail still says 3.
-          const count = children
-            ? children.reduce((n, c) => n + (badges[c.id] || 0), 0)
-            : (badges[id] || 0);
-          return (
+        {currentModule
+          // CONTEXTUAL: only this module's screens. The five modules are one
+          // click away on Home, via the logo above or the breadcrumb.
+          ? sidebarFor(currentModule, { websiteEnabled }).map(({
+            tab: itemTab, label, Icon, badge, tone,
+          }, i) => (
             <RailButton
-              key={id}
+              key={itemTab}
               index={i + 1}
-              active={isActive}
-              // A group opens on its FIRST segment only when you are not
-              // already inside it — clicking "Manage Deals" while reading an
-              // order must not throw you back to the Inbox.
-              onClick={() => setTab(children ? (isActive ? tab : children[0].id) : id)}
+              active={tab === itemTab}
+              onClick={() => setTab(itemTab)}
               Icon={Icon}
               label={label}
-              count={count}
-              // Consultations is the only red badge. Everything else is
-              // queued work; that one is a person waiting, and the colour has
-              // to say so from across the room.
-              tone={id === 'consultations' ? 'red' : 'amber'}
+              count={badge ? (badges[badge] || 0) : 0}
+              // Red only for a person waiting on a pharmacist; everything
+              // else is queued work (design.md).
+              tone={tone || 'amber'}
             />
-          );
-        })}
+          ))
+          : MODULES.map((m, i) => (
+            <RailButton
+              key={m.id}
+              index={i + 1}
+              active={false}
+              onClick={() => setTab(moduleHome(m.id, { websiteEnabled }))}
+              Icon={m.Icon}
+              label={m.label}
+            />
+          ))}
 
         <div className="mt-auto pt-3">
           {/* Sign out is no longer here — it lives in the account menu at the
@@ -661,25 +618,25 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
                 </button>
               </li>
               <li aria-hidden="true" className="text-[var(--ui-ink-faint)]">/</li>
-              {segments ? (
+              {currentModule ? (
                 <>
                   <li className="min-w-0">
                     <button
                       type="button"
-                      onClick={() => setTab(segments[0].id)}
+                      onClick={() => setTab(moduleHome(currentModule.id, { websiteEnabled }))}
                       className="truncate text-[var(--ui-ink-soft)] hover:text-[var(--ui-ink)]"
                     >
-                      {active.title}
+                      {currentModule.label}
                     </button>
                   </li>
                   <li aria-hidden="true" className="text-[var(--ui-ink-faint)]">/</li>
                   <li className="min-w-0 truncate font-medium text-[var(--ui-ink)]" aria-current="page">
-                    {segments.find((s) => s.id === tab)?.label || active.title}
+                    {crumbTitle}
                   </li>
                 </>
               ) : (
                 <li className="min-w-0 truncate font-medium text-[var(--ui-ink)]" aria-current="page">
-                  {tab === SETUP.id ? SETUP.title : tab === BILLING.id ? BILLING.title : active.title}
+                  {crumbTitle}
                 </li>
               )}
             </ol>
@@ -858,12 +815,12 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
             {tab !== SETUP.id && !isHome && (
               <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
                 <div>
-                  <h1 className="text-xl font-semibold tracking-tight text-[var(--ui-ink)]">{active.title}</h1>
+                  <h1 className="text-xl font-semibold tracking-tight text-[var(--ui-ink)]">{pageTitle}</h1>
                   {/* Inside a group the subtitle describes the SEGMENT, not the
                       group: the h1 already says where you are, so repeating it
                       underneath wastes the one line that could tell you what
                       this particular list contains. */}
-                  <p className="mt-0.5 text-sm text-[var(--ui-ink-soft)]">{SUBTITLE[tab] || SUBTITLE[active.id]}</p>
+                  <p className="mt-0.5 text-sm text-[var(--ui-ink-soft)]">{SUBTITLE[tab]}</p>
                 </div>
                 {badges[tab] > 0 && (
                   <span
@@ -877,74 +834,11 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
               </div>
             )}
 
-            {/* ---- segments ----
-                The three stages of one job, as a track you move along rather
-                than three places you navigate between. Counts sit ON the
-                segments so you can see where the work is without opening
-                each one — which is the whole reason this is not a dropdown. */}
-            {segments && (
-              <div
-                role="tablist"
-                aria-label="Manage Deals"
-                onKeyDown={(e) => {
-                  const i = segments.findIndex((s) => s.id === tab);
-                  if (i < 0) return;
-                  // Arrow keys walk the track, wrapping at both ends — the
-                  // expected behaviour for a tablist, and the reason this is
-                  // marked up as one rather than as three buttons.
-                  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-                    e.preventDefault(); setTab(segments[(i + 1) % segments.length].id);
-                  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-                    e.preventDefault(); setTab(segments[(i - 1 + segments.length) % segments.length].id);
-                  } else if (e.key === 'Home') {
-                    e.preventDefault(); setTab(segments[0].id);
-                  } else if (e.key === 'End') {
-                    e.preventDefault(); setTab(segments[segments.length - 1].id);
-                  }
-                }}
-                className="mb-5 inline-flex flex-wrap gap-1 rounded-[11px] border border-[var(--ui-line)] bg-[var(--ui-sunk)] p-1"
-              >
-                {segments.map(({ id: sid, label: slabel, Icon: SIcon }) => {
-                  const on = tab === sid;
-                  const n = badges[sid] || 0;
-                  return (
-                    <button
-                      key={sid}
-                      type="button"
-                      role="tab"
-                      aria-selected={on}
-                      // Only the active segment is in the tab order; the arrow
-                      // keys reach the others. Three stops for one control is
-                      // how a keyboard user ends up tabbing through chrome.
-                      tabIndex={on ? 0 : -1}
-                      onClick={() => setTab(sid)}
-                      className={`flex items-center gap-2 rounded-[8px] px-3 py-1.5 text-[13px] font-medium transition
-                        ${on
-                          ? 'bg-white text-[var(--ui-ink)] shadow-[0_1px_2px_rgba(24,32,28,0.10)]'
-                          : 'text-[var(--ui-ink-soft)] hover:text-[var(--ui-ink)]'}`}
-                    >
-                      <SIcon width={16} height={16} />
-                      {slabel}
-                      {n > 0 && (
-                        <span
-                          className={`min-w-[18px] rounded-full px-1.5 text-center text-[10px] font-semibold leading-[17px]
-                            ${on ? 'bg-amber-500 text-white' : 'bg-[var(--ui-line)] text-[var(--ui-ink-soft)]'}`}
-                        >
-                          {n > 99 ? '99+' : n}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
             {/* Overview no longer takes onNavigate — its two clickable-alert
                 sections (needs-you, WhatsApp disconnected) moved into the
                 header's NotificationBell, which owns navigating from them
                 now. AiPerformance's cards still link out on their own. */}
-            {isHome && <Launcher onOpen={setTab} websiteEnabled={websiteEnabled} />}
-            {tab === MARKETING.id && <MarketingPending onHome={() => setTab(HOME.id)} />}
+            {isHome && <Launcher onOpen={setTab} websiteEnabled={websiteEnabled} summary={summary} />}
             {tab === 'overview' && <Overview />}
             {tab === 'ai' && <AiPerformance onNavigate={setTab} />}
             {tab === 'consultations' && (
@@ -960,6 +854,8 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
             {tab === 'customers' && (
               <Customers
                 initialQuery={patientQuery}
+                openPatientId={patientToOpen}
+                onPatientOpened={clearPatientToOpen}
                 onOpenConversation={(id) => { setOpenConversationId(id); setTab('inbox'); }}
                 onNavigate={setTab}
               />
@@ -969,6 +865,17 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
                 component and not two. */}
             {tab === 'inventory' && <UploadCatalogue view="products" />}
             {tab === 'inventory-upload' && <UploadCatalogue view="upload" />}
+
+            {/* Screens that already existed, nested elsewhere, given a place
+                in their module's sidebar. The SAME components: the stock-sync
+                panel and wholesale QR are still in Setup too, the templates
+                panel in Setup -> WhatsApp, and the refill list and register
+                open the one patient profile. Nothing here is a copy. */}
+            {tab === 'stock-sync' && <CatalogueSync />}
+            {tab === 'wholesale' && <TradeQrCode />}
+            {tab === 'refills' && <RefillQueue standalone onOpen={openPatient} />}
+            {tab === 'conditions' && <ChronicRegister standalone onOpen={openPatient} />}
+            {tab === 'templates' && <TemplatesPanel />}
 
             {/* Owns its own heading and rail — see Settings.jsx. The six
                 panels that used to be stacked here are unchanged; only which

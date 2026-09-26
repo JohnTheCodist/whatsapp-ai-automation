@@ -5,6 +5,9 @@
  */
 
 import { test, expect } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { fmtDay, supplyLabel, messagingBlock, REFILL_STATUS_TONE } from './refillFormat.js';
 
 test('a calendar day is shown as exactly the day the server sent, never the day before', () => {
@@ -29,11 +32,43 @@ test('supply wording follows the server status and counts days correctly', () =>
   expect(supplyLabel({ status: 'lapsed', daysLeft: -19 })).toBe('Lapsed: out for 19 days');
 });
 
+test('refill urgency is a named tone, not a colour written into a component', () => {
+  // Lifted out of Tailwind's amber utilities 2026-09-21: a component names
+  // the STEP of urgency and a token carries the colour, so changing the
+  // app's amber is one edit and every chip on every screen follows.
+  expect(Object.values(REFILL_STATUS_TONE)).toEqual([
+    'ui-tone-quiet', 'ui-tone-1', 'ui-tone-2', 'ui-tone-3',
+  ]);
+});
+
 test('refill urgency is never shown in red, which belongs to Consultations', () => {
   // design.md: red means a person is waiting on a human. A lapsed refill is
   // queued work — amber — however long it has been.
+  //
+  // THE RULE FOLLOWS THE COLOUR. This used to read the Tailwind class names
+  // on REFILL_STATUS_TONE; those are now token names that carry no colour at
+  // all, so a test left here would have passed for ever on strings it was no
+  // longer checking. It reads the token VALUES where they are now defined.
+  const css = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), 'index.css'),
+    'utf8',
+  );
+  const lines = css.split(/\r?\n/);
   for (const tone of Object.values(REFILL_STATUS_TONE)) {
-    expect(tone).not.toMatch(/red/);
+    const step = tone.replace('ui-tone-', '');
+    for (const part of [`--ui-tone-${step}-bg`, `--ui-tone-${step}-fg`]) {
+      const line = lines.find((l) => l.trim().startsWith(`${part}:`));
+      expect(line, `${part} is defined in index.css`).toBeTruthy();
+      const match = line.match(/oklch\(\s*[\d.]+%\s+([\d.]+)\s+([\d.]+)/);
+      expect(match, `${part} is an oklch value`).toBeTruthy();
+      const [, chroma, hue] = match.map(Number);
+      // Achromatic is fine — that is the quiet step. Anything with colour in
+      // it must sit in the amber band (40–110°), never the 20–40° of a red.
+      if (chroma > 0.02) {
+        expect(Number(hue), `${part} is amber, not red`).toBeGreaterThanOrEqual(40);
+        expect(Number(hue), `${part} is amber, not red`).toBeLessThanOrEqual(110);
+      }
+    }
   }
 });
 

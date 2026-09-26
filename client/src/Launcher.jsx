@@ -1,121 +1,167 @@
 /**
- * Home — the app launcher a pharmacy sees first after signing in.
+ * Home — the module launcher.
  *
- * The ERPNext desk's home, in this product's terms: no sidebar, a grid of
- * module tiles, one click into each. Five modules, in the order the owner
- * named them.
+ * FIVE TILES AND NOTHING ELSE ON THE PAGE. At rest each module is its icon
+ * and its name, the way the ERPNext desk's home is — the owner asked for the
+ * descriptions to be off the page. What a module is for, and its one live
+ * figure, arrive in a card that opens beneath the icon on hover or keyboard
+ * focus. The only thing a tile shows unasked is a dot on its icon when
+ * something in that module needs a person: red for someone waiting on a
+ * pharmacist, amber for queued work (design.md's semantic colours).
  *
- * WHAT EACH TILE OPENS (moduleTarget, below — pure and tested)
- *   Stock      Inventory: the catalogue and its upload.
- *   Clinics    Consultations: the pharmacist's clinical queue. Clinic
- *              BOOKINGS are not built yet; this is the clinical side of the
- *              product as it stands.
- *   Patients   Patients, with the refill call list.
- *   Marketing  Not built. The tile says "Soon", and opening it says so in a
- *              sentence rather than showing an invented screen.
- *   Branding   The website builder where it is switched on for this server;
- *              otherwise Setup, where the pharmacy's name, the assistant's
- *              name and its welcome note live.
+ * Which module holds which screen, and where each tile opens, is decided in
+ * modules.js — this file only draws it.
  *
- * Tab ids are the existing ones. Nothing here routes anywhere the rest of the
- * app does not already go.
+ * THE LIVE LINE. Orders, consultations and open conversations come from the
+ * summary App already polls, so they cost nothing here. Refills due and the
+ * website's state are asked for once, when Home opens. A figure that is not
+ * known yet shows nothing rather than a zero it has not earned.
+ *
+ * ACCESSIBILITY. Each tile is one button named by its module ("Stock"). The
+ * card is a sibling of the button, not inside it, and is the button's
+ * description via aria-describedby — so the name stays the module's name
+ * while a screen reader still hears what it is for and how it stands. On a
+ * touch screen, where there is no hover, the card never opens and the
+ * description is still read.
  */
 
-import {
-  IconModuleStock, IconModuleClinics, IconModulePatients, IconModuleMarketing, IconModuleBranding,
-} from './Icons.jsx';
+import { useEffect, useState } from 'react';
+import { MODULES, moduleHome, tileStatus } from './modules.js';
+import { getWebsite } from './website/api.js';
 
-export const MODULES = [
-  { id: 'stock', label: 'Stock', Icon: IconModuleStock, hint: 'Your catalogue, prices and stock' },
-  { id: 'clinics', label: 'Clinics', Icon: IconModuleClinics, hint: 'People waiting to speak to a pharmacist' },
-  { id: 'patients', label: 'Patients', Icon: IconModulePatients, hint: 'Patient records and refills due' },
-  { id: 'marketing', label: 'Marketing', Icon: IconModuleMarketing, hint: 'Campaigns to your patients', soon: true },
-  { id: 'branding', label: 'Branding', Icon: IconModuleBranding, hint: 'Your website and how the assistant presents you' },
-];
+/** Semantic dot colours — red only for a person waiting (design.md). */
+const DOT = {
+  alert: 'bg-red-500',
+  work: 'bg-amber-500',
+  quiet: 'bg-[var(--ui-ink-faint)]',
+};
 
-/**
- * The tab a module opens. Pure, so the mapping is testable without a DOM.
- *
- * @param {string} moduleId
- * @param {{ websiteEnabled: boolean|null }} ctx  websiteEnabled is null until
- *   the server has answered; Branding falls back to Setup until it says yes.
- * @returns {string} an existing App tab id
- */
-export function moduleTarget(moduleId, { websiteEnabled = null } = {}) {
-  switch (moduleId) {
-    case 'stock': return 'inventory';
-    case 'clinics': return 'consultations';
-    case 'patients': return 'customers';
-    case 'marketing': return 'marketing';
-    case 'branding': return websiteEnabled === true ? 'website' : 'setup';
-    default: throw new Error(`Unknown module "${moduleId}"`);
-  }
+/** "Good morning" by the pharmacy's clock, not the viewer's. */
+function greeting(now = new Date()) {
+  const hour = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Africa/Lagos' }).format(now));
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+function today(now = new Date()) {
+  return new Intl.DateTimeFormat('en-GB', {
+    weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Africa/Lagos',
+  }).format(now);
 }
 
 /**
- * The grid. Each tile is one button: the icon tile and its label together,
- * so the whole thing is the click target and a screen reader hears
- * "Stock, button" rather than an unlabelled picture beside some text. The
- * hint is the button's title: a hover tooltip, and its accessible
- * description.
+ * One module: the tile, and the card that opens beneath it.
+ * Exported so its markup can be checked without a DOM.
+ *
+ * `align` keeps the card on screen at the ends of the row: the first tile's
+ * card opens to the right of its icon, the last one's to the left.
  */
-export default function Launcher({ onOpen, websiteEnabled }) {
+export function ModuleCard({ module, status, onOpen, index = 0, align = 'center' }) {
+  const { id, label, hint, Icon } = module;
+  const cardId = `module-card-${id}`;
+  const needsYou = status && (status.tone === 'alert' || status.tone === 'work');
   return (
-    <section aria-labelledby="launcher-title" className="mx-auto w-full max-w-[880px] pt-4">
-      <h1 id="launcher-title" className="sr-only">Home</h1>
-      {/* Three across on a phone (3 + 2), five in one row from tablet width up —
-          never a lone tile on a row of its own. */}
-      <ul className="grid grid-cols-3 gap-x-4 gap-y-10 md:grid-cols-5 md:gap-x-6">
-        {MODULES.map(({ id, label, Icon, hint, soon }, i) => (
-          <li key={id} className="flex justify-center">
-            <button
-              type="button"
-              onClick={() => onOpen(moduleTarget(id, { websiteEnabled }))}
-              // The hint is the button's DESCRIPTION (title), never part of its
-              // name: the name stays the module's label, "Marketing", not
-              // "Campaigns to your patients".
-              title={hint}
-              // Stated outright rather than left to computation from the
-              // tile's text, so every reader agrees on it.
-              aria-label={soon ? `${label}, coming soon` : label}
-              style={{ '--i': i }}
-              className="ui-app-tile group flex w-full max-w-[140px] flex-col items-center gap-3 rounded-xl px-2 pb-2 pt-1"
-            >
-              <span className="ui-app-icon" aria-hidden="true">
-                <Icon width={28} height={28} strokeWidth={1.75} />
-              </span>
-              <span className="flex flex-col items-center gap-1">
-                <span className="text-[14px] font-semibold text-[var(--ui-ink)]">{label}</span>
-                {soon && <span className="ui-app-soon">Soon</span>}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
+    <div className="ui-module">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-describedby={cardId}
+        style={{ '--i': index }}
+        className="ui-app-tile flex w-full flex-col items-center gap-3 rounded-2xl px-2 pb-3 pt-2"
+      >
+        <span className="ui-app-icon" aria-hidden="true">
+          <Icon width={28} height={28} strokeWidth={1.75} />
+          {needsYou && (
+            <span className={`ui-app-icon-dot ${DOT[status.tone]}`} />
+          )}
+        </span>
+        <span className="text-[14px] font-semibold text-[var(--ui-ink)]">{label}</span>
+      </button>
+
+      <div id={cardId} role="tooltip" className="ui-module-pop" data-align={align}>
+        <p className="text-[14px] font-semibold text-[var(--ui-ink)]">{label}</p>
+        <p className="mt-1 text-[13px] leading-snug text-[var(--ui-ink-soft)]">{hint}</p>
+        {status && (
+          <p className="mt-3 flex items-center gap-1.5 border-t border-[var(--ui-line)] pt-2.5 text-[12px] font-medium text-[var(--ui-ink-soft)]">
+            <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT[status.tone] || DOT.quiet}`} />
+            <span className={status.tone === 'alert' ? 'text-red-700' : ''}>{status.text}</span>
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
 /**
- * Where Marketing lands until it exists. One honest sentence and a way back;
- * design.md: a screen that can be empty must say why it is empty.
+ * @param {object} props
+ * @param {(tab: string) => void} props.onOpen
+ * @param {boolean|null} props.websiteEnabled
+ * @param {object|null} props.summary  { orders, handoffs, openConversations }
+ *   from App's poll, or null before its first answer
  */
-export function MarketingPending({ onHome }) {
+export default function Launcher({ onOpen, websiteEnabled, summary = null }) {
+  const [refillsDue, setRefillsDue] = useState(null);
+  const [websiteStatus, setWebsiteStatus] = useState(null);
+
+  // Asked once per visit to Home. Failure leaves the line empty — the tile
+  // still opens the module, which is the tile's actual job.
+  useEffect(() => {
+    let live = true;
+    fetch('/api/refills', { signal: AbortSignal.timeout(20000) })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (live && j?.counts) setRefillsDue((j.counts.due || 0) + (j.counts.overdue || 0));
+      })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
+
+  useEffect(() => {
+    if (websiteEnabled !== true) return undefined;
+    let live = true;
+    getWebsite()
+      .then((res) => { if (live) setWebsiteStatus(res?.site ? res.site.status : 'none'); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [websiteEnabled]);
+
+  const figures = {
+    orders: summary?.orders ?? null,
+    handoffs: summary?.handoffs ?? null,
+    openConversations: summary?.openConversations ?? null,
+    refillsDue,
+    websiteStatus,
+    websiteEnabled,
+  };
+
+  const last = MODULES.length - 1;
+
   return (
-    <div className="ui-card max-w-xl p-5">
-      <h2 className="text-[14px] font-semibold text-[var(--ui-ink)]">Not built yet</h2>
-      <p className="mt-1 text-sm text-[var(--ui-ink-soft)]">
-        Marketing will send campaigns to groups of your patients over WhatsApp and SMS — a free BP
-        check day for everyone on blood-pressure medicine, for example. It is the next module to be
-        built, so there is nothing here yet.
-      </p>
-      <button
-        type="button"
-        onClick={onHome}
-        className="mt-4 rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-700"
-      >
-        Back to home
-      </button>
-    </div>
+    <section aria-labelledby="launcher-title" className="mx-auto w-full max-w-5xl pb-16 pt-8 sm:pt-12">
+      <header className="ui-launcher-greeting mb-10 text-center sm:mb-14">
+        <h1 id="launcher-title" className="text-[24px] font-semibold tracking-tight text-[var(--ui-ink)]">
+          {greeting()}
+        </h1>
+        <p className="mt-1 text-[14px] text-[var(--ui-ink-faint)]">{today()}</p>
+      </header>
+
+      {/* A centred wrapping row, not a grid: five in a line on a laptop, and
+          on narrower screens the short last row stays centred under the
+          first instead of hanging off to the left. */}
+      <ul className="flex flex-wrap justify-center gap-x-4 gap-y-8 sm:gap-x-8">
+        {MODULES.map((module, i) => (
+          <li key={module.id} className="w-[132px] sm:w-[152px]">
+            <ModuleCard
+              module={module}
+              index={i}
+              align={i === 0 ? 'start' : i === last ? 'end' : 'center'}
+              status={tileStatus(module.id, figures)}
+              onOpen={() => onOpen(moduleHome(module.id, { websiteEnabled }))}
+            />
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

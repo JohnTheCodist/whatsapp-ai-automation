@@ -291,15 +291,78 @@ async function seedFromProfile(pharmacyId, encounterId, { actorType = 'system', 
   // Persistent clinical facts (allergies etc) come across as read-only
   // context, keeping their link home so the profile stays the source of
   // truth for anything that outlives this episode.
+  //
+  // ALLERGIES COME FROM THE ALLERGY RECORD (0058), not from here: 0058
+  // carried any allergy facts across, and patient_allergies is what the
+  // Allergies screen reads and a pharmacist maintains. Reading both would
+  // show a refuted allergy to triage as though it were still true.
   const profileFacts = await db`
     select id, fact_type, value from patient_clinical_facts
     where patient_profile_id = ${encounter.patient_profile_id} and pharmacy_id = ${pharmacyId}
       and status in ('reported', 'confirmed')
+      and fact_type not in ('allergy', 'condition')
   `;
   for (const pf of profileFacts) {
     const { fact } = await recordFact(pharmacyId, encounterId, {
       concept: `profile_${pf.fact_type}`, value: pf.value,
       source: 'profile_reused', profileFactId: pf.id, encounter,
+    }, { actorType, actorId, customerId });
+    seeded.push(fact);
+  }
+
+  // Only CURRENT allergies — active, and not refuted or entered in error.
+  //
+  // ONE FACT FOR THE LIST, not one per allergy. recordFact keeps one live
+  // value per concept, so a second allergy under the same concept would be
+  // read as DISAGREEING with the first and raise a false conflict. An
+  // allergy list is a list, not a value that can be corrected.
+  //
+  // Each entry reads as a triage reader can act on it: what, how it
+  // presented, and whether anyone has confirmed it. No profile_fact_id: that
+  // column points at patient_clinical_facts, and nothing reads the link.
+  const allergies = await db`
+    select a.allergen_name, a.verification_status,
+           coalesce(string_agg(replace(r.manifestation, '_', ' '), ', ' order by r.position), '') as reactions
+    from patient_allergies a
+    join patient_profiles p on p.customer_id = a.customer_id and p.pharmacy_id = a.pharmacy_id
+    left join patient_allergy_reactions r on r.allergy_id = a.id and r.pharmacy_id = a.pharmacy_id
+    where p.id = ${encounter.patient_profile_id} and a.pharmacy_id = ${pharmacyId}
+      and a.clinical_status = 'active'
+      and a.verification_status not in ('refuted', 'entered_in_error')
+    group by a.id
+    order by a.allergen_name
+  `;
+  if (allergies.length) {
+    const value = allergies.map((a) => [
+      a.allergen_name,
+      a.reactions ? `— ${a.reactions}` : null,
+      `(${a.verification_status})`,
+    ].filter(Boolean).join(' ')).join('; ').slice(0, 1000);
+    const { fact } = await recordFact(pharmacyId, encounterId, {
+      concept: 'profile_allergies', value, source: 'profile_reused', encounter,
+    }, { actorType, actorId, customerId });
+    seeded.push(fact);
+  }
+
+  // CONDITIONS COME FROM THE PROBLEM LIST (0059), for the same reasons as
+  // allergies: 0059 carried any condition facts across, and one fact for the
+  // list avoids the false conflict. Only CURRENT conditions, each with how
+  // sure the record is — "(provisional)" must reach triage as provisional.
+  // The purchase inference (patient_condition) is NOT seeded: it is not a
+  // diagnosis, and triage reading it as one is the failure 0037 warns of.
+  const problems = await db`
+    select pr.condition_name, pr.verification_status
+    from patient_problems pr
+    join patient_profiles p on p.customer_id = pr.customer_id and p.pharmacy_id = pr.pharmacy_id
+    where p.id = ${encounter.patient_profile_id} and pr.pharmacy_id = ${pharmacyId}
+      and pr.clinical_status in ('active', 'recurrence', 'relapse')
+      and pr.verification_status not in ('refuted', 'entered_in_error')
+    order by pr.condition_name
+  `;
+  if (problems.length) {
+    const value = problems.map((p) => `${p.condition_name} (${p.verification_status})`).join('; ').slice(0, 1000);
+    const { fact } = await recordFact(pharmacyId, encounterId, {
+      concept: 'profile_conditions', value, source: 'profile_reused', encounter,
     }, { actorType, actorId, customerId });
     seeded.push(fact);
   }

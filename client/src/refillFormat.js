@@ -54,10 +54,10 @@ export const REFILL_STATUS_LABEL = {
  * a lapsed refill is a phone call to make, not a patient waiting in a chat.
  */
 export const REFILL_STATUS_TONE = {
-  upcoming: 'bg-slate-100 text-slate-600',
-  due: 'bg-amber-50 text-amber-700',
-  overdue: 'bg-amber-100 text-amber-800',
-  lapsed: 'bg-amber-200 text-amber-900',
+  upcoming: 'ui-tone-quiet',
+  due: 'ui-tone-1',
+  overdue: 'ui-tone-2',
+  lapsed: 'ui-tone-3',
 };
 
 /**

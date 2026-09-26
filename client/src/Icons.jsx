@@ -377,3 +377,100 @@ export const IconModuleBranding = (p) => (
     <circle cx="12" cy="12" r="1.8" />
   </svg>
 );
+
+/**
+ * Filter: the desk's funnel, and the one glyph the patients toolbar uses for
+ * its filter button. A funnel is the icon people already read as "narrow
+ * this list" — sliders would have suggested settings, which this is not.
+ */
+export const IconFilter = (p) => (
+  <svg {...base} {...p}>
+    <path d="M3.5 5.5h17l-6.5 7.5v6l-4 2v-8L3.5 5.5Z" />
+  </svg>
+);
+
+/** Open: into the patient's record. An arrow leaving, not a chevron. */
+export const IconOpen = (p) => (
+  <svg {...base} {...p}>
+    <path d="M5 12h13" />
+    <path d="m13 7 5 5-5 5" />
+  </svg>
+);
+
+/**
+ * Call: a handset. The refill list is worked by phone — for the patients who
+ * opted out of messages it is the ONLY way to reach them — so the number is
+ * an action on the row, not a string to copy out by hand.
+ */
+export const IconPhone = (p) => (
+  <svg {...base} {...p}>
+    <path d="M6.5 3.5h3l1.5 4-2 1.5a12 12 0 0 0 6 6l1.5-2 4 1.5v3a2 2 0 0 1-2.2 2A17 17 0 0 1 4.5 5.7 2 2 0 0 1 6.5 3.5Z" />
+  </svg>
+);
+
+/* ── the patient record's sections ──────────────────────────────────────
+   One glyph per section of a patient's record. Drawn in the same 24px,
+   2px-stroke, round-cap frame as every icon above, so a record's navigation
+   does not read as a second icon set bolted onto the app. */
+
+/** Clinical view: a stethoscope. */
+export const IconStethoscope = (p) => (
+  <svg {...base} {...p}>
+    <path d="M5 3.5v5a4 4 0 0 0 8 0v-5" />
+    <path d="M3.5 3.5h3M11.5 3.5h3" />
+    <path d="M9 12.5v2a5 5 0 0 0 5 5 4 4 0 0 0 4-4v-1.5" />
+    <circle cx="18" cy="11" r="2" />
+  </svg>
+);
+
+/** Vitals and biometrics: the trace a monitor draws. */
+export const IconPulse = (p) => (
+  <svg {...base} {...p}>
+    <path d="M3 12h4l2.5-6 4 12L16 12h5" />
+  </svg>
+);
+
+/** Meds: a capsule, split the way a capsule is. */
+export const IconPill = (p) => (
+  <svg {...base} {...p}>
+    <rect x="2.5" y="8.5" width="19" height="7" rx="3.5" transform="rotate(-45 12 12)" />
+    <path d="M9.4 6.6 17.4 14.6" />
+  </svg>
+);
+
+/** Test results: a sample tube. */
+export const IconFlask = (p) => (
+  <svg {...base} {...p}>
+    <path d="M9 3.5v6.2L4.8 17a2.5 2.5 0 0 0 2.2 3.5h10a2.5 2.5 0 0 0 2.2-3.5L15 9.7V3.5" />
+    <path d="M7.5 3.5h9" />
+    <path d="M6.8 14.5h10.4" />
+  </svg>
+);
+
+/** Encounters: what was written down at the counter. */
+export const IconClipboard = (p) => (
+  <svg {...base} {...p}>
+    <path d="M9 4.5H7a1.5 1.5 0 0 0-1.5 1.5v13A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V6A1.5 1.5 0 0 0 17 4.5h-2" />
+    <rect x="9" y="2.5" width="6" height="4" rx="1.2" />
+    <path d="M8.5 11.5h7M8.5 15.5h4.5" />
+  </svg>
+);
+
+/** Form entry: a sheet being filled in. */
+export const IconForm = (p) => (
+  <svg {...base} {...p}>
+    <path d="M13.5 3.5H6.5A1.5 1.5 0 0 0 5 5v14a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19v-8" />
+    <path d="M8.5 8.5h5M8.5 12.5h3" />
+    <path d="m14.8 13.7 5-5a1.6 1.6 0 0 0-2.3-2.3l-5 5-.6 2.6 2.9-.3Z" />
+  </svg>
+);
+
+/** Appointments: a calendar, with the day that was booked. */
+export const IconCalendar = (p) => (
+  <svg {...base} {...p}>
+    <rect x="3.5" y="5" width="17" height="15.5" rx="2" />
+    <path d="M3.5 9.5h17" />
+    <path d="M8 3.5v3M16 3.5v3" />
+    <path d="M7.5 13h3v3h-3z" />
+  </svg>
+);

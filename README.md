@@ -49,6 +49,13 @@ Fill in `DATABASE_URL`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY`, then:
 npm run migrate
 ```
 
+`npm run migrate` only runs without a flag against a database on this machine
+(`localhost` / `127.0.0.1`). Against anything else it refuses, because a
+`DATABASE_URL` copied from the live project is the production schema. To
+change a remote database on purpose, say so: `npm run migrate -- --production`
+(the deploy scripts do). The test database has its own command,
+`npm run migrate:test`.
+
 ```bash
 npm start
 ```

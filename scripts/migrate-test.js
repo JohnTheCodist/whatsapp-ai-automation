@@ -157,5 +157,10 @@ async function stampTestMarker() {
 
   // migrate.js calls main() on import; the redirect above is already in place,
   // and dotenv does not overwrite an environment variable that is already set.
+  //
+  // The handshake tells migrate.js's remote-database guard that this URL has
+  // already passed useTestDatabase() — a stronger check than "is it local".
+  // A global, not an env var: it cannot be set from a shell in haste.
+  global.__rxnaijaVerifiedTestDatabase = TEST_URL;
   require('./migrate.js');
 })();

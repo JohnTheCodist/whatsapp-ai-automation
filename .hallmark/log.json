@@ -1,39 +1,46 @@
 [
-  {
-    "date": "2026-09-19",
-    "macrostructure": "Workbench",
-    "theme": "studied-DNA",
-    "source": "image — owner's ERPNext / Frappe desk screenshots",
-    "accent": "RxNaija emerald oklch(52% 0.112 165), kept by request",
-    "enrichment": "none",
-    "scope": "app",
-    "brief": "Whole dashboard restyled to the ERPNext desk look: light sidebar, breadcrumb header, grey fields, black primary, underline tabs, sentence case. design.md amended."
-  },
-  {
-    "date": "2026-09-08",
-    "macrostructure": "Split Studio",
-    "theme": "RxNaija theme contract (locked)",
-    "theme_axes": "light / varies by palette / varies by palette",
-    "nav": "N1b brand-links-CTA",
-    "footer": "Ft5 statement",
-    "enrichment": "the pharmacy's own photography (no stock, no CSS art)",
-    "scope": "public-site",
-    "brief": "Template 1 — the published pharmacy website. Third surface: not the app (Workbench) and not RxNaija's marketing pages, so design.md does not govern it. Palette/type stay the pharmacy's own theme, since each site carries its own brand."
-  },
-  {
-    "date": "2026-08-24",
-    "macrostructure": "Workbench",
-    "theme": "design.md (locked)",
-    "enrichment": "none",
-    "scope": "app",
-    "brief": "Overview tab — same ranked-narrative voice as AI Performance, shared DashboardKit"
-  },
-  {
-    "date": "2026-08-24",
-    "macrostructure": "Workbench",
-    "theme": "design.md (locked)",
-    "enrichment": "none",
-    "scope": "app",
-    "brief": "AI Performance tab — ink data bars, tab strip, craft pass"
-  }
+ {
+  "date": "2026-09-21",
+  "macrostructure": "Workbench (component scope)",
+  "theme": "design.md (locked)",
+  "enrichment": "none",
+  "brief": "redesign the All patients data table — read as generated: no primary column, variable row height, compound Age-Gender column"
+ },
+ {
+  "date": "2026-09-19",
+  "macrostructure": "Workbench",
+  "theme": "studied-DNA",
+  "source": "image — owner's ERPNext / Frappe desk screenshots",
+  "accent": "RxNaija emerald oklch(52% 0.112 165), kept by request",
+  "enrichment": "none",
+  "scope": "app",
+  "brief": "Whole dashboard restyled to the ERPNext desk look: light sidebar, breadcrumb header, grey fields, black primary, underline tabs, sentence case. design.md amended."
+ },
+ {
+  "date": "2026-09-08",
+  "macrostructure": "Split Studio",
+  "theme": "RxNaija theme contract (locked)",
+  "theme_axes": "light / varies by palette / varies by palette",
+  "nav": "N1b brand-links-CTA",
+  "footer": "Ft5 statement",
+  "enrichment": "the pharmacy's own photography (no stock, no CSS art)",
+  "scope": "public-site",
+  "brief": "Template 1 — the published pharmacy website. Third surface: not the app (Workbench) and not RxNaija's marketing pages, so design.md does not govern it. Palette/type stay the pharmacy's own theme, since each site carries its own brand."
+ },
+ {
+  "date": "2026-08-24",
+  "macrostructure": "Workbench",
+  "theme": "design.md (locked)",
+  "enrichment": "none",
+  "scope": "app",
+  "brief": "Overview tab — same ranked-narrative voice as AI Performance, shared DashboardKit"
+ },
+ {
+  "date": "2026-08-24",
+  "macrostructure": "Workbench",
+  "theme": "design.md (locked)",
+  "enrichment": "none",
+  "scope": "app",
+  "brief": "AI Performance tab — ink data bars, tab strip, craft pass"
+ }
 ]

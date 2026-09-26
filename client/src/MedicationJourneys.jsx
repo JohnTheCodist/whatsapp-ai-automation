@@ -20,6 +20,7 @@
  */
 
 import { useEffect, useId, useState } from 'react';
+import Loading from './Loading.jsx';
 import {
   fmtDay, supplyLabel, messagingBlock, postJson,
   REFILL_STATUS_LABEL, REFILL_STATUS_TONE,
@@ -288,8 +289,9 @@ export function MedicationJourneysPanel({ customerId, journeys, onChanged }) {
  * the day it was computed for (design.md: every screen states its own
  * freshness).
  */
-export function RefillQueue({ onOpen }) {
+export function RefillQueue({ onOpen, standalone = false }) {
   const [data, setData] = useState(null);
+  const [failed, setFailed] = useState(false);
   const [recording, setRecording] = useState(null);
   const [reload, setReload] = useState(0);
 
@@ -298,18 +300,34 @@ export function RefillQueue({ onOpen }) {
     (async () => {
       try {
         const r = await fetch('/api/refills', { signal: AbortSignal.timeout(20000) });
-        if (!r.ok) return;
+        if (!r.ok) { if (!cancelled) setFailed(true); return; }
         const j = await r.json();
         if (!cancelled) setData(j);
       } catch {
-        /* supplementary — the patient list below still works without it */
+        // Supplementary where it is embedded — the screen around it still
+        // works. As a screen of its own (standalone) it says so instead.
+        if (!cancelled) setFailed(true);
       }
     })();
     return () => { cancelled = true; };
   }, [reload]);
 
   const items = data?.items || [];
-  if (items.length === 0) return null;
+  if (items.length === 0) {
+    // STANDALONE — Patients → Refills due. Rendering nothing is right when
+    // this sits above another list; as the whole screen it would be a blank
+    // page, and a screen that can be empty must say why (design.md).
+    if (!standalone) return null;
+    if (failed) {
+      return <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">The refill list could not be loaded.</p>;
+    }
+    if (!data) return <p className="text-sm text-slate-500"><Loading /></p>;
+    return (
+      <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
+        No refills are due. Patients appear here when a medicine they are taking is about to run out.
+      </p>
+    );
+  }
   const { counts } = data;
 
   return (

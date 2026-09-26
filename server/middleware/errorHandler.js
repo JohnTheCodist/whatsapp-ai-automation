@@ -45,6 +45,37 @@ function errorHandler(err, req, res, next) {
   res.status(status).json({
     error: safe ? err.message : 'Something went wrong',
     code: err.code || (safe ? 'BAD_REQUEST' : 'INTERNAL_ERROR'),
+    // WHICH FIELD WAS WRONG, when the error named one.
+    //
+    // Added 2026-09-21. Every input contract in this codebase — careInput,
+    // vitalsInput, patientFilters, medicationInput — sets `err.field` so the
+    // form can mark the box that is wrong, and this handler was dropping it.
+    // The forms were reading `body.field` and quietly highlighting nothing:
+    // the message said "Pulse must be a number" while the pulse box looked
+    // exactly like the other eight.
+    //
+    // Only on a client error. A 500's field would be an internal detail, and
+    // the message is already replaced for the same reason.
+    ...(safe && err.field ? { field: err.field } : {}),
+    // WHICH RECORD A 409 CONFLICTED WITH, so the screen can offer "View
+    // existing" (added 2026-09-22 for the conditions duplicate check). Only
+    // the id and a display name — a service sets it deliberately, and only
+    // on a conflict it raised itself.
+    //
+    // `label` added 2026-09-24 for the care-programme duplicate check, which
+    // conflicts with a programme rather than a condition. Only the key the
+    // caller actually set is copied — "nothing more" is the rule this block is
+    // here for, and a `label: undefined` beside a condition's name is one more
+    // thing than the caller said.
+    ...(status === 409 && err.existing && typeof err.existing === 'object'
+      ? {
+        existing: {
+          id: err.existing.id,
+          ...(err.existing.conditionName !== undefined ? { conditionName: err.existing.conditionName } : {}),
+          ...(err.existing.label !== undefined ? { label: err.existing.label } : {}),
+        },
+      }
+      : {}),
     requestId: req.id,
   });
 }

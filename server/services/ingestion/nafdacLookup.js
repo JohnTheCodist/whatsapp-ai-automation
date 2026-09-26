@@ -847,8 +847,24 @@ function getNafdacStatus() {
   }
 })();
 
+/**
+ * The distinct generic names in the register, display-cased, sorted.
+ *
+ * Read-only. Added for the allergy record's allergen search, which needs to
+ * match what a pharmacist is TYPING ("amoxi") — lookupByGeneric matches
+ * whole tokens only, which suits product matching but not type-ahead.
+ */
+function genericNames() {
+  const names = new Set();
+  for (const entries of genericIndex.values()) {
+    if (entries && entries[0] && entries[0].generic) names.add(entries[0].generic.trim());
+  }
+  return [...names].sort((a, b) => a.localeCompare(b));
+}
+
 module.exports = {
   loadNafdac,
+  genericNames,
   loadNafdacData: loadNafdac,
   getNafdacStatus,
   lookupByBrand,

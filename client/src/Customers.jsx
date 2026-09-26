@@ -1,34 +1,16 @@
 /**
- * Customer list — proof that identity resolution is producing one durable
- * record per real person, and a place staff can see status/opt-out state.
+ * Patients → All patients, and the one patient profile every Patients
+ * screen opens.
  *
- * Deliberately thin. No filters beyond search, no analytics — this is
- * "does the identity system work", not a CRM.
+ * The list is PatientSearch: name or phone, and the eight filters, all run
+ * on the server. Choosing a patient — here, from Refills due, or from
+ * Conditions — opens the same PatientRecord, never a copy of it.
  */
 
-import { useCallback, useEffect, useState } from 'react';
-import CustomerProfile from './CustomerProfile.jsx';
+import { useEffect, useState } from 'react';
+import PatientRecord from './PatientRecord.jsx';
 import Loading from './Loading.jsx';
-import { RefillQueue } from './MedicationJourneys.jsx';
-
-const TIER_LABEL = { active: 'Active', quiet: 'Quiet', dormant: 'Dormant', unknown: '—' };
-const TIER_TONE = {
-  active: 'bg-teal-50 text-teal-700',
-  quiet: 'bg-amber-50 text-amber-700',
-  dormant: 'bg-slate-100 text-slate-500',
-  unknown: 'bg-slate-100 text-slate-400',
-};
-
-function relTime(iso) {
-  if (!iso) return '—';
-  const ms = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(ms / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
+import PatientSearch from './PatientSearch.jsx';
 
 /**
  * The chronic register — conditions the pharmacy is tracking from purchase
@@ -46,8 +28,9 @@ function relTime(iso) {
  * distinction get lost — hence the basis line under the heading and the
  * per-patient evidence, both drawn from the engine rather than asserted here.
  */
-function ChronicRegister({ onOpen }) {
+export function ChronicRegister({ onOpen, standalone = false }) {
   const [data, setData] = useState(null);
+  const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(null);
 
   useEffect(() => {
@@ -57,18 +40,33 @@ function ChronicRegister({ onOpen }) {
         const r = await fetch('/api/customers/conditions/registry', {
           signal: AbortSignal.timeout(20000),
         });
-        if (!r.ok) return;
+        if (!r.ok) { if (!cancelled) setFailed(true); return; }
         const j = await r.json();
         if (!cancelled) setData(j);
       } catch {
-        /* the register is supplementary — the patient list below still works */
+        // Supplementary where it is embedded. As Patients → Conditions it is
+        // the whole screen, and says so rather than going blank.
+        if (!cancelled) setFailed(true);
       }
     })();
     return () => { cancelled = true; };
   }, []);
 
   const conditions = data?.conditions || [];
-  if (conditions.length === 0) return null;
+  if (conditions.length === 0) {
+    // Nothing at all while embedded; as a screen of its own, a blank page
+    // would be a screen that is empty without saying why (design.md).
+    if (!standalone) return null;
+    if (failed) {
+      return <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">The condition register could not be loaded.</p>;
+    }
+    if (!data) return <p className="text-sm text-slate-500"><Loading /></p>;
+    return (
+      <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
+        No patient has a tracked condition yet. Conditions appear here from what patients buy.
+      </p>
+    );
+  }
 
   const shown = conditions.find((c) => c.code === open);
 
@@ -138,42 +136,29 @@ function ChronicRegister({ onOpen }) {
   );
 }
 
-export default function Customers({ onOpenConversation, onNavigate, initialQuery = '' }) {
-  const [data, setData] = useState(null);
-  const [q, setQ] = useState(initialQuery);
-  const [error, setError] = useState(null);
-  const [selectedId, setSelectedId] = useState(null);
+export default function Customers({
+  onOpenConversation, onNavigate, initialQuery = '', openPatientId = null, onPatientOpened,
+}) {
+  const [selectedId, setSelectedId] = useState(openPatientId);
 
-  const load = useCallback(async (query) => {
-    try {
-      const r = await fetch(`/api/customers${query ? `?q=${encodeURIComponent(query)}` : ''}`);
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'Could not load customers.');
-      setData(j);
-      setError(null);
-    } catch (e) {
-      setError(e.message);
-    }
-  }, []);
-
-  // Re-runs when the header search sends a new term, so searching from the
-  // top bar while already on this screen actually filters rather than
-  // silently doing nothing.
+  // A patient chosen on another Patients screen (Refills due, Conditions)
+  // opens here — the ONE patient profile, not a copy of it on each screen.
+  // The request is acknowledged so App can clear it; otherwise choosing the
+  // same patient twice would not fire this effect the second time.
   useEffect(() => {
-    setQ(initialQuery);
-    load(initialQuery);
-  }, [load, initialQuery]);
-
-  useEffect(() => {
-    const t = setTimeout(() => load(q), 300);
-    return () => clearTimeout(t);
-  }, [q, load]);
+    if (!openPatientId) return;
+    setSelectedId(openPatientId);
+    onPatientOpened?.();
+  }, [openPatientId, onPatientOpened]);
 
   if (selectedId) {
+    // Choosing a patient opens their RECORD — the twelve sections and the
+    // navigation between them — not the profile on its own. The profile is
+    // now one section of it (Patient summary).
     return (
-      <CustomerProfile
+      <PatientRecord
         // Keyed so a different patient is always a fresh component: the
-        // profile keeps its data on screen across a reload, and must never
+        // record keeps its data on screen across a reload, and must never
         // keep one patient's data on screen while another's loads.
         key={selectedId}
         customerId={selectedId}
@@ -184,104 +169,7 @@ export default function Customers({ onOpenConversation, onNavigate, initialQuery
     );
   }
 
-  if (error) {
-    return <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>;
-  }
-  if (!data) return <p className="text-sm text-slate-500"><Loading /></p>;
-
-  return (
-    <div className="space-y-4">
-      {/* First, because it is the only thing on this screen with a deadline:
-          patients whose medicine is running out or has run out. Renders
-          nothing when nobody is due. */}
-      <RefillQueue onOpen={setSelectedId} />
-
-      {/* Above the full list: a pharmacy scanning for "who is on blood
-          pressure medicine" should not have to open records one by one to
-          find out. Renders nothing at all when no condition has patients. */}
-      <ChronicRegister onOpen={setSelectedId} />
-
-      {/* The standalone "Diabetic Patients" card that used to sit here is
-          gone — ChronicRegister above already shows a Diabetes card (and
-          every other tracked condition) drawn from the real condition
-          engine, clickable through to the patient list. This one was a
-          second, cruder count of the same thing from a separate query
-          (server/routes/customers.js), with no way to act on it — a
-          duplicate, not a different fact. */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 text-sm text-slate-600">
-          <span className="font-medium text-slate-800">{data.counts.total} customers</span>
-          {data.counts.opted_out > 0 && <span>{data.counts.opted_out} opted out</span>}
-          {data.counts.blocked > 0 && <span>{data.counts.blocked} blocked</span>}
-        </div>
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search name or phone…"
-          className="w-56 rounded border border-slate-300 px-3 py-1.5 text-sm"
-        />
-      </div>
-
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
-            <tr>
-              <th className="px-3 py-2">Customer</th>
-              <th className="px-3 py-2">Phone</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">WhatsApp</th>
-              <th className="px-3 py-2">Activity</th>
-              <th className="px-3 py-2">Last seen</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {data.customers.map((c) => (
-              // A clickable <tr> is invisible to the keyboard and to screen
-              // readers unless it is given a role, a tab stop and a key
-              // handler — without these the only way to open a customer is a
-              // mouse, which is not a choice anyone made deliberately.
-              <tr
-                key={c.id}
-                onClick={() => setSelectedId(c.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    // Space scrolls the page by default; opening a row is
-                    // what the key means here.
-                    e.preventDefault();
-                    setSelectedId(c.id);
-                  }
-                }}
-                role="button"
-                tabIndex={0}
-                aria-label={`Open ${c.display_name || c.wa_phone}`}
-                className="cursor-pointer hover:bg-slate-50 focus:bg-slate-100 focus:outline-2 focus:outline-offset-[-2px] focus:outline-teal-600"
-              >
-                <td className="px-3 py-2 font-medium text-slate-800">{c.display_name || '—'}</td>
-                <td className="px-3 py-2 text-slate-600">{c.wa_phone}</td>
-                <td className="px-3 py-2">
-                  <span className={`rounded px-2 py-0.5 text-xs ${c.status === 'blocked' ? 'bg-red-50 text-red-700' : 'text-slate-500'}`}>
-                    {c.status}
-                  </span>
-                </td>
-                <td className="px-3 py-2">
-                  <span className={`rounded px-2 py-0.5 text-xs ${c.communication_status === 'opted_out' ? 'bg-red-50 text-red-700' : 'text-slate-500'}`}>
-                    {c.communication_status === 'opted_out' ? 'Opted out' : 'Subscribed'}
-                  </span>
-                </td>
-                <td className="px-3 py-2">
-                  <span className={`rounded px-2 py-0.5 text-xs ${TIER_TONE[c.activity.tier]}`}>
-                    {TIER_LABEL[c.activity.tier]}
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-slate-500">{relTime(c.last_seen_at)}</td>
-              </tr>
-            ))}
-            {data.customers.length === 0 && (
-              <tr><td colSpan={6} className="px-3 py-6 text-center text-slate-400">No customers yet.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+  // Search state lives in PatientSearch; the header search's term arrives
+  // as initialQuery and is followed there.
+  return <PatientSearch initialQuery={initialQuery} onOpen={setSelectedId} />;
 }

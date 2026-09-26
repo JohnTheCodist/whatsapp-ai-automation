@@ -19,9 +19,31 @@
  * customer_events stream (0017) — and this file just calls it, the same
  * "do not duplicate business logic" rule the rest of this segment follows.
  *
- * NOT AN EHR: no diagnosis, clinical notes, or medical history anywhere in
- * this shape. medicationJourneys lists only what a pharmacist enrolled
- * (0052) — a patient with none gets an empty array, never a placeholder.
+ * ── WHAT THIS PRODUCT RECORDS, AND WHAT IT STILL REFUSES ────────────────
+ *
+ * This comment used to read "NOT AN EHR: no diagnosis, clinical notes, or
+ * medical history anywhere in this shape". That was true of a CRM that sold
+ * medicine and reminded people to collect it. It stopped being true on
+ * 2026-09-21, deliberately and with the owner's decision on the record
+ * (MEDICATIONS_PLAN.md §6.2): RxNaija now keeps a pharmacist's clinical
+ * record — vitals (0054), and a medication record carrying dose, route,
+ * frequency, indication and prescriber (0055).
+ *
+ * The line did not disappear. It moved, and it is now this:
+ *
+ *   IT RECORDS WHAT A PHARMACIST OBSERVED OR WAS TOLD.
+ *   IT DOES NOT PRODUCE CLINICAL JUDGEMENTS OF ITS OWN.
+ *
+ * So there is still no diagnosis field, no severity score, no triage
+ * category, no treatment recommendation and no interaction detection
+ * anywhere in this shape. A condition here is CONFIRMED BY PURCHASE and says
+ * so; a vital sign outside the usual adult range is marked as unusual and
+ * says against what. Both are facts with their provenance attached, not the
+ * software forming an opinion.
+ *
+ * `customerProfile.test.js` holds this: it forbids a diagnosis, a severity
+ * and a treatment plan by name, and it deliberately no longer forbids the
+ * clinical record this product is now allowed to keep.
  */
 
 const { getSql, assertPharmacyId } = require('../db');
@@ -54,7 +76,8 @@ async function getCustomerProfile(pharmacyId, customerId) {
   `;
   if (!customer) return null;
 
-  const [orderAgg, recentOrders, convAgg, recentConversations, crmCounts, activeConv, page, journeys] = await Promise.all([
+  const [orderAgg, recentOrders, convAgg, recentConversations, crmCounts, activeConv, page, journeys,
+    conditions, clinicalAgg] = await Promise.all([
     // Total spend counts only orders that reached a real commitment — the
     // same status set overview.js already uses for "confirmed value", so
     // this number means the same thing everywhere it appears in the product.
@@ -135,6 +158,30 @@ async function getCustomerProfile(pharmacyId, customerId) {
     // Every journey, active first. Bounded in practice by how many medicines
     // one patient is enrolled on, which is a handful, not a history.
     listJourneysForCustomer(pharmacyId, customer.id, { sql: db }),
+    // The conditions this pharmacy has CONFIRMED FROM PURCHASE HISTORY.
+    // Added 2026-09-20 for the patient summary, which shows a condition line
+    // and links through to the record's Conditions section. The status is
+    // carried out with each row rather than filtered to the confirmed ones
+    // here: "confirmed by purchase" is not a diagnosis, and every screen
+    // that shows these has to be able to say which it is.
+    db`
+      select condition_code as code, condition_name as name, status,
+             evidence_strength as evidence, created_at
+      from patient_condition
+      where pharmacy_id = ${pharmacyId} and customer_id = ${customer.id}
+      order by condition_name
+    `,
+    // Consultations this patient has had, and whether a danger sign was ever
+    // recorded in one. Counts only — the encounters themselves are a section
+    // of the record, not a field on the summary.
+    db`
+      select count(*)::int as count,
+             max(ce.started_at) as last_encounter_at,
+             count(*) filter (where jsonb_array_length(ce.red_flags_detected) > 0)::int as red_flags
+      from clinical_encounters ce
+      join patient_profiles pp on pp.id = ce.patient_profile_id and pp.pharmacy_id = ${pharmacyId}
+      where ce.pharmacy_id = ${pharmacyId} and pp.customer_id = ${customer.id}
+    `,
   ]);
 
   return {
@@ -224,6 +271,16 @@ async function getCustomerProfile(pharmacyId, customerId) {
       marketingConsent: customer.comm_marketing
         ? { source: customer.marketing_consent_source, at: customer.marketing_consent_at }
         : null,
+    },
+    // Confirmed by purchase history, never a diagnosis — the wording on
+    // every screen that reads this has to keep that distinction.
+    conditions: conditions.map((c) => ({
+      code: c.code, name: c.name, status: c.status, evidence: c.evidence, since: c.created_at,
+    })),
+    clinical: {
+      encounters: clinicalAgg[0].count,
+      lastEncounterAt: clinicalAgg[0].last_encounter_at,
+      redFlagEncounters: clinicalAgg[0].red_flags,
     },
     timeline: page.events,
     timelineNextCursor: page.nextCursor,
