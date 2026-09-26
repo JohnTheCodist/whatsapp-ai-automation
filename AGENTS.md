@@ -403,10 +403,825 @@ pins that `medication_journey` is now verified. With a local test database
 the same tree measures **1686/1681/0/5** against **1620/1615/0/5** before
 — the same five names, the four in A+C plus the flaky pre-keys test.
 
+**The patients module — search, filters, the chronic switch and the
+patient record, 2026-09-20 → measured 1733/1225/501/7**, no test database, against HEAD `20269da`. This change adds
+43 server tests. **18 always run**: `patientFilters` (12 — the filter
+contract: the eight filter names and their allowed values, the 400 that
+names the offending field so a bad query string can never quietly widen a
+result set, and the chronic switch, which has exactly one spelling on the
+wire because a switch shown ON while the server filtered nothing would put
+every patient in front of a pharmacist who asked for the ones they follow)
+and `careInput` (6 — the PATCH body contract for assignment and for age and
+sex). **25 need a database** — `patientSearch`, which is the
+whole point of the feature and cannot be honestly tested without one: every
+filter at its boundary day, several filters combined (AND, never OR), the
+options list built from this pharmacy's own conditions, medicines and
+pharmacists, the assignment rules, and cross-tenant refusal proven at the
+database (a foreign key rejecting with 23503) rather than by a service
+remembering to check. That moves the **SKIPPED ceiling 472 → 497**, declared
+here per the rule below. No existing test was edited, and the 7 failures are
+the same 7 names. The patient record — the twelve-section navigation and the summary that
+links into it — added 4 more database tests to `customerProfile.test.js`,
+for the two fields the summary needed on the profile: a patient's
+CONFIRMED-BY-PURCHASE conditions, and their consultation counts. Both read
+through a join, which is where a tenant scope gets lost with no visible
+symptom, so one of the four plants pharmacy B's condition on pharmacy A's
+customer id and proves it is not returned. That moves the skipped ceiling to
+**501**. Its client half is 20 tests across `patientRecordTabs.test.js` (the
+sections and their order), `patientRecordNav.test.js` (CSS invariants,
+including that this second sidebar never opens on hover — the first one
+does, and a record is worked in with the cursor crossing the column) and
+`patientSummaryModel.test.js`, which pins the wording: an unrecorded section
+says "not recorded" and never "none", because an empty Allergies card
+reading "None" is how a pharmacist gets told someone is safe by a system
+that has simply never been asked.
+
+**The record stopped advertising sections it does not have, 2026-09-26 → server
+numbers unchanged at 2056/1376/673/7.** The owner asked for **Clinical view**,
+**Form entry** and **Appointments** to be removed from the patient record. All
+three were `built: false` placeholders that had never had a screen, so nothing
+was replaced — and every section that remains is built, which a new test now
+pins so a placeholder cannot quietly come back.
+
+**Removing a tab orphans whatever points at it.** The summary carried an
+**Appointments card** whose `tab` named the section being removed. Left alone
+it would have rendered a card that opens nothing — and
+`patientSummaryModel.test.js`'s own rule, *"nothing on the summary is a dead
+end"*, **would not have caught it**: it only checked the destination was a
+STRING. It now checks the destination EXISTS, for record sections
+(`PATIENT_TABS`) and for other modules' screens (`MODULE_TABS`) alike. Both
+halves were mutation-checked — pointing a card at a removed section, and at a
+module screen that does not exist, each turn it red.
+
+The Consultations card is untouched and still correct: it names a screen in the
+Clinics MODULE, not a section of the record, and that screen exists.
+
+No server test touches any of this, so the baseline above is unchanged. Client
+270 → 271.
+
+**Messages, phase 3 — internal threads, 2026-09-26 → 2056/1376/673/7 (no
+database).** Staff-to-staff threads about a patient (§14), which **cannot
+reach that patient** — and GOLDEN-007, which is the first entry in the golden
+suite written WITH a feature rather than after an incident.
+
+**The danger, stated plainly.** Every outbound message in this product ends at
+one function, and a conversation row is a conversation row. An internal thread
+distinguished only by a flag is one missing WHERE clause away from delivering a
+pharmacist's private clinical discussion to the person being discussed. So the
+guarantee is built from three things that must all fail before a leak is
+possible:
+
+1. **`conversations.channel`** — an internal thread is a different KIND of row,
+   not a flagged one.
+2. **0066's CHECKs** — an internal message cannot carry a provider id, a
+   delivery status or a category, and an internal conversation cannot carry a
+   reply window or be left in `mode = 'bot'` for the assistant to answer. There
+   is nowhere to record one as sent.
+3. **The guard in `sendAndRecordOutbound`**, which reads the channel from the
+   conversation and refuses BEFORE the consent check and long before the
+   transport.
+
+**Checked before building it:** the assistant's history is loaded as
+`select direction, body from messages where conversation_id = ...` in
+`worker.js`. It is scoped BY CONVERSATION, so an internal note — being its own
+conversation — is never in the set rather than filtered out of it. That is what
+made one message store safe, and a test runs the worker's own query shape
+against real rows to prove it.
+
+**The one-open index was NARROWED, never weakened.** `idx_conversations_one_open`
+now applies `where status = 'open' and channel = 'whatsapp'`. Every existing row
+has `channel = 'whatsapp'`, so the predicate matches exactly the same set as
+before; a patient may have one open WhatsApp thread and several internal ones.
+A test asserts BOTH halves — that internal threads do not collide, and that a
+second open WhatsApp thread is still refused by the index with 23505. That
+second half is the invariant whose violation dropped 16 live messages for three
+days.
+
+**GOLDEN-007 found something while being written.** Its first draft asserted
+that `outboundMessage.js` is the ONLY module that calls the transport. That is
+false — `worker.js`, `routes/orders.js`, `routes/whatsapp.js` and
+`staffAlert.js` all call `sessionManager.sendText` directly. Each is
+legitimate, and for the same reason: they fire only where there is **no
+conversation** (the `else` of `if (target.conversation_id)`), or they message
+the pharmacy's own number. So the real invariant is not "one caller" but
+**every send that NAMES a conversation goes through the one path**, and the
+test pins that list closed plus asserts both branchers still route a send with
+a conversation through the guard. A fifth caller now has to justify itself.
+
+**Two more things GOLDEN-007's own drafts got wrong**, both caught by running
+it: a regex for the function body stopped at the destructured parameter list's
+closing `\n})` and captured the ARGUMENTS, and `fs` was used without the
+per-test `require` this file uses. Both fixed; the guard was then mutated two
+ways — removed entirely (2 golden tests red) and moved to AFTER the transport
+(007a red on its ordering assertion) — and restored.
+
+17 server tests — **7 database-free** (`messageInput` 3: the two kinds with the
+patient's as the default, the subject and first note an internal thread needs,
+and a note contract carrying no route to a patient; **`golden` 4**) and **10
+needing a database** (`patientMessages`: internal threads not colliding with the
+open WhatsApp thread while a second WhatsApp thread is still refused; an
+internal thread never appearing in the patient's own history or transcript
+read; **the send path refusing an internal thread and an unknown one at
+runtime**; the database refusing to record an internal note as sent; a note
+refused into a patient conversation; cross-tenant refusal; notes in order with
+their authors; internal unread counting colleagues' notes and never your own;
+the event log carrying the SUBJECT and never the note; and the assistant's
+history query proven unable to see one). Skipped ceiling 663 → 673. The client
+adds 3 in `messageFormat.test.js`. With a local test database: 2056/2051/0/5.
+
+**Outreach (§15) was NOT built**, and `canStartConversation` is still false.
+An internal thread is not outreach, because it never leaves the pharmacy.
+
+**Three existing tests changed with the product, none relaxed.** The default
+list query gained `channel` (still `deepEqual`); the capabilities test gained
+`internalThreads: true` with the reason, while keeping the assertion that
+matters most — this product still does not message a patient first; and "reading
+a patient's messages creates nothing and sends nothing" was **tightened**, from
+"no export matches send|reply|create|start" to "nothing matches send|reply, and
+the only creator is `createInternalThread`".
+
+**A pre-existing defect surfaced, diagnosed and NOT fixed here.**
+`medications.test.js`'s "an edit changes what it names and leaves the rest of
+the record alone" fails intermittently (~1 run in 6 in isolation, more often
+under the parallel full run). `addMedication` lets `updated_at` default to the
+database's `now()`; `updateMedication` sets it from Node's `new Date()`. Two
+clocks for one column, so a clinical record's "last updated" can move backwards
+and "which edit was later" becomes unanswerable. Nothing in Messages touches
+medications — it was exposed by running the suite, not caused by it. It is
+**deliberately not in `test-baseline.json`**, per the rule that listing an
+intermittent failure as known is how a flaky test becomes permanent, and it has
+its own task.
+
+**Messages, phase 2 — the connections, 2026-09-26 → 2039/1369/663/7 (no
+database).** What a conversation was ABOUT (§13), unread per person (§17), a
+follow-up raised from what a patient said (§23), and the summary card (§28).
+
+**Two new tables, and nothing added to `conversations` or `messages`.** 0064
+adds `conversation_links` and `conversation_read_marks`; 0065 widens
+`patient_tasks_source_type` to accept `conversation`. The tables carrying live
+WhatsApp traffic gained one nullable column in 0063 and none at all here.
+
+**A link is a POINTER, and the test says so structurally.** `conversation_links`
+holds a kind, an id and an optional note — the label comes from the section that
+owns the record, through `clinicalRefs.describeRecord`, on every read. So a dose
+changed in Medications shows in the conversation next time it is opened, and a
+thread can never display a value that has stopped being true. The test asserts
+the table's COLUMN LIST, not the absence of a value in a row: the first version
+searched the serialised row for `148` and failed spuriously, because a uuid
+contains three-digit runs by chance. That version would also have proved
+nothing. The replacement is care programmes' shape — **the table has nowhere to
+put a clinical value.**
+
+**Unread is per READER, and that is the whole point.** A flag on the message
+would mean the first pharmacist to open a thread clears the badge for the
+colleague who was about to answer it — and the colleague never learns the
+patient was waiting. `conversation_read_marks` holds one row per (conversation,
+user) with the moment that person last read it; unread is COUNTED on read as
+inbound messages newer than the mark. No counter to drift, no backfill, and a
+user with no row has read nothing, which is correct. **Nothing is marked read
+by reading**: listing, opening the transcript and loading the summary all leave
+the mark alone, and a test asserts all three write no row — §17 says do not mark
+read before it is viewed, so the mark is a POST from a screen that has actually
+rendered the transcript.
+
+**A reader we cannot identify gets 0, never the pharmacy's count.** With no user
+id the counts come back zero rather than somebody else's unread, which would be
+the per-pharmacy behaviour this deliberately is not.
+
+**§23 creates nothing automatically.** A pharmacist types what needs to happen
+and presses the button; `source_type = 'conversation'` records where it came
+from. A conversation belonging to another patient is refused as the source, by
+the same `assertRecord` check every other source kind gets.
+
+17 server tests — **5 database-free** (`messageInput`: every offered link kind
+asserted to be resolvable by `clinicalRefs`, so the screen cannot draw a link
+nothing can open; **no appointment link**, because there is no appointments
+table, while the topic label stays; a link carrying a kind and an id and never a
+copy of what the record says; the attach contract's rejections; and a follow-up
+able to name a conversation as its source) and **12 needing a database**
+(`patientMessages`: the column-list invariant, cross-tenant refusal on attach
+and on reading links, only this patient's own records attachable, a deleted
+record leaving the link saying so, detach removing the link and never the
+record, the duplicate attach being one attachment, the audit trail staying
+internal and carrying no value, the follow-up raised from a conversation, unread
+per reader, nothing marked read by reading, the unidentified reader, the summary
+agreeing with the section, and a transcript carrying its OWN links). Skipped
+ceiling 651 → 663. The client adds 8 — five in `messageFormat.test.js` and three
+in `patientSummaryModel.test.js`. With a local test database: 2039/2034/0/5.
+
+**One existing test extended, not relaxed.** `patientMessages.test.js`'s "a
+patient has at most ONE active thread" asserts the counts object exactly; phase
+2 gave it two more keys, so the expectation gained them. Still `deepEqual`, still
+exact — the rule it pins (the counts describe the patient, not the filtered
+list) is unchanged, with the reason in a comment.
+
+**The summary card counts unread, not conversations.** A badge counting threads
+tells a pharmacist how long somebody has been a customer, which never changes
+and which nobody needs on a summary. Three states apart as everywhere else: the
+read failed ("Not recorded"), nobody has ever messaged ("No messages"), and
+everything has been read ("Nothing unread"). A thread waiting on a pharmacist
+outranks anything merely unread — one is about the patient, the other about the
+reader.
+
+**Messages — the patient's communication history, 2026-09-25 → 2022/1364/651/7
+(no database).** MESSAGES_PLAN.md phase 1, approved before code. The patient
+record's **Messages** tab had never had a screen (`built: false`), so giving it
+one replaced no behaviour — the same clean position as Clinic → Care program
+and Encounters → Follow-up.
+
+**This module is unlike the six before it: the thing the brief asked for
+already existed.** `conversations` and `messages` have been here since 0001 and
+receive every live patient's WhatsApp traffic, with five migrations of incident
+history defending them. So the work was not "build messaging" — it was **build
+a patient-scoped VIEW without breaking the thing the view is about**, which is
+§36 of the brief: do not keep a second copy of the messages.
+
+**What was NOT built, deliberately, and why:**
+
+- **No second send path.** Replying goes to `POST /api/conversations/:id/reply`,
+  which already checks the WhatsApp connection, declares a category to
+  `communicationPolicy` and resets the handoff clock. Archiving likewise. The
+  patient service exports nothing matching `/send|reply|create|start/` and a
+  test asserts that.
+- **No second open thread.** The brief's §5 shows three ACTIVE conversations
+  for one patient; `idx_conversations_one_open` forbids it, and the last time
+  code asked for a second open thread it deadlocked and dropped **16 messages
+  from a live patient over three days**. The owner chose one open thread with
+  history as sessions. The index is untouched and the ingest is untouched.
+- **No "+ New Message".** This product is strictly reactive — `staffAlert.js`
+  says every message it has ever sent is a reply to somebody who wrote first,
+  and that is what its channel-risk argument rests on. Outreach waits for its
+  own pass (owner's decision).
+- **No attachments.** The only file store is the PUBLIC `pharmacy-assets`
+  bucket; a patient's attachment cannot live at a guessable public URL. The
+  same wall Tests hit in 0060. Inbound `media_url` WhatsApp already stored is
+  displayed — existing data, not new storage.
+- **No appointments link.** There is still no appointments table.
+
+0063 adds one nullable `topic` column plus who set it and when, and an index.
+**No default:** every conversation predating 0063 arrived before topics did, and
+`general` would be this product inventing an answer about thousands of real
+threads — the "None" on an allergy card nobody was asked about (0058).
+
+23 server tests — **10 database-free** (`messageInput`: the topic vocabulary,
+the two states the database actually has, the four authors that keep the
+assistant and the pharmacist apart, the delivery states asserted to be the
+provider's own with no invented value, a bad filter refused rather than
+silently widening the list, and the capabilities that tell the screen what this
+phase cannot do) and **13 needing a database** (`patientMessages`: cross-tenant
+refusal on read, transcript and relabel; **another patient in the same pharmacy
+refused too**, because a conversation id is not a capability; one active thread
+with the rest as history; archiving losing nothing; the transcript keeping
+patient / assistant / pharmacy / system apart and in order; an unknown delivery
+status reported as null rather than "sent"; search that cannot reach another
+patient's messages; the summary agreeing with the section; and a read that
+creates and sends nothing). Skipped ceiling 638 → 651. The client adds 12 in
+`messageFormat.test.js`. With a local test database: 2022/2017/0/5.
+
+**Two bugs the database caught on the first run.** The shared column list was
+written `c.id, c.status, …` and reused inside an `UPDATE … RETURNING`, where no
+alias exists — "missing FROM-clause entry for table c". And the test helper
+wrote a closed conversation with `workflow_state = 'open'`, which 0024's
+`conversations_workflow_matches_status` CHECK refused: the constraint doing
+exactly its job.
+
+**A third the test caught, and it would have lost a patient's history.**
+`recordEvent`'s default idempotency key is `eventType:entityType:entityId`,
+which is right when the entity itself is the uniqueness — a conversation is
+started once. A topic is a judgement that can be revised, so the second relabel
+of a thread was silently discarded as "already recorded" and the history showed
+one change where two had happened. It now passes an explicit key.
+
+**One existing test changed with the product:**
+`patientRecordTabs.test.js`'s built list gains `messages`, with the reason in a
+comment. The rule it pins — exactly the sections marked built are the ones with
+a screen — is unchanged.
+
+**Follow-ups, phase 3 — the follow-up elsewhere, 2026-09-25 → 1999/1354/638/7
+(no database).** A **Follow-up** card on the patient summary and a **Follow-ups**
+brief in the clinical context, so a pharmacist writing up a medicine can see
+that a repeat blood pressure is three weeks late without leaving the screen.
+
+**One read feeds both**, as in care-programme phase 3. `followupSummary` is the
+same query the queue itself uses, trimmed to the three that are waiting and
+their counts — so the section, the summary card and the context brief cannot
+disagree about what is outstanding or what is late. The counts sentence comes
+from one function too (`summaryParts` in `followupFormat.js`), for the same
+reason three screens should not find three ways to write "2 overdue · 1 today".
+
+**"Nothing outstanding" and "no follow-ups" are different claims**, and the card
+says whichever is true: nothing was ever raised, or everything raised has been
+dealt with. "Not recorded" is kept for the read that failed or never happened.
+Same distinction as the allergy card (0058) and the care-programme card, and it
+matters the same way — a pharmacist reading "nothing outstanding" about a
+patient whose follow-ups simply failed to load is being told the work is done.
+
+2 server tests, **both needing a database** (`followups`: the summary agreeing
+with the queue's own counts, ordered overdue-first, carrying no percentage,
+capped, and refusing a cross-tenant read; `medications`: the context panel
+carrying the follow-ups and showing an empty list rather than a missing key when
+there are none). Skipped ceiling 636 → 638; pass is unchanged at 1354 and the 7
+failures are the same 7 names. The client adds 5 — two in
+`patientSummaryModel.test.js` and three in `followupFormat.test.js`. With a
+local test database: 1999/1994/0/5.
+
+**A false sentence on a real screen, found by opening it.** The card asked
+whether any follow-up had ever been raised; the brief did not, and told a
+pharmacist "Nothing outstanding" about a demo patient who had never had one.
+Two screens, two answers, one of them untrue. The fix is not to correct the
+brief — it is that WHICH empty sentence is true is now one function
+(`emptyText` in `followupFormat.js`) that both ask, so they cannot answer
+differently again. Its test reintroduces the bug and fails on it.
+
+**A worthless assertion, caught by mutating the code it guarded.** The summary
+test first asserted that a completed follow-up is absent from `next` while
+asking with the default cap of 3 — where the completed row fell off the end
+anyway. Setting the filter to let `completed` through left the test GREEN. It
+now asks with a limit that could hold the row, and fails when the filter is
+wrong. Both of this phase's tests were checked that way: the behaviour was
+removed, the test failed, the behaviour restored.
+
+**Nothing new is written anywhere.** The card and the brief are pointers: no
+screen outside the Follow-up section creates, completes, reschedules or cancels
+one, and `medicationContext` gained one key without changing the shape of any
+other.
+
+**Follow-ups, phase 2 — the connections, 2026-09-25 → 1997/1354/636/7 (no
+database).** Three things that only make sense once the queue exists:
+completing a follow-up may RECORD the reading it produced, each follow-up has
+its own history, and a signed medication review offers to turn its follow-up
+date into a follow-up.
+
+**The reading goes to Vitals, through the Vitals contract.** The completion
+panel's boxes come from `vitalRanges` (one list, tested against it), the route
+validates them with `readVitalsInput` — the same contract the Vitals screen
+uses, so a follow-up cannot invent a second idea of a plausible blood
+pressure — and `recordVitals` writes the row. The follow-up keeps its id. A
+test asserts the numbers come back through `vitalsSeries`, which is what makes
+it one record rather than two.
+
+**The reading is written BEFORE the completion transaction, deliberately
+outside it.** `recordVitals` owns `patient_vitals` and opens its own
+connection, and that is the right way round: a reading taken at the counter
+HAPPENED, so if the completion then fails it still belongs in Vitals and is
+there. The reverse — a completed follow-up pointing at a reading that was never
+saved — is the failure worth preventing. The follow-up is checked first, so a
+bad id cannot leave a stray reading behind, and recording one AND pointing at
+another is refused as two answers to one question.
+
+**The history is THIS follow-up's**, filtered to its row by the entity its
+events already point at. The patient's record is a different screen, and the
+other follow-ups are already in the queue's Completed and Cancelled groups —
+this answers what those cannot: when it was raised, every time it moved, and
+who did it.
+
+**The medication review's follow-up date now goes somewhere.** A signed review
+with one shows "Create follow-up", prefilled from what the pharmacist already
+wrote, and — once created — "Follow-up created — open it". Nothing is created
+automatically (§27), and a second press cannot duplicate it because the screen
+reads which reviews already have one.
+
+5 server tests — **2 database-free** (`followupInput`: record a reading OR
+point at one, never both; and the measurements offered are the Vitals screen's
+own list) and **3 needing a database** (`followups`: the reading landing in
+`patient_vitals` and read back through `vitalsSeries`, with the audit saying it
+was recorded rather than linked; a reading refused by the Vitals contract
+leaving the follow-up untouched; and the history holding this follow-up and not
+another). Skipped ceiling 633 → 636. The client adds 3 in
+`followupFormat.test.js`. With a local test database: 1997/1992/0/5.
+
+**A date-dependent defect the calendar surfaced.** The real day rolled over
+from the 24th to the 25th mid-session and `carePrograms.test.js`'s "progress
+counts what the rows say, at the boundary day" started failing — 2 overdue
+where it expected 1. Not the test's fault and not phase 2's: `addActivity`,
+`addGoal`, `removeGoal`, `removeActivity`, `enrolProgram` and `createFollowup`
+all returned progress and buckets computed against the REAL day while their
+caller had named another, so the same call answered differently depending on
+when it ran. They now honour the day they are given, and the test passes on any
+date. Fixed in the services; the test was left exactly as written.
+
+**Follow-ups — the patient's action queue, 2026-09-24 → 1992/1352/633/7 (no
+database).** FOLLOWUP_PLAN.md phase 1, approved before code. The patient
+record's **Encounters** tab — which had never had a screen — became
+**Follow-up**. The distinction is the owner's: the Clinical module's
+Consultation documents what HAPPENED; the patient record carries what needs to
+happen NEXT.
+
+**0062 is a rename, not a new table.** `care_program_activities` became
+`patient_tasks`, with `program_id` made nullable and `customer_id` added
+(backfilled from the programme, then NOT NULL). A follow-up raised from a
+consultation and an activity inside a care programme are the same kind of row —
+a thing to be done for this patient, on a date, by somebody, possibly repeating
+— and two tables would give "what does this patient need next?" two answers,
+two overdue calculations and two due-today lists. That is the call 0055 made
+when it extended `medication_journeys` instead of adding `patient_medications`
+beside it, and the brief (§22) asked for it explicitly: do not build a second
+task system.
+
+```
+program_id IS NULL      a follow-up raised on its own
+program_id IS NOT NULL  a care-programme activity, which is also a follow-up
+                        and appears in the same queue
+```
+
+**The proof the rename was safe is the 31 care-programme tests passing
+unchanged against it** — and two of those tests were CORRECTED rather than
+left: they queried `information_schema` for `care_program_activities`, which
+would now match nothing and pass vacuously. One of them gained
+`assert.ok(cols.length > 0)` so it can never pass on an empty answer again.
+
+**Due and Overdue are derived** from the due date against the Lagos day (§5),
+never stored — and **a follow-up may have no due date at all**: "review the
+HbA1c when the result comes back" is a real thing to remember, and forcing a
+date would put a made-up one in front of a pharmacist. Completing records an
+outcome and POINTS AT what it produced; the reading stays in Vitals (§12).
+Rescheduling keeps the date it moved from and counts the moves; cancelling
+keeps the row with its reason and is the one act that needs a pharmacist.
+
+28 server tests — **14 database-free** (`followupInput`: the optional due date,
+the repeat that needs a first one, an outcome belonging only to a follow-up
+that was done, the cancel reasons, and an assertion that the task vocabulary is
+the SAME frozen object the care plan uses rather than a copy) and **14 needing
+a database** (`followups`: cross-tenant refusal on every read and write; the
+queue bucketing at the boundary day; a care-programme activity appearing in the
+patient's queue while a standalone follow-up never reaches the programme's plan
+or counts; every kind in the vocabulary accepted by the CHECK; completion with
+a result pointer; exactly one next occurrence for a repeat; rescheduling;
+cancelling with the role rule; and the audit trail). Skipped ceiling 619 → 633.
+The client adds 12 in `followupFormat.test.js`. With a local test database:
+1992/1987/0/5.
+
+**Two shared modules came out of this, rather than a second copy.**
+`services/clinical/taskRow.js` holds the one row shape and INSERT for
+`patient_tasks`, used by both the care-programme service and the follow-up
+service. `services/clinical/clinicalRefs.js` answers "is this record this
+patient's, in this pharmacy?" for every feature that points at a record it does
+not own.
+
+**A bug 0062's own CHECK caught immediately.** `updateActivity` set a status of
+`cancelled` without recording WHEN — the column had not existed before — and
+the new `patient_tasks_cancelled_has_time` constraint refused it on the first
+run. Fixed in the service, not by loosening the constraint.
+
+**Three client tests were changed with the product**, each with the reason in a
+comment: the record's twelve labels (Encounters → Follow-up), the built list,
+and "every section names the one it opens" — a summary card may now name a
+record section OR a module screen, because the Consultations card became the
+second kind when consultations stopped being a section of the record.
+
+**Care programmes, phase 3 — the programme elsewhere, 2026-09-24 →
+1964/1338/619/7 (no database).** A **Care program** card on the patient summary
+and a **Care programmes** brief in the clinical context (Medications and the
+Review), so a pharmacist writing up a medicine can see that this patient is
+being followed for something and that a task is three weeks late, without
+leaving the screen.
+
+**One read feeds both.** `careProgramSummary` is the same query the section
+itself uses, trimmed to three open programmes and their counts — so the tab,
+the summary card and the context brief cannot disagree about what is open or
+what is overdue. The counts LINE they print comes from one function too
+(`countsLine` in `carePlanFormat.js`), for the same reason: three screens
+should not find three ways to write "Goals 1/3 · Tasks 8/12".
+
+**The wording distinction this phase had to get right.** The summary card says
+**"Not recorded"** when the read failed or never happened, and **"No care
+programmes"** when it succeeded and was empty. Those are different claims, and
+the difference is real: whether somebody was enrolled is a fact this system
+holds completely — nobody can be in a programme it was never told about —
+whereas "no allergies" is a fact it can only know by asking. The same
+distinction the allergy card has made since 0058, applied the other way round.
+
+3 server tests, **all needing a database** (`carePrograms`: the summary
+agreeing with the section, an ended programme leaving the active list with
+nothing outstanding, the three-programme cap and cross-tenant refusal;
+`medications`: the context carrying the programmes and showing an empty list
+rather than nothing when there are none). Skipped ceiling 616 → 619; pass is
+unchanged at 1338. The client adds 4 — two in `patientSummaryModel.test.js`
+(the card's counts, and "no care programmes" said only when the record was
+actually read) and two in `carePlanFormat.test.js`. With a local test database:
+1964/1959/0/5.
+
+**Nothing new is written anywhere.** The card and the brief are pointers: no
+screen outside the Care program section starts, changes or completes a
+programme, and `medicationContext` gained one key without changing the shape of
+any other.
+
+**Care programmes, phase 2 — the connections, 2026-09-24 → 1961/1338/616/7
+(no database).** Monitoring, related records and links, and the programme's own
+timeline. **None of the three holds anything**, which is the whole point of the
+phase: the Care program section had to become useful without becoming a second
+copy of Vitals, Tests, Conditions or Medications.
+
+- **Monitoring** reads through `vitalsSeries` (0054) and `testTrend` (0060) —
+  the same functions the Vitals and Tests screens use — so a panel here cannot
+  drift from the section it points at. A correction made in Tests shows in the
+  programme on the next load, because there is only one of the number.
+- **What a programme watches needs no column.** It is the template's
+  `monitoring` list PLUS every goal that reads a measurement, deduplicated. A
+  programme typed by hand, with no template, gets a panel the moment somebody
+  writes a goal that measures something.
+- **Related records** are the links a pharmacist attached by hand, plus a live
+  query for conditions, medicines and tests sharing the programme's house
+  condition code. A record already attached is not listed twice, and detaching
+  removes the LINK only — the condition stays on the patient's record and
+  returns as a derived one.
+- **The timeline** is the events the service already writes, filtered to this
+  programme by the entity they point at. The patient's whole history is its own
+  screen; mixing them would bury six events under three hundred messages.
+- **A record deleted from its own section leaves the link saying so** ("No
+  longer on the record") rather than the row vanishing, which would lose that
+  it was ever attached.
+
+11 server tests — **3 database-free** (`careProgramInput`: the attach contract
+carries a kind and an id and never a copy of what the record says; the
+monitoring list; and a metric this product cannot read being left out rather
+than shown empty forever) and **8 needing a database** (`carePrograms`:
+monitoring read from the real tables with an assertion that no table in this
+feature has a column that could hold a clinical value; a hand-typed programme
+watching its goals; cross-tenant refusal on all four new reads; the derived and
+attached lists; only this patient's own records attachable; the deleted record;
+the timeline holding THIS programme and not the patient's; and attaching and
+detaching on the audit trail). Skipped ceiling 608 → 616. The client adds 5 in
+`carePlanFormat.test.js`. With a local test database: 1961/1956/0/5 — the four
+known names plus the known-flaky pre-keys test.
+
+**Three bugs the tests caught before any screen existed.** An unknown
+monitoring `source` fell through both guards and would have been queried as a
+test code. A vitals metric came back with no unit, so the panel would have
+shown a bare "148" — the unit now comes from `vitalRanges`, the one place that
+knows. And `addLink` returned a read on a FRESH connection from inside its own
+transaction, so attaching a record answered with the list as it was and the
+screen would have looked like it did nothing; the transaction is now passed
+through, as every other write path in this service already does.
+
+**One test was changed with the product, deliberately:**
+`carePlanFormat.test.js`'s "the four sections of a programme" is now six, with
+the reason in a comment. The rule it pins — the sections and their order — is
+unchanged.
+
+**Care programmes, 2026-09-24 → 1950/1335/608/7 (no database).**
+CARE_PROGRAM_PLAN.md phase 1, approved before code. The patient record's
+"Clinic" tab had never had a screen (`built: false`), so renaming it to **Care
+program** replaced no behaviour — worth saying plainly, because the brief warned
+against renaming a page and leaving its old behaviour, and there was none to
+leave. Two other things the brief assumed were checked and are NOT there: this
+product has **no tasks table and no appointments table anywhere**. So
+`care_program_activities` IS the task list — the first task concept in the
+product, which a future Tasks module grows from rather than arriving beside —
+and a follow-up is an activity with a due date. No appointment store was built.
+
+0061 adds `care_program_definitions` (7 shipped templates, data not code, with
+`pharmacy_id is null` like `test_definitions`), `patient_care_programs` (the
+enrolment: six statuses, and CHECKs that a completed programme carries an
+outcome, a discontinued one a reason, and an open one no end date),
+`care_program_goals`, `care_program_activities` and `care_program_links` (which
+phase 1 does not use yet). **Nothing clinical is stored in any of them.** A goal
+records WHERE its value is read from — a vitalRanges key or a test code — and
+the screen reads it from Vitals or Tests on display, so a goal and the reading
+it is about cannot disagree. Progress is counted on read: there is no progress
+column, no score, and **no percentage anywhere**, because a percentage over
+tasks answers "how much of the admin is done" and beside a patient's name reads
+as a claim about the patient (the owner chose counts only).
+
+Enrolling in a template copies its goals and activities into the patient's own
+rows, dated from the start day and editable from that moment; the template is
+never consulted again, and the programme NAME is snapshotted so renaming a
+template cannot rewrite what somebody was enrolled in. Completing a recurring
+task writes **exactly one** next occurrence, in the same transaction, anchored
+to the day it was DUE rather than the day it was done — a task ticked off nine
+days late does not push the schedule nine days later — and rolls forward if that
+date is still in the past. The completed row is kept. Only a pharmacist or owner
+may complete, discontinue or cancel a PROGRAMME; anyone may enrol, write the
+plan and tick off a task, because doing the work is not closing the file.
+
+41 server tests — **20 database-free** (`careProgramInput`: the ended-programme
+rules, the role rule, a template trusted over the client, a goal refused when it
+names a metric this product does not record, the month clamp on a repeat, the
+next occurrence, and progress asserted to contain no percentage) and **21
+needing a database** (`carePrograms`: cross-tenant refusal on read, enrol, edit,
+goals and tasks; the template expanded into the patient's own rows; the
+duplicate refused by the service with the existing programme named AND by the
+index, which is what actually holds under a race; ending a programme keeping
+every goal and task; the CHECKs themselves refusing a meaningless ending; a task
+that was done refusing deletion; a link checked against its own table and this
+patient; and the audit trail, including the next date a repeat created).
+Skipped ceiling 587 → 608. The client adds 13 in `carePlanFormat.test.js`, and
+`patientRecordTabs.test.js` was changed deliberately with the rename. With a
+local test database: 1950/1946/0/4.
+
+**Three bugs this work surfaced, all caught by tests before any screen existed.**
+`clinicalAudit.js` keeps its own allowlist of event types, so all 21 database
+tests failed on the first run until the seven `CARE_PROGRAM_*` events were
+registered — the guard doing its job. `carePlanFormat`'s current-value line used
+`filter(Boolean)`, which dropped a reading of 0 and printed the unit on its own.
+And `errorHandler`'s 409 block, extended to name a programme as well as a
+condition, put `label: undefined` beside a condition's name; `errorHandler.test.js`
+says "its id and name, nothing more", and an empty key is one more thing — the
+code was fixed and the test gained the programme half rather than being relaxed.
+
+**Tests — diagnostic results, 2026-09-23 → 1909/1315/587/7 (no database).**
+TESTS_PLAN.md phases 1 and 2, approved before code. 0060 adds
+`test_definitions` (a catalogue that grows as DATA — 31 shipped rows with
+`pharmacy_id is null`, a pharmacy may add its own), `patient_tests` (ONE row
+per test event: the order and the report are the same event in a community
+pharmacy, so `ordered → pending → preliminary → final → amended/corrected/
+cancelled` lives on one row), `patient_test_results` (one row per analyte,
+with a CHECK that a row carries exactly one kind of value — a number, a code,
+or words) and `patient_test_corrections` (what a finalised report said
+before). A value entered NEVER finalises a report by itself: it becomes
+preliminary until a pharmacist says otherwise, and only a pharmacist or owner
+may finalise, amend, correct or cancel. Editing a finalised report snapshots
+it first and comes out `corrected`, with a reason. 31 server tests —
+**14 database-free** (`testInput`: the preliminary rule, a reported test
+needing a performed date, one kind of value per row, ranges belonging to a
+number, the reading OFFERED from the range typed beside it and never saying
+"critical", the role rule) and **17 needing a database** (`tests`:
+cross-tenant refusal, round trip for quantitative / coded / text / panel,
+the lifecycle, corrections keeping every earlier value, the role rule, the
+filters and their counts, a trend in ONE unit only, the consultation link and
+another patient's refused, the shipped catalogue readable by every tenant, the
+summary other screens show, the database's own CHECKs, and the audit trail).
+Skipped ceiling 570 → 587. The client adds 11 in `testFormat.test.js` and 1 in
+`patientSummaryModel.test.js`. With a local test database: 1909/1905/0/4.
+
+**The Vitals/Tests line holds by construction.** `patient_vitals` (0054) has
+no glucose column, so a glucose TEST has only one home. Nothing here creates a
+condition: the catalogue's `condition_code` exists so a result can be shown
+BESIDE a condition a pharmacist recorded, never to make one.
+
+**The nav entry "Test results" is now "Tests"** (owner): the section covers
+orders and pending tests, not only results.
+
+**Attachments are NOT built** (owner's decision). The only file store is the
+PUBLIC `pharmacy-assets` bucket, and a patient's lab report cannot live there;
+a private bucket with signed URLs waits for its own pass. A test names its
+laboratory and report reference in `source_name` meanwhile.
+
+**Two bugs this work surfaced, both found by driving the browser.** A
+finalised report that a form re-saved with the status it had loaded kept
+"Completed" while its values changed — the service now forces `corrected`
+whenever a finalised report changes. And re-saving a finalised report
+unchanged demanded a reason for a change nobody had made; "nothing to do" is
+now decided before the correction rules.
+
+**Conditions — the problem list, 2026-09-22 → 1878/1301/570/7 (no database).**
+CONDITIONS_PLAN.md phases 1 and 2, approved before code. 0059 adds
+`patient_problems` (FHIR Condition concepts: six clinical statuses, six
+verification statuses, category, severity, body site, onset and resolution at
+the precision known, source, asserter, consultation link) and
+`patient_problem_evidence` (a link to a vitals reading, never a copy). It sits
+BESIDE `patient_condition` (0037, the purchase engine's inference, "not a
+diagnosis") and never merges with it: an inference shows as a labelled
+suggestion and becomes a record only when a pharmacist writes it down. Same
+role rule as allergies: only a pharmacist or owner may confirm, list as a
+differential, refute or mark in error. A second current condition with the same
+code or name is refused with 409 unless "continue anyway", which the audit
+records. 36 server tests: **16 database-free** (`problemInput` 15: honest
+defaults, codes that are terminology-ready, the six-and-six statuses, untrue
+never current, resolution only on an abated condition, the symptom and allergy
+hints never refusing, the catalogue's codes shaped like ICD-10;
+`errorHandler` 1: a 409 names the record it conflicted with) and **20 needing
+a database** (`problems`: cross-tenant refusal, round trip with consultation
+and reading linked, another patient's consultation or reading refused, the
+duplicate rules, history kept with dates and reasons, role rule, audit, the
+purchase suggestion hidden once recorded, triage's seed, 0059's carry-across,
+a picker that creates nothing, and the Patients list counting a recorded
+condition under the chronic switch, the Condition filter and the column).
+Skipped ceiling 550 → 570. The client adds 10 in `conditionFormat.test.js`
+and 2 in `patientSummaryModel.test.js`. With a local test database:
+1878/1874/0/4.
+
+**The chronic switch now reads both kinds** (owner's decision): a purchase
+inference OR a recorded current, non-refuted condition with the house code.
+`patientSearch.test.js` is unchanged and still passes, since a patient with no
+recorded condition behaves exactly as before.
+
+**Shared, not copied:** `services/clinical/partialDate.js` and
+`client/src/PartialDateInput.jsx` came out of the allergy code, and Allergies
+uses them unchanged.
+
+**The allergy record, 2026-09-22 → 1842/1285/550/7 (no database).**
+ALLERGIES_PLAN.md phases 1 and 2, approved before code. 0058 adds
+`patient_allergies` + `patient_allergy_reactions` (FHIR AllergyIntolerance
+concepts, one level flatter) and the "no known allergies" assertion on
+`patient_profiles`. The overall state is DERIVED — known / none known / not
+assessed — so an empty record is never read as "no allergies". Nothing is
+deleted: refuted and entered-in-error are kept, with a reason the database
+itself requires. First role rule on a clinical route: only a pharmacist or
+owner may confirm, refute, mark in error, or assert NKA. 30 server tests —
+**15 database-free** (`allergyInput`: honest defaults, allergy vs
+intolerance, multiple reactions in order, severity kept apart from
+criticality, untrue-never-active, half-known dates at their precision, the
+role rule) and **15 needing a database** (`allergies`: cross-tenant refusal,
+round trip after refresh, the three states, NKA withdrawn by a new allergy
+and refused while one is current, refute / error / resolve kept in history,
+the role rule enforced at the service, the audit trail, triage's seed, and
+0058's carry-across run twice). Skipped ceiling 535 → 550. The client adds
+12 in `allergyFormat.test.js` and 1 in `patientSummaryModel.test.js`. With a
+local test database: 1842/1838/0/4.
+
+**Tests rewritten on purpose, with the product.** `medications.test.js`'s
+"context says allergies are NOT RECORDED" now asserts the real record — the
+same rule ("never say none unasked"), stricter. `patientRecordTabs.test.js`'s
+built list gains `allergies`.
+
+**A latent bug this surfaced.** `seedFromProfile` gave each profile allergy
+its own `profile_allergy` fact; `recordFact` keeps one live value per concept,
+so a second allergy would have raised a false FACT_CONFLICT_DETECTED in
+triage. Nothing wrote allergies before, so it never fired. Triage now gets one
+`profile_allergies` fact listing every current allergy.
+
+**The medication review, 2026-09-22 → 1812/1270/535/7 (no database).**
+Phase 2 of MEDICATIONS_PLAN.md. 0056 adds three tables — `medication_reviews`,
+`medication_review_problems`, `medication_review_actions` — because a problem
+is about a MEDICINE and an intervention is about a PROBLEM, and held as arrays
+on one row "which interaction did you ring the prescriber about" cannot be
+answered. Nothing in them is computed: no severity, no score, no suggested
+intervention. 21 server tests — **11 database-free**
+(`medicationReviewInput`: the signing gate — an outcome, and an intervention
+for every review that found a problem; a follow-up needing both a date and a
+reason; an intervention refused when it points at a problem the review does
+not hold; and the vocabulary carrying labels only, never a rank) and **10
+needing a database** (`medicationReviews`: cross-tenant refusal on all three
+tables; one open draft per patient; findings replaced wholesale on save so a
+removed problem does not linger; a signed review refusing edits with 409; a
+finding surviving the medicine it was about being deleted; and the order the
+pharmacist wrote the findings in). Skipped ceiling 525 → 535. The client adds
+10 in `reviewFormat.test.js`. With a local test database: 1812/1807/0/5.
+
+**A bug this work surfaced.** 0056 ordered findings by `created_at, id`, but
+every finding in one save is written in one transaction, where `now()` is
+constant — so the tiebreak was a random uuid and a review read back in a
+different order on different loads. The DB test caught it by failing only
+some of the time. 0057 adds a `position` column, set from the form; forward
+only, per the runner's rule.
+
+**An incident this work caused, and the guard it added.** `server/.env`'s
+`DATABASE_URL` is the live project. Running `node scripts/migrate.js` from a
+checkout, meaning to migrate a local copy, applied 0052–0057 to PRODUCTION on
+2026-09-21. The owner chose to keep them: all six only add (the new tables
+are empty, the one new `customers` column is null on every row) and `main`
+reads none of it — verified read-only. `scripts/migrate.js` now refuses any
+non-local host unless given `--production`; the deploy scripts pass it, and
+`migrate:test` hands over through an in-process handshake after its own
+`useTestDatabase()` check. Nothing about a local run changes.
+
+**The medication record, 2026-09-21 → 1791/1259/525/7 (no database).**
+Phase 1 of MEDICATIONS_PLAN.md, approved before any code was written. 0055
+EXTENDS `medication_journeys` rather than adding a `patient_medications`
+table beside it: six things already read that table meaning "what this
+patient takes", and a parallel one would give that question two answers.
+31 server tests — **18 database-free** (`medicationInput` 14: the contract,
+including that a medicine needs only a name because a pharmacist writing up
+what a patient *says* they take often knows nothing else; `errorHandler` 4,
+below) and **13 needing a database** (`medications`: cross-tenant refusal on
+read, write and edit; every clinical field surviving a round trip; the
+payload carrying no inventory field; and the four that hold the status
+widening against the refill engine — a completed course leaves the call list
+while its refill history survives, and a draft never reaches the list).
+Skipped ceiling 512 → 525. The client adds 12 in `medicationFormat.test.js`.
+
+**A bug this work surfaced, in shared code.** `middleware/errorHandler.js`
+was dropping `err.field` from every client error. Four input contracts set
+it — `careInput`, `vitalsInput`, `patientFilters`, `medicationInput` — and
+every form reading `body.field` was highlighting nothing: the message said
+"Pulse must be a number" while the pulse box looked like the other eight.
+Fixed, with `errorHandler.test.js` holding both halves of the rule: a client
+error names its field, and a 500 still says nothing about itself.
+
+**Vitals and biometrics, 2026-09-20 → 1760/1241/512/7 (no database).** The
+record's second built section, replicating the OpenMRS 3 flow the owner
+asked for: a table of readings, a chart of one sign over time, and a panel
+that records a set. 0054 adds `patient_vitals`. 26 server tests: **16
+database-free** — `vitalRanges` (10: the adult reference ranges, BMI, and
+the rule that NO range is applied to a child or to an unknown age, because a
+toddler's pulse of 120 is ordinary and a red number against a healthy child
+is how staff learn to ignore red) and `vitalsInput` (6: a form's strings,
+and the empty box that must become absent rather than a stored zero — a
+pulse of 0 on a living patient). **10 need a database** (`vitals`: the
+cross-tenant refusal on both read and write, BMI derived rather than stored,
+the adult ranges applied to an adult and not to a child, newest-first
+paging, and the table's own refusal of a reading with no numbers in it).
+Skipped ceiling 501 → 512. The client adds 11 in `vitalsFormat.test.js`,
+the sharpest being that a visit which recorded no temperature is ABSENT from
+the temperature line rather than plotted at zero, which would draw a
+collapse that never happened.
+
+On the client, 11 tests were added to
+`patientSearchQuery.test.js` (filter order, query building and encoding, the
+labels, and the chronic switch staying out of the filter count while still
+reaching the server); those run under vitest, which this baseline does
+not count. With a local test database the same tree measures
+**1729/1725/0/4** against **1686/1681/0/5** before — all 43 added tests pass,
+and the failures are the four category A+C names, re-confirmed individually.
+The fifth failure of the 2026-09-19 run was the flaky pre-keys test, which
+passed this time: it is not in the baseline, and a run of 4 or 5 failures
+here is the same result.
+
 `test-baseline.json` holds the machine-readable copy that `npm run test:ci`
 reads. **The two are updated in the same commit or not at all.**
 
-### Why 442 tests skip
+### Why 673 tests skip
 
 `TEST_DATABASE_URL` is **not yet configured**. Every database-backed suite
 skips itself, loudly, rather than running — and each one prints its own
@@ -420,10 +1235,11 @@ pharmacies, a connected WhatsApp socket, and messages from that morning.
 the same database, including via a port swap or the direct-connection
 hostname.
 
-**A skipped suite is not a passing suite.** 442 tests prove nothing when the
+**A skipped suite is not a passing suite.** 673 tests prove nothing when the
 variable is unset. Do not read a green-looking run as coverage of the clinical
-engine, orders, customers, tenant isolation, or the pharmacy website record —
-none of that is being exercised.
+engine, orders, customers, tenant isolation, the pharmacy website record, or
+the clinical records added since — allergies, conditions, tests and care
+programmes all have a database half that is not being exercised.
 
 ### What a test database changes — measured 2026-09-05
 
@@ -552,11 +1368,11 @@ After `npm test`, compare:
 
 | Observation | Meaning |
 |---|---|
-| **No test database:** 1207 pass / 472 skip / 7 fail, categories A+B | No regression. Proceed. |
-| **Test database configured:** 1681 pass / 0 skip / 4 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. Measured, not derived: 1686/1681/0/5 on 2026-09-19 against a local PostgreSQL 17.10, where the fifth failure was the known-flaky pre-keys test (see below), not a fifth known failure. |
+| **No test database:** 1376 pass / 673 skip / 7 fail, categories A+B | No regression. Proceed. |
+| **Test database configured:** 2051 pass / 0 skip / 4-5 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. Measured, not derived: 2056/2051/0/5 on 2026-09-26 against a local PostgreSQL 17.10 (2039/2034/0/5 before Messages phase 3; 2022/2017/0/5 before Messages phase 2; 1999/1994/0/5 before Messages; 1997/1992/0/5 before follow-up phase 3; 1992/1987/0/5 before follow-up phase 2; 1964/1959/0/5 before follow-ups; 1961/1956/0/5 before care-programme phase 3; 1950/1946/0/4 before phase 2; 1909/1905/0/4 before care programmes; 1878/1874/0/4 before tests; 1842/1838/0/4 before conditions; 1812/1807/0/5 before allergies; 1791/1786/0/5 on 2026-09-21 before the review; 1686/1681/0/5 on 2026-09-19 before the patients module). The fifth failure is "writing pre-keys costs a constant number of round trips", the known-flaky one (see below) — it appears in some runs and not others, and is not a regression either way. |
 | Any failure NOT among the 9 | **You broke something.** Fix the code, not the test. |
-| Fewer than 1207 passing | Something stopped running. Find out what. |
-| More than 472 skipped | A suite started skipping. That is a silent loss of coverage, not a pass — unless you added tests that skip, in which case say so and move the ceiling in the same commit. |
+| Fewer than 1376 passing | Something stopped running. Find out what. |
+| More than 673 skipped | A suite started skipping. That is a silent loss of coverage, not a pass — unless you added tests that skip, in which case say so and move the ceiling in the same commit. |
 | "writing pre-keys costs a constant number of round trips" fails | Known flaky against a local database, ~1 run in 4. Not in the baseline on purpose. Do not re-run until green — read the entry above and fix the yardstick. |
 
 (These numbers were stale before 2026-09-05: the table read 768/386 while the
