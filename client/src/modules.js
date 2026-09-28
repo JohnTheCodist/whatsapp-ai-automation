@@ -80,6 +80,11 @@ export const MODULES = Object.freeze([
     hint: 'Consultations and pharmacist triage',
     sidebar: [
       { tab: 'consultations', label: 'Consultations', Icon: IconConsultations, badge: 'consultations', tone: 'red' },
+      // The pharmacist's own note (0067), beside the desk rather than instead
+      // of it: the desk answers "is this safe for a pharmacy consultation",
+      // and this answers "what did the pharmacist assess and do". No badge —
+      // nobody is waiting on a note.
+      { tab: 'consultation-notes', label: 'Consultation notes', Icon: IconConsultations },
       // Registered services that have a screen of their own. None do yet.
       ...CLINIC_SERVICES.filter((s) => s.tab).map((s) => ({ tab: s.tab, label: s.label, Icon: IconConsultations })),
     ],

@@ -108,8 +108,22 @@ test('the clinical service registry lists only what exists, and nothing unbuilt'
 test('a clinical service with no screen adds no sidebar item', () => {
   // They run inside the assistant today. A sidebar item for one would open a
   // page with nothing on it.
+  //
+  // AMENDED 2026-09-27 with the product: Consultation notes joined the
+  // Clinical module (0067, CONSULTATION_PLAN.md phase 1) — the pharmacist
+  // note, beside the triage desk rather than instead of it. It HAS a screen,
+  // so the rule this pins is unchanged.
   const clinics = MODULES.find((m) => m.id === 'clinics');
-  expect(clinics.sidebar.map((i) => i.tab)).toEqual(['consultations']);
+  expect(clinics.sidebar.map((i) => i.tab)).toEqual(['consultations', 'consultation-notes']);
+
+  // STRENGTHENED at the same time: the list above is a literal, so it would
+  // have to be edited for a service to sneak in — but it would then be
+  // edited by whoever added it. This states the rule itself, so a clinical
+  // service reaching the sidebar fails even if somebody updates the list.
+  const serviceIds = new Set(CLINIC_SERVICES.filter((x) => !x.tab).map((x) => x.id));
+  for (const item of clinics.sidebar) {
+    expect(serviceIds.has(item.tab), `${item.tab} is a clinical service with no screen`).toBe(false);
+  }
 });
 
 // ------------------------------------------------------------ tile status ---

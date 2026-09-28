@@ -232,6 +232,7 @@ app.use('/api/customers', require('./routes/tests'));       // diagnostic tests 
 app.use('/api/customers', require('./routes/carePrograms')); // care programmes (0061)
 app.use('/api/customers', require('./routes/followups'));   // follow-ups — the patient's next actions (0062)
 app.use('/api/customers', require('./routes/patientMessages')); // the patient's communication history (0063)
+app.use('/api/customers', require('./routes/consultations')); // the pharmacist's consultation note (0067)
 app.use('/api/customers', require('./routes/customers'));    // patient identity list
 // Mounted on the SAME prefix as customers, deliberately: a purchase-based
 // condition profile is a fact about a customer, and giving it a second noun in

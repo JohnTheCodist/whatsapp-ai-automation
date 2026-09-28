@@ -41,6 +41,29 @@ const PATIENT_EVENTS = Object.freeze({
   // another's thread is a thing the next reader should be able to see.
   // Internal: the patient neither set it nor is shown it.
   CONVERSATION_TOPIC_SET: 'CONVERSATION_TOPIC_SET',
+
+  // ---- the pharmacist's consultation note (0067) ----
+  //
+  // Distinct from the ENCOUNTER events above. An encounter is the episode
+  // the WhatsApp engine recorded; a consultation is what the pharmacist
+  // assessed about it, and the two have different authors and different
+  // lifecycles (CONSULTATION_PLAN.md §3).
+  CONSULTATION_STARTED: 'CONSULTATION_STARTED',
+  CONSULTATION_COMPLETED: 'CONSULTATION_COMPLETED',
+  // Retired rather than deleted: a finished clinical record is the record
+  // of a professional act, and carries the reason it was withdrawn.
+  CONSULTATION_ENTERED_IN_ERROR: 'CONSULTATION_ENTERED_IN_ERROR',
+  // Phase 2 (0069). Each carries the pharmacist's own judgement — a
+  // problem's certainty, an intervention's kind, a referral's destination —
+  // and never a value copied out of the record it points at.
+  CONSULTATION_PROBLEM_ADDED: 'CONSULTATION_PROBLEM_ADDED',
+  CONSULTATION_INTERVENTION_RECORDED: 'CONSULTATION_INTERVENTION_RECORDED',
+  CONSULTATION_REFERRAL_RECORDED: 'CONSULTATION_REFERRAL_RECORDED',
+  // Phase 3 (0070). A finalised note was reopened to be corrected, and
+  // what it SAID was snapshotted first. Carries {reason, amendmentNumber}
+  // — never the snapshot itself, which belongs in the amendments table and
+  // would put a clinical record into the event log twice.
+  CONSULTATION_AMENDED: 'CONSULTATION_AMENDED',
   // A record was attached to, or detached from, a conversation (0064).
   // Carries {action, kind, refId} — a POINTER, never a copy of what the
   // record says. Detaching is kept as an event because "this thread was
@@ -314,6 +337,10 @@ const ENTITY_TABLES = Object.freeze({
   patient_profile: 'patient_profiles',
   clinical_fact: 'patient_clinical_facts',
   clinical_encounter: 'clinical_encounters',
+  // The pharmacist's note (0067). Deliberately NOT 'consultation':
+  // clinicalRefs.js already resolves that word to clinical_encounters, and
+  // one name meaning two tables is how a pointer finds the wrong row.
+  pharmacist_consultation: 'pharmacist_consultations',
   clinical_protocol: 'clinical_protocols',
   red_flag_rule: 'protocol_red_flags',
   // Stage 2 protocol engine (0032).

@@ -436,6 +436,291 @@ says "not recorded" and never "none", because an empty Allergies card
 reading "None" is how a pharmacist gets told someone is safe by a system
 that has simply never been asked.
 
+**Consultation, phase 3 — the record's integrity, 2026-09-28 →
+2128/1406/715/7 (no database).** CONSULTATION_PLAN.md §32 (amendment with a
+reason and a snapshot), §39 (entered-in-error, refined), the per-note audit
+view and the permission model.
+
+**0070 adds ONE table and NO fifth status**, and the status is the
+interesting decision. `amended` is the obvious design and it was rejected
+twice over:
+
+1. **A note reopened to be corrected is not finished.** Labelling it
+   `amended` would show a half-rewritten clinical record as though it were
+   signed — the opposite of what §32 is for. It goes back to `in_progress`,
+   because it really is in progress, and re-finalising puts it back to
+   `completed` **through the same gate**. An amendment cannot be used to get
+   round §23: a blood-pressure review that needed an objective to be signed
+   still needs one after being reopened, which a test proves end to end.
+2. **"Has this been amended, and how often?" is answered by COUNTING** the
+   snapshot rows, on every read. A stored counter is one more thing that can
+   disagree with the rows it counts, and nothing else in this feature stores
+   a derived answer.
+
+**0067 had already enforced the design that follows.** Its CHECK says a note
+in `draft` or `in_progress` carries no `completed_at` and no `finalised_by`,
+so reopening must clear both — which is right rather than merely required: a
+reopened note has no signature, and naming whoever signed the version being
+replaced would attribute a record they have not seen. Who signed it is in the
+snapshot, where it stays true.
+
+**The snapshot is a FULL COPY, not a diff.** A diff of a clinical record is
+only readable beside the thing it applies to, and once there are two
+amendments nobody can reconstruct the middle version without replaying them
+in order and getting it right. §32 exists so that what the note SAID is
+recoverable, and a full copy is the only form of that which cannot be got
+wrong. This is the one place in the whole feature that deliberately COPIES
+clinical values rather than pointing at them — everywhere else a copy would
+go stale, and here going stale is the entire purpose.
+
+**Two holes in entered-in-error, closed.** A retired note could be AMENDED
+back into the record, which is precisely the laundering §39 exists to
+prevent. And it could be RE-MARKED: the second call overwrote `error_reason`,
+losing the only explanation the record has, and put a second
+`CONSULTATION_ENTERED_IN_ERROR` on the audit trail for something that
+happened once.
+
+14 server tests — **3 database-free** (`consultationInput`: an amendment
+always says why, with a blank box refused and a SHORT real reason accepted —
+the floor is there to refuse an empty box, not to make a pharmacist justify
+themselves to a form; the amend roles asserted to be the same frozen
+`FINALISING_ROLES` list rather than a copy, because a note is reopened in
+order to be re-signed and splitting them would let a staff member reopen a
+record nobody could then close; and the status vocabulary asserted to have
+gained nothing) and **11 needing a database** (`consultations`: the snapshot
+keeping what the note SAID after the note says something else; the whole note
+and not a diff; a second amendment as its own entry; an amended note still
+held to its gate; an OPEN note refused as "amended"; a retired note refused
+amendment; re-marking refused with the first reason surviving; the role rule
+with nothing written on refusal; the history scoped to THIS note with
+cross-tenant AND same-pharmacy refusal; the audit view in order with who did
+it; and amending creating no clinical record anywhere). Skipped ceiling
+**704 → 715**, declared here per the rule below. The 7 failures are the same
+7 names. The client adds 6 in `consultationFormat.test.js` (client 294 → 300).
+**With a local test database: 2128/2123/0/5.**
+
+**Five mutations were run against the service, and each turned exactly the
+right test red**: the snapshot never written (4 red), the snapshot taken
+AFTER the reopen (1 red, on the assertion that it kept `completed`), and each
+of the three guards removed in turn (1 red each, the matching one). A sixth,
+hard-coding `amendmentCount` to 0, turned red the test that had just gained
+it.
+
+**The client says nothing about versions.** A note nobody has corrected shows
+no badge at all — never "Original", never "Version 1", never "No
+amendments", all three being claims about a history nobody has looked at, and
+the first two inventing a version number this product does not have. A note
+that HAS been corrected says so wherever it is read, because the text on
+screen is not what was signed.
+
+**A history shows an event it cannot label rather than dropping it.** A
+history that silently omits what it has no wording for reads as complete when
+it is not, which is the one thing an audit trail must never do. The
+unlabelled event is shown by its raw name and marked, and a test reads the
+event list from the SERVER so a new type shipping without wording is caught.
+
+**A wrong heading, caught by opening the screen.** The amend panel was first
+offered on a retired note too, under a section headed **"Amend this note"**
+that then said the note is not amended. A heading naming an action the panel
+refuses is worse than no panel: the section is now offered only on a
+finalised note, and the sentence moved into the banner that already explains
+the status. Its test moved with it, with the reason in a comment.
+**Consultation, phase 2 — the problem list, what was done, and where the
+patient was sent, 2026-09-28 → 2114/1403/704/7 (no database).**
+CONSULTATION_PLAN.md §12 (problems with pointers), §14 (interventions), §17
+(referral), §16 (the prescription review) and §21 (the care-programme
+pointer).
+
+**0069 adds two TABLES rather than two array columns**, for the reason 0056
+settled for the medication review: an intervention is about a PROBLEM, and
+held as `text[]` on the note, *"which problem did you ring the prescriber
+about"* cannot be answered. That relation is the thing a second pharmacist
+reads the note to find out.
+
+**A problem carries a pointer, never a copy.** Label, certainty, status and at
+most one `(ref_kind, ref_id)` — resolved through `clinicalRefs.describeRecord`
+on every load, so a dose changed in Medications shows here next time and the
+note can never display a value that has stopped being true. A record deleted
+from its own section leaves the problem saying **"No longer on the record"**
+rather than the row vanishing: that the consultation was about it is a fact,
+and losing it would rewrite the note.
+
+**The referral distinction, held in three places.** `referral_destination` is
+nullable AND has a `none` value, and they are different clinical facts:
+
+```
+NULL     nobody considered referral        → the summary says NOTHING
+'none'   a pharmacist decided against it   → "No referral required"
+```
+
+A CHECK requires a reason whenever a destination is named, because "Refer to
+hospital" with no reason is something neither the next pharmacist nor the
+hospital can act on. Nothing is inferred: §17 requires a validated clinical
+rule before software suggests a referral and this product has none, so no code
+reads the assessment and proposes one.
+
+**The summary order was CORRECTED, and the correction is the interesting part.**
+Phase 2 first appended problems and interventions to the END of
+`consultationSummary`, so a pharmacist filled the screen in one order
+(assessment → problems → interventions → plan) and read it back in another
+(… → plan → problems → interventions). Nothing failed; it was simply wrong for
+the person reading it in a hurry. The order is now the SOAP one — the problem
+list and the interventions belong to the assessment, and the plan follows from
+them — and pinned by a test that was mutation-checked by putting the plan back
+where it had been.
+
+**The record pickers were EXTRACTED, not copied.** `CarePrograms.jsx` already
+held a map from `condition | medication | test | vitals | encounter` to the
+owning section's own endpoint and row shape, which is exactly what a problem
+pointer needs. It is now `client/src/recordPicker.js`, used by both, and its
+test asserts the invariant that matters: **every kind either screen may OFFER
+can actually be listed** — read from the server's own `PROBLEM_REF_KINDS` and
+`LINK_KINDS` rather than a fixture. The failure it prevents is a pharmacist
+choosing "Medication", waiting, and being told this patient has none while the
+Medications section beside it shows four. Removing one picker turns it red;
+that was checked.
+
+27 server tests — **12 database-free** (`consultationInput`: a problem carrying
+a pointer and never a copy, a half-written pointer refused in both directions,
+a referral that names somewhere having to say why, a prescriber outcome refused
+unless somebody was recorded as contacted, an intervention refused when it
+names a problem the note does not hold, and the summary reading back in the
+order the note is written) and **15 needing a database** (`consultations`:
+cross-tenant refusal on every new write; another patient's record refused as a
+pointer; a deleted record leaving the problem saying so; the list ordered as
+the pharmacist ordered it; an intervention naming another consultation's
+problem refused; the referral CHECK at the database; the prescription review;
+the care-programme pointer checked against this patient's own programmes;
+and the audit trail). Skipped ceiling **689 → 704**, declared here per the
+rule below. The 7 failures are the same 7 names. The client adds 14 — 5 in
+`consultationFormat.test.js`, 5 in the new `recordPicker.test.js` and 4 in
+the new `consultationLayout.test.js` (client 280 → 294). **With a local test
+database: 2114/2109/0/5.**
+
+**The 15th database test was found by driving the endpoints, not by writing
+it.** Deleting a problem left the intervention behind with its pointer
+cleared — 0069's `on delete set null` doing exactly the right thing, and
+nothing asserting it. An intervention is a professional act that HAPPENED,
+so a pharmacist tidying a problem off the list must not thereby erase the
+record of the call they made about it. Mutation-checked by switching the
+constraint to `cascade`, which turned it red.
+
+**Phase 2 also closed a phase-1 gap nobody had noticed:** the workspace used
+six `ui-consult-*` class names that had no styles at all — it rendered, but as
+unstyled controls. `index.css` now has the block, and it keeps the same rule
+the rest of the module does: no red anywhere, including on an emergency
+referral, because design.md reserves red for a person waiting on a human and
+that is the consultation DESK.
+
+**And a visual defect the browser found that no test could have.** An
+emergency referral put its tone on the `<dd>`, which is `display: block` —
+so instead of an amber label the panel got a 662px tinted BAR, and
+`.ui-consult-summary dd` outranked `.ui-tone-1` on colour, so the text was
+not even amber. Read off `getComputedStyle` on the running screen. The tone
+now goes on a pill, as everywhere else in this app, and
+`client/src/consultationLayout.test.js` pins three rules that would have
+caught it and the unstyled-class gap above: every `ui-` class the workspace
+uses has a CSS rule behind it, a tone is carried by a pill and never by a
+block, and the screen names no tone of its own (they all come from
+`consultationFormat.js`, where the no-red rule is already pinned).
+
+**Its own first draft was wrong twice, and both are recorded in the file.**
+One test asserted the JSX contains an amber tone — it contains none, because
+the tones live in the format module, so it failed on its premise and was
+rewritten into the invariant that keeps them there. And the
+class-is-defined check first used `CSS.includes(".ui-consult-add")`, which a
+rename to `.ui-consult-addX` satisfies by substring; it now matches a whole
+token.
+
+**Consultation, phase 1 — the pharmacist's note, 2026-09-27 → 2087/1391/689/7
+(no database).** CONSULTATION_PLAN.md phase 1, approved before code.
+
+**The inspection changed what this module is.** The brief asked to redesign the
+Consultation workflow and said a separate Pharmacist Triage workflow already
+exists. Reading the code first: `Consultations.jsx` **is** the triage desk —
+its own header says *"The previous version was a stack of triage cards… queue
+on the left, the whole case on the right"* — and triage otherwise is a
+server-side engine (`redFlagEvaluator`, `safetyGate`, `clinicalFilter`,
+`protocolExecutionService`) that writes `clinical_encounters`. What does not
+exist anywhere is the place a pharmacist records **their own** assessment: no
+objective, no impression, no intervention, no plan, no referral record, no
+consultation type, no finalisation.
+
+So this is not a redesign. **It is the missing half**, and it falls along the
+split the brief itself names from Medplum: `clinical_encounters` is the
+Encounter, and `pharmacist_consultations` is the ClinicalImpression beside it.
+
+**0067 adds a table rather than widening the live one.** `clinical_encounters`
+is written by the assistant *during* a conversation; a consultation is written
+by a person, possibly days later, has its own draft → completed → retired life,
+and one episode may carry more than one assessment. Adding twenty columns to a
+table the WhatsApp ingest writes is the change this repo's baseline exists to
+catch. The live path needed no edit at all.
+
+**The encounter is OPTIONAL** (owner's decision). Most community-pharmacy
+consultations happen at the counter with no WhatsApp thread, and a module that
+only documented the minority which began in a chat would be the wrong module.
+Where there is an episode, §6's triage summary is READ from it rather than
+re-typed; where there is not, the panel is **absent rather than empty** — a
+triage panel saying "no red flags" on a counter consultation is a safety claim
+nobody made.
+
+**Consultation types are DATA** (`consultation_definitions`, the
+`test_definitions` / `care_program_definitions` pattern), and a type does not
+create a second form. It says which sections are emphasised and — the part
+that matters — **which must be filled to finalise**. §23's conditional
+requirements are therefore a column, not a hard-coded list: the same
+half-written note finalises as a minor ailment and is refused as a
+blood-pressure review, which a test proves end to end.
+
+**§22's summary is derived on every read and is not a column**, with a test
+asserting no column matching `%summary%` exists. A stored summary goes stale
+the moment the note is edited, and §22 says it must come from what the
+pharmacist actually entered.
+
+**The summary OMITS what was never entered.** Not "Referral: none", not "Nil",
+not "No abnormality" — nothing at all. That sentence on a note where nobody
+considered referral is a clinical claim the software invented, and the next
+pharmacist reads it as a decision somebody took. A test asserts the rendered
+summary contains none of `none / nil / not required / no abnormality /
+unremarkable / normal`.
+
+**0068 exists because 0067 forgot the assessment column.** Every shipped type
+requires an assessment to finalise, so as shipped 0067 created a note that
+could never be completed. Migrations here are forward-only, so it is a second
+migration rather than an edit — AGENTS.md: *"A bad migration is fixed by
+writing the next one."* The untidiness is the honest record.
+
+31 server tests — **15 database-free** (`consultationInput`: the four states,
+the role rule, a focused examination asserted to contain no hospital field, a
+blank finding stored as absent rather than empty, the type-driven finalisation
+gate, and the summary that omits what was not entered) and **16 needing a
+database** (`consultations`: cross-tenant refusal and another patient in the
+same pharmacy refused; a counter consultation with no episode; an episode's
+triage read and **not copied** into the note's own columns; another patient's
+episode refused; a draft saved field by field; the gate at the database; a
+staff member writing but not finalising; a finalised note refusing edits with
+409 and never deleted; entered-in-error keeping the row with its reason; **a
+consultation creating no Condition, Allergy, Vitals, medication or task as a
+side effect**; the table asserted to have nowhere to store a measurement; the
+history, the summary, and the audit trail). Skipped ceiling 673 → 689.
+
+**A name collision caught before it bit.** `clinicalRefs.js` already resolves
+the word `consultation` to `clinical_encounters` — the Clinical module calls an
+encounter a consultation. The new entity type is therefore
+`pharmacist_consultation`, not `consultation`: one name meaning two tables is
+how a pointer finds the wrong row.
+
+**With a local test database: 2087/2081/0/6.** The sixth is NOT a regression
+and is deliberately not in `test-baseline.json`:
+`websiteAnalytics.test.js` → "a flush writes the buffer and a second flush adds
+to it" fails **only between 23:00 and 00:00 UTC**, and this was measured at
+23:2x. `analytics.today()` returns the UTC day on purpose (its comment explains
+why); the test asserts against `day = current_date`, which Postgres evaluates
+in the session timezone — `Africa/Lagos`. Measured directly: service day
+2026-09-26, `current_date` 2026-09-27. A test yardstick, not a product defect,
+and it has its own task. Outside that hour the figure is 2087/2081/0/5.
+
 **The record stopped advertising sections it does not have, 2026-09-26 → server
 numbers unchanged at 2056/1376/673/7.** The owner asked for **Clinical view**,
 **Form entry** and **Appointments** to be removed from the patient record. All
@@ -1221,7 +1506,7 @@ here is the same result.
 `test-baseline.json` holds the machine-readable copy that `npm run test:ci`
 reads. **The two are updated in the same commit or not at all.**
 
-### Why 673 tests skip
+### Why 715 tests skip
 
 `TEST_DATABASE_URL` is **not yet configured**. Every database-backed suite
 skips itself, loudly, rather than running — and each one prints its own
@@ -1235,7 +1520,7 @@ pharmacies, a connected WhatsApp socket, and messages from that morning.
 the same database, including via a port swap or the direct-connection
 hostname.
 
-**A skipped suite is not a passing suite.** 673 tests prove nothing when the
+**A skipped suite is not a passing suite.** 715 tests prove nothing when the
 variable is unset. Do not read a green-looking run as coverage of the clinical
 engine, orders, customers, tenant isolation, the pharmacy website record, or
 the clinical records added since — allergies, conditions, tests and care
@@ -1368,11 +1653,11 @@ After `npm test`, compare:
 
 | Observation | Meaning |
 |---|---|
-| **No test database:** 1376 pass / 673 skip / 7 fail, categories A+B | No regression. Proceed. |
-| **Test database configured:** 2051 pass / 0 skip / 4-5 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. Measured, not derived: 2056/2051/0/5 on 2026-09-26 against a local PostgreSQL 17.10 (2039/2034/0/5 before Messages phase 3; 2022/2017/0/5 before Messages phase 2; 1999/1994/0/5 before Messages; 1997/1992/0/5 before follow-up phase 3; 1992/1987/0/5 before follow-up phase 2; 1964/1959/0/5 before follow-ups; 1961/1956/0/5 before care-programme phase 3; 1950/1946/0/4 before phase 2; 1909/1905/0/4 before care programmes; 1878/1874/0/4 before tests; 1842/1838/0/4 before conditions; 1812/1807/0/5 before allergies; 1791/1786/0/5 on 2026-09-21 before the review; 1686/1681/0/5 on 2026-09-19 before the patients module). The fifth failure is "writing pre-keys costs a constant number of round trips", the known-flaky one (see below) — it appears in some runs and not others, and is not a regression either way. |
+| **No test database:** 1406 pass / 715 skip / 7 fail, categories A+B | No regression. Proceed. |
+| **Test database configured:** 2123 pass / 0 skip / 4-5 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. Measured, not derived: 2128/2123/0/5 on 2026-09-28 against a local PostgreSQL 17.10, plus a SIXTH between 23:00 and 00:00 UTC only — the websiteAnalytics timezone-window test described above, which is a test yardstick and not in this baseline (2114/2109/0/5 before Consultation phase 3; 2087/2081/0/5 before Consultation phase 2; 2056/2051/0/5 before Consultation phase 1; 2039/2034/0/5 before Messages phase 3; 2022/2017/0/5 before Messages phase 2; 1999/1994/0/5 before Messages; 1997/1992/0/5 before follow-up phase 3; 1992/1987/0/5 before follow-up phase 2; 1964/1959/0/5 before follow-ups; 1961/1956/0/5 before care-programme phase 3; 1950/1946/0/4 before phase 2; 1909/1905/0/4 before care programmes; 1878/1874/0/4 before tests; 1842/1838/0/4 before conditions; 1812/1807/0/5 before allergies; 1791/1786/0/5 on 2026-09-21 before the review; 1686/1681/0/5 on 2026-09-19 before the patients module). The fifth failure is "writing pre-keys costs a constant number of round trips", the known-flaky one (see below) — it appears in some runs and not others, and is not a regression either way. |
 | Any failure NOT among the 9 | **You broke something.** Fix the code, not the test. |
-| Fewer than 1376 passing | Something stopped running. Find out what. |
-| More than 673 skipped | A suite started skipping. That is a silent loss of coverage, not a pass — unless you added tests that skip, in which case say so and move the ceiling in the same commit. |
+| Fewer than 1406 passing | Something stopped running. Find out what. |
+| More than 715 skipped | A suite started skipping. That is a silent loss of coverage, not a pass — unless you added tests that skip, in which case say so and move the ceiling in the same commit. |
 | "writing pre-keys costs a constant number of round trips" fails | Known flaky against a local database, ~1 run in 4. Not in the baseline on purpose. Do not re-run until green — read the entry above and fix the yardstick. |
 
 (These numbers were stale before 2026-09-05: the table read 768/386 while the

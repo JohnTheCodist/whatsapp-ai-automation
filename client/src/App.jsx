@@ -25,6 +25,7 @@ import Overview from './Overview.jsx';
 import AiPerformance from './AiPerformance.jsx';
 import UploadCatalogue from './UploadCatalogue.jsx';
 import Consultations from './Consultations.jsx';
+import ConsultationNotes from './ConsultationNotes.jsx';
 import Inbox from './Inbox.jsx';
 import Orders from './Orders.jsx';
 import Requests from './Requests.jsx';
@@ -843,6 +844,11 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
             {tab === 'ai' && <AiPerformance onNavigate={setTab} />}
             {tab === 'consultations' && (
               <Consultations
+                onOpenConversation={(id) => { setOpenConversationId(id); setTab('inbox'); }}
+              />
+            )}
+            {tab === 'consultation-notes' && (
+              <ConsultationNotes
                 onOpenConversation={(id) => { setOpenConversationId(id); setTab('inbox'); }}
               />
             )}

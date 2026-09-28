@@ -3682,3 +3682,142 @@ tr:focus-within .ui-row-actions,
 
 /* The unread count beside the Internal tab. */
 .ui-cprog-pill > .ui-msg-unread { margin-left: 6px; }
+/* ── the consultation note ───────────────────────────────────────────────
+   Hallmark · component: long-form clinical record · genre: modern-minimal
+   theme: design.md (locked — ERPNext desk, neutral greys, Inter, emerald)
+   states: default · hover · focus-visible · disabled · saving · error · empty
+   pre-emit critique: P5 H5 E4 S5 R5 V4
+
+   A routine minor ailment should take a pharmacist under a minute (§34), so
+   this is a column of collapsed sections rather than a form: the type decides
+   which are open and the rest are one click away instead of twenty empty boxes
+   to scroll past.
+
+   NO RED ANYWHERE IN HERE. design.md keeps red for a person waiting on a human
+   and says only Consultations earns it — and that is the consultation DESK,
+   where somebody really is waiting. A note being unfinished, or a referral
+   being urgent, takes amber. */
+.ui-consult { padding-bottom: 28px; }
+.ui-consult-body { padding: 0 16px 14px; }
+
+/* One labelled control. The label sits above, because a clinical field's name
+   ("How certain") is as important as its value and must not be truncated into
+   a column beside it. */
+.ui-consult-field { display: block; }
+.ui-consult-field + .ui-consult-field { margin-top: 10px; }
+.ui-consult-field > span { display: block; margin-bottom: 3px; }
+.ui-consult-field input,
+.ui-consult-field select,
+.ui-consult-field textarea {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.ui-consult-field textarea { resize: vertical; }
+
+/* Read-only panels: the triage summary the episode supplied, and the summary
+   the server derives. Both are labelled pairs, never editable here. */
+.ui-consult-triage,
+.ui-consult-summary { display: grid; gap: 8px; }
+.ui-consult-triage dl { display: grid; gap: 8px; }
+.ui-consult-triage dt,
+.ui-consult-summary dt {
+  color: var(--ui-ink-faint);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ui-consult-triage dd,
+.ui-consult-summary dd {
+  margin-top: 2px;
+  color: var(--ui-ink);
+  font-size: 13.5px;
+  line-height: 1.5;
+  /* A pharmacist's own paragraphs, kept as they typed them. */
+  white-space: pre-wrap;
+}
+.ui-consult-triage { padding: 10px 12px; border-radius: 8px; background: var(--ui-sunk); }
+
+.ui-consult-actions { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 10px; }
+
+/* The problem list and the interventions. Numbered, because an intervention
+   says "Problem 3" rather than repeating a label that can be edited. */
+.ui-consult-problems { display: grid; gap: 8px; margin: 0 0 10px; padding: 0; list-style: none; }
+.ui-consult-problems > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  background: var(--ui-surface);
+}
+.ui-consult-problems > li > .ui-cprog-name { flex: 1 1 100%; }
+.ui-consult-problems .ui-psection-link { margin-top: 0; margin-left: auto; }
+
+/* The inline add form, set back from the list so it reads as "the next one"
+   rather than another row of it. */
+.ui-consult-add {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px dashed var(--ui-line-strong);
+  border-radius: 10px;
+  background: var(--ui-sunk);
+}
+.ui-consult-add > .ui-followup-head { margin-top: 12px; }
+.ui-consult-add .ui-cprog-check { margin-top: 8px; }
+
+@media (max-width: 720px) {
+  .ui-consult-body { padding: 0 12px 12px; }
+  /* Never two lines of clickable text on a phone. */
+  .ui-consult-problems .ui-psection-link { margin-left: 0; flex: 1 1 100%; }
+}
+
+/* Phase 3 — amendment and the note's own history (§32).
+
+   The amend panel is set back like the add forms, because reopening a signed
+   record is a deliberate act and should not look like another row of the
+   note. It carries no tone: an amended note is not a warning, it is a
+   corrected one, and colouring it would make every correction look like a
+   problem. */
+.ui-consult-amend {
+  padding: 12px;
+  border: 1px dashed var(--ui-line-strong);
+  border-radius: 10px;
+  background: var(--ui-sunk);
+}
+.ui-consult-amend > .ui-followup-head { margin-top: 12px; }
+
+/* What the note SAID, each with its reason. Bordered rather than tinted:
+   these are previous versions of a clinical record, and a coloured block
+   beside the current text is how somebody reads the wrong one. */
+.ui-consult-amendments { display: grid; gap: 10px; margin: 0 0 12px; padding: 0; list-style: none; }
+.ui-consult-amendments > li {
+  padding: 10px 12px;
+  border: 1px solid var(--ui-line);
+  border-left: 3px solid var(--ui-line-strong);
+  border-radius: 8px;
+  background: var(--ui-surface);
+}
+.ui-consult-amendments .ui-cprog-name { display: block; }
+.ui-consult-amendments .ui-consult-summary { margin-top: 8px; }
+
+/* The event log. Quiet on purpose — it is the record of what happened, read
+   when somebody asks, not something to draw the eye on every load. */
+.ui-consult-events { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.ui-consult-events > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--ui-line);
+}
+.ui-consult-events > li > .ui-cprog-name { flex: 1 1 auto; }
+
+@media (max-width: 720px) {
+  .ui-consult-events > li > .ui-cprog-name { flex: 1 1 100%; }
+}

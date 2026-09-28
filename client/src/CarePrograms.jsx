@@ -25,6 +25,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Loading from './Loading.jsx';
 import { IconInfo } from './Icons.jsx';
 import { ConditionsBrief } from './ClinicalContext.jsx';
+import { RECORD_PICKERS } from './recordPicker.js';
 import {
   PROGRAM_TONE, GOAL_TONE, TASK_TONE, PROGRAM_SECTIONS, EMPTY_TEXT,
   isOpen, labelFor, dayLabel, rangeLabel, progressParts, nextUpLine, dueLabel, isOverdue,
@@ -565,37 +566,8 @@ function Related({ customerId, program, options, onOpenTab }) {
   );
 }
 
-const PICKER = Object.freeze({
-  condition: {
-    url: (id) => `/api/customers/${id}/problems`,
-    rows: (j) => (j.conditions || []).map((c) => ({ id: c.id, label: c.conditionName, detail: c.clinicalStatus })),
-  },
-  medication: {
-    url: (id) => `/api/customers/${id}/medications?status=current`,
-    rows: (j) => (j.medications || []).map((m) => ({
-      id: m.id, label: [m.medicineName, m.strength].filter(Boolean).join(' '), detail: m.status,
-    })),
-  },
-  test: {
-    url: (id) => `/api/customers/${id}/tests`,
-    rows: (j) => (j.tests || []).map((t) => ({ id: t.id, label: t.testName, detail: t.status })),
-  },
-  vitals: {
-    url: (id) => `/api/customers/${id}/vitals?limit=10`,
-    rows: (j) => (j.readings || []).map((v) => ({
-      id: v.id,
-      label: dayLabel(v.recordedAt) || 'Reading',
-      detail: [v.systolic && v.diastolic ? `${v.systolic}/${v.diastolic} mmHg` : null, v.pulse ? `${v.pulse} bpm` : null]
-        .filter(Boolean).join(' · '),
-    })),
-  },
-  encounter: {
-    url: (id) => `/api/customers/${id}/tests/encounters`,
-    rows: (j) => (j.encounters || []).map((e) => ({
-      id: e.id, label: dayLabel(e.startedAt) || 'Consultation', detail: e.presentingComplaint || e.complaint || null,
-    })),
-  },
-});
+// The record pickers moved to recordPicker.js when the consultation problem
+// list needed the same four kinds. Same endpoints, same row shapes — one copy.
 
 /**
  * Attach a record that already exists.
@@ -614,10 +586,10 @@ function AttachDialog({ customerId, program, options, onClose, onAttached }) {
   useEffect(() => {
     let live = true;
     setRows(null);
-    const picker = PICKER[kind];
+    const picker = RECORD_PICKERS[kind];
     fetch(picker.url(customerId))
       .then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (live) setRows(j ? picker.rows(j) : []); })
+      .then((j) => { if (live) setRows(j ? picker.rows(j, dayLabel) : []); })
       .catch(() => { if (live) setRows([]); });
     return () => { live = false; };
   }, [customerId, kind]);
