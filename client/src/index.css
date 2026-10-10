@@ -587,6 +587,48 @@ nav[aria-label="Sections"] {
 .ui-rail-row svg { stroke-width: 2.3; }
 .ui-rail-row[aria-current="page"] svg { stroke-width: 2.5; }
 
+
+/* ---- the rail's module list (2026-10-10) --------------------------------
+   The strip used to show only the module you were in — two rows on Clinics,
+   in a 610px column, measured at 466px empty. It now lists all five modules
+   and their sixteen screens, which is what the owner asked for and which
+   makes the list longer than the viewport on a short screen.
+
+   So the MIDDLE scrolls and the ends do not. A sidebar whose pin control and
+   whose connection status scroll out of reach is worse than a long list, and
+   the workspace row is also the way home. */
+.ui-rail-scroll {
+  /* Thin, and only while this list is actually scrollable. A permanent
+     gutter in a 56px strip would eat an eighth of it. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-line-strong) transparent;
+}
+.ui-rail-scroll::-webkit-scrollbar { width: 6px; }
+.ui-rail-scroll::-webkit-scrollbar-track { background: transparent; }
+.ui-rail-scroll::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--ui-line-strong);
+}
+/* Collapsed, the scrollbar would sit ON the icons — the strip is 56px wide
+   and the panel behind it is 214px, so the gutter lands mid-column. The list
+   still scrolls by wheel and by keyboard; only the bar is hidden. */
+.ui-rail:not([data-pinned='true']):not(:hover):not(:has(:focus-visible)) .ui-rail-scroll {
+  scrollbar-width: none;
+}
+.ui-rail:not([data-pinned='true']):not(:hover):not(:has(:focus-visible)) .ui-rail-scroll::-webkit-scrollbar {
+  width: 0;
+}
+
+/* One module and its screens. The 4px row rhythm used to come from the nav's
+   own `gap-1`; the nav stopped being the flex parent of the rows when the
+   middle became a scroll container, so it lives here now. */
+.ui-rail-group { display: grid; gap: 4px; }
+/* Groups are further apart than the rows inside them, which is what makes
+   them read as groups at a glance rather than as one undifferentiated list.
+   The hairline does this job when the strip is closed; this does it when the
+   panel is open. */
+.ui-rail-group + .ui-rail-group { margin-top: 12px; }
+
 /* Reduced motion: nothing slides or sweeps. The panel switches instantly
    and the labels cross-fade in 120ms, so the change is still perceptible
    without any spatial movement. Same selectors as the states above, later

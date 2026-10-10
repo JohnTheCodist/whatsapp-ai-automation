@@ -369,6 +369,31 @@ section / segment. Each step before the last navigates; the last is marked
 which is why sidebar styling is scoped to `nav[aria-label="Sections"]` and
 never to `nav` alone.
 
+**AMENDED 2026-10-10: the rail lists EVERY module, not only the one you are
+in.** It used to render the current module alone — the owner reported the
+collapsed strip as *"sparse"*, and it measured out: on Clinics, two 36px
+rows in a 610px column, **466px of it empty**.
+
+All five modules and their sixteen screens now show, grouped by module, with
+the module name as the group heading. The trade is real and worth stating:
+every screen is one click from everywhere instead of two, and the list is 16
+rows rather than 2–7.
+
+Three things follow from the length, and none is optional:
+
+- **The middle scrolls; the ends do not.** The workspace row holds the pin
+  control and the way home, and the foot holds the connection status. A
+  sidebar whose pin scrolls out of reach is worse than a long list.
+- **The current screen scrolls itself into the rail** on every navigation,
+  `block: nearest` and never `smooth`. Without it the panel opens showing a
+  part of the app you are not in — on Consultation notes the highlighted row
+  sits under Stock’s seven.
+- **A module with nothing to show contributes no heading.** Branding’s only
+  screen is gated until the website builder is on, and a heading that names
+  a part of the app then offers no way into it is a dead end.
+
+Module rows no longer appear on Home. Home is still the launcher, and the R
+tile is still the way back to it.
 Tab ids (`inbox` / `orders` / `requests`) are unchanged underneath, so every
 existing `onNavigate('orders')` deep-link keeps working.
 

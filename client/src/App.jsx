@@ -169,12 +169,14 @@ function crumbFor(tab) {
  */
 function RailButton({
   active, onClick, Icon, label, count = 0, tone = 'amber', dot = null, index = 0, className = '',
+  rowRef = null,
 }) {
   const toneBg = tone === 'red' ? 'bg-red-500' : 'bg-amber-500';
   const dotBg = dot === 'red' ? 'bg-red-500' : 'bg-amber-500';
   return (
     <button
       type="button"
+      ref={rowRef}
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
       style={{ '--i': index }}
@@ -423,6 +425,30 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
   // The module this screen belongs to, or null on Setup and Billing — where
   // the sidebar lists the modules instead, so there is always a way back in.
   const currentModule = moduleOfTab(tab);
+
+  /**
+   * Scroll the current screen into the rail, not the page.
+   *
+   * A DEFECT THE ALL-MODULES LIST CREATED. The strip used to show only the
+   * module you were in, so "you are here" was always visible. Listing all
+   * sixteen screens means the highlighted row is often below the fold — on
+   * Consultation notes it sits under Stock’s seven rows — so the sidebar
+   * opens showing a part of the app you are not in, with no sign of where
+   * you are.
+   *
+   * `block: nearest` is deliberate twice over: it moves the row the SHORTEST
+   * distance, so an already-visible row does not jump, and it will not
+   * scroll an ancestor that does not need it — which on this page would mean
+   * scrolling the work surface because the nav moved.
+   */
+  const activeRowRef = useRef(null);
+  useEffect(() => {
+    const row = activeRowRef.current;
+    if (!row || typeof row.scrollIntoView !== 'function') return;
+    // `auto`, never `smooth`: this fires on every navigation, and a sidebar
+    // that slides every time you change screen is motion nobody asked for.
+    try { row.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch { /* older browser */ }
+  }, [tab]);
   // Whether the sidebar is held open. design.md's rail opens on hover and
   // closes when the pointer leaves, which is right for a cursor passing
   // through and wrong for somebody who wants to SEE where they are while
@@ -472,7 +498,7 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
       <nav
         aria-label="Sections"
         data-pinned={railPinned ? 'true' : 'false'}
-        className="ui-rail absolute inset-y-0 left-0 flex w-[214px] flex-col gap-1 overflow-y-auto overflow-x-hidden border-r border-[var(--ui-line)] bg-[var(--ui-surface)] px-2 py-4"
+        className="ui-rail absolute inset-y-0 left-0 flex w-[214px] flex-col overflow-hidden border-r border-[var(--ui-line)] bg-[var(--ui-surface)] px-2 py-4"
       >
         {/* The workspace row, in the shape of the desk's "Stock / ERPNext"
             header: the brand tile, then whose workspace this is and whose
@@ -515,44 +541,68 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
           </button>
         </div>
 
-        {/* The group label names the module you are in — the desk's
-            workspace header. On Setup and Billing, which belong to no
-            module, it offers the modules instead. */}
-        <span className="ui-rail-fade px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ui-ink-faint)]">
-          {currentModule ? currentModule.label : 'Modules'}
-        </span>
+                {/* EVERY MODULE’S SCREENS, not just the one you are in (owner,
+            2026-10-10). This used to show only `currentModule`, which on
+            Clinics meant TWO rows in a 610px column — measured at 466px of
+            empty strip, which is what "sparse" was. design.md’s Navigation
+            section was amended with it rather than contradicted.
 
-        {currentModule
-          // CONTEXTUAL: only this module's screens. The five modules are one
-          // click away on Home, via the logo above or the breadcrumb.
-          ? sidebarFor(currentModule, { websiteEnabled }).map(({
-            tab: itemTab, label, Icon, badge, tone,
-          }, i) => (
-            <RailButton
-              key={itemTab}
-              index={i + 1}
-              active={tab === itemTab}
-              onClick={() => setTab(itemTab)}
-              Icon={Icon}
-              label={label}
-              count={badge ? (badges[badge] || 0) : 0}
-              // Red only for a person waiting on a pharmacist; everything
-              // else is queued work (design.md).
-              tone={tone || 'amber'}
-            />
-          ))
-          : MODULES.map((m, i) => (
-            <RailButton
-              key={m.id}
-              index={i + 1}
-              active={false}
-              onClick={() => setTab(moduleHome(m.id, { websiteEnabled }))}
-              Icon={m.Icon}
-              label={m.label}
-            />
-          ))}
+            The trade is real and worth stating: every screen is now one
+            click from everywhere instead of two, and the list is 16 rows
+            instead of 2-7. That is why the module list scrolls and the
+            workspace row and the foot stay put — a sidebar whose pin
+            control scrolls out of reach is worse than a long list. */}
+        <div className="ui-rail-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+          {(() => {
+            // One running index across every group, so the labels still
+            // stagger in as one movement rather than restarting per module.
+            let i = 0;
+            return MODULES.map((m) => {
+              const items = sidebarFor(m, { websiteEnabled });
+              // A module whose only screen is gated off (Branding, while
+              // the website builder is switched off) contributes nothing —
+              // a heading over an empty group is a dead end.
+              if (items.length === 0) return null;
+              return (
+                <div key={m.id} className="ui-rail-group">
+                  {/* The group label and the strip’s hairline share one
+                      slot and hand over as the panel opens: the desk
+                      separates its groups with rules when closed and with
+                      words when open. `uppercase` is a legacy hook that
+                      index.css resets to sentence case — copied here so
+                      these labels match "Connection" below rather than
+                      rendering a size apart. */}
+                  <div className="relative">
+                    <span className="ui-rail-fade block px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ui-ink-faint)]">
+                      {m.label}
+                    </span>
+                    <hr aria-hidden="true" className="ui-rail-closed-only absolute left-[2px] top-1.5 w-9 border-slate-300" />
+                  </div>
+                  {items.map(({ tab: itemTab, label, Icon, badge, tone }) => {
+                    i += 1;
+                    return (
+                      <RailButton
+                        key={itemTab}
+                        index={i}
+                        active={tab === itemTab}
+                        rowRef={tab === itemTab ? activeRowRef : null}
+                        onClick={() => setTab(itemTab)}
+                        Icon={Icon}
+                        label={label}
+                        count={badge ? (badges[badge] || 0) : 0}
+                        // Red only for a person waiting on a pharmacist;
+                        // everything else is queued work (design.md).
+                        tone={tone || 'amber'}
+                      />
+                    );
+                  })}
+                </div>
+              );
+            });
+          })()}
+        </div>
 
-        <div className="mt-auto pt-3">
+        <div className="pt-3">
           {/* Sign out is no longer here — it lives in the account menu at the
               top right, next to the name of the account it signs you out of.
               It used to sit directly above this connection panel, which put a

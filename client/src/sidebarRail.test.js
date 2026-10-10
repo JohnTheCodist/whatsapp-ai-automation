@@ -209,3 +209,68 @@ test('the rail draws its icons heavier than the same icon on white', () => {
   const activeWeight = Number((active.body.match(/stroke-width:\s*([\d.]+)/) || [])[1]);
   expect(activeWeight).toBeGreaterThan(weight);
 });
+
+/* ==========================================================================
+ * Every module's screens, not only the one you are in (2026-10-10)
+ * ======================================================================== */
+
+test('the rail lists every module, not just the one you are in', () => {
+  // The owner's call, reversing design.md's contextual nav. The strip used to
+  // render `currentModule` alone — two rows on Clinics, in a 610px column,
+  // measured at 466px empty. Every screen is now one click from everywhere.
+  expect(APP).toMatch(/MODULES\.map\(\(m\) => \{/);
+  expect(APP).toMatch(/sidebarFor\(m, \{ websiteEnabled \}\)/);
+
+  // The old contextual branch is gone, not merely bypassed. `currentModule`
+  // survives — the BREADCRUMB still needs to know where you are — so this
+  // checks the rail specifically rather than the identifier.
+  expect(APP).not.toMatch(/\{currentModule\s*\n?\s*\?\s*sidebarFor/);
+});
+
+test('a module with nothing to show contributes no heading', () => {
+  // Branding's only screen is the website builder, which is gated until the
+  // server says it is on. A heading over an empty group is a dead end: it
+  // names a part of the app and then offers no way into it.
+  expect(APP).toMatch(/if \(items\.length === 0\) return null;/);
+});
+
+test('the ends of the rail do not scroll away', () => {
+  // Listing sixteen screens makes the list taller than a short viewport, so
+  // the middle scrolls. The workspace row must not go with it: it holds the
+  // pin control AND the way home, and a sidebar whose pin scrolls out of
+  // reach is worse than a long list. The connection status is the other end.
+  const nav = APP.match(/className="ui-rail absolute[^"]*"/);
+  expect(nav, 'the rail nav class is gone').toBeTruthy();
+  expect(nav[0], 'the whole nav still scrolls').not.toMatch(/overflow-y-auto/);
+  expect(nav[0]).toMatch(/overflow-hidden/);
+
+  // The scrolling middle is its own element, and it is the flexible one.
+  expect(APP).toMatch(/className="ui-rail-scroll min-h-0 flex-1 overflow-y-auto/);
+
+  // `min-h-0` is load-bearing, not decoration: a flex child defaults to
+  // min-height:auto, which refuses to shrink below its content, so without
+  // it the list would push the connection status off the bottom instead of
+  // scrolling.
+  expect(APP).toMatch(/ui-rail-scroll min-h-0/);
+});
+
+test('the current screen scrolls itself into the rail, and the page stays put', () => {
+  // A defect the all-modules list CREATED. With sixteen rows the highlighted
+  // one is often below the fold — on Consultation notes it sits under Stock's
+  // seven — so the sidebar would open showing a part of the app you are not
+  // in, with no sign of where you are.
+  expect(APP).toMatch(/activeRowRef/);
+  expect(APP).toMatch(/rowRef=\{tab === itemTab \? activeRowRef : null\}/);
+  expect(APP).toMatch(/useEffect\(\(\) => \{[\s\S]*?scrollIntoView[\s\S]*?\}, \[tab\]\);/);
+
+  // `block: nearest` twice over: the shortest move, so an already-visible row
+  // does not jump; and it will not scroll an ancestor that does not need it,
+  // which here would mean scrolling the work surface because the nav moved.
+  expect(APP).toMatch(/scrollIntoView\(\{ block: 'nearest', inline: 'nearest' \}\)/);
+
+  // NEVER smooth. This fires on every navigation, and a sidebar that slides
+  // each time you change screen is motion nobody asked for — and motion that
+  // prefers-reduced-motion could not switch off, because it is scripted
+  // rather than a CSS transition.
+  expect(APP).not.toMatch(/scrollIntoView\([^)]*smooth/);
+});
