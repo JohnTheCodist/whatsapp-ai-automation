@@ -108,6 +108,23 @@ function Section({ id, title, emphasised, filled, children }) {
   );
 }
 
+/**
+ * Where each drafted SOAP section lands in the note's own fields.
+ *
+ * A map rather than a ternary because two of the four are stored under
+ * different names than the section is called — `assessment` is
+ * `assessmentText` and `plan` is `planText` — and a rename on one side with
+ * no matching rename on the other is a draft that silently goes nowhere.
+ * That is exactly how the public WhatsApp number field saved nothing for a
+ * month (2026-09-09).
+ */
+const SCRIBE_FIELD = Object.freeze({
+  subjective: 'subjective',
+  objective: 'objective',
+  assessment: 'assessmentText',
+  plan: 'planText',
+});
+
 function Field({ label, value, onChange, placeholder, rows = 3, disabled }) {
   return (
     <label className="ui-consult-field">
@@ -1144,6 +1161,38 @@ export default function Consultation({
       <div className="ui-consult-split">
         <div className="ui-consult-main">
 
+      {/* THE SCRIBE SITS ABOVE THE SECTIONS, not inside Subjective, because
+          it now writes into four of them. It is first on the work surface
+          because it is the first decision a pharmacist makes: talk, or type.
+
+          It writes nothing itself. Accepting calls the same `set` a
+          keystroke does, so the note has ONE writer and the ordinary Save is
+          still what commits it. */}
+      {open && (
+        <ConsultationScribe
+          customerId={customerId}
+          consultationId={consultationId}
+          note={note}
+          available={Boolean(options?.scribe?.available)}
+          existing={note.subjective}
+          whenLabel={whenLabel}
+          onAccept={({ sections, consented }) => {
+            // Consent is a SERVER fact and comes back as the whole note, so
+            // it replaces rather than dirties — nothing becomes unsaved
+            // because the patient was asked.
+            if (consented) setNote(consented);
+            // Each drafted section lands exactly as typing would. An EMPTY
+            // one is left alone rather than blanking what is already there.
+            if (sections) {
+              for (const [key, field] of Object.entries(SCRIBE_FIELD)) {
+                const value = String(sections[key] || '').trim();
+                if (value) set(field, value);
+              }
+            }
+          }}
+        />
+      )}
+
       {shows('triage') && (
       <Section id="triage" title="Triage summary" emphasised={Boolean(note.triage)} filled={Boolean(note.triage)}>
         <TriagePanel triage={note.triage} onOpenConversation={onOpenConversation} />
@@ -1168,27 +1217,6 @@ export default function Consultation({
 
       {shows('subjective') && (
       <Section id="subjective" title="Subjective" emphasised={emphasis.has('subjective')} filled={Boolean(note.subjective)}>
-        {/* The scribe sits ABOVE the box it drafts into, and only while the
-            note is open. It writes nothing itself: accepting a draft calls
-            the same `set` a keystroke does, so the note has one writer and
-            the ordinary Save is still what commits it. */}
-        {open && (
-          <ConsultationScribe
-            customerId={customerId}
-            consultationId={consultationId}
-            note={note}
-            available={Boolean(options?.scribe?.available)}
-            existing={note.subjective}
-            whenLabel={whenLabel}
-            onAccept={({ subjective, consented }) => {
-              // Consent is a SERVER fact and comes back as the whole note,
-              // so it is merged rather than set — nothing is dirtied by
-              // asking the patient.
-              if (consented) setNote(consented);
-              if (typeof subjective === 'string') set('subjective', subjective);
-            }}
-          />
-        )}
         <Field label="What the patient reported" rows={5} value={note.subjective} disabled={!open || busy}
           placeholder="Onset, duration, what makes it better or worse, what they have already tried"
           onChange={(v) => set('subjective', v)} />

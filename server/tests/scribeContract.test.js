@@ -19,27 +19,66 @@ const {
   readTranscript, readDraft, withinTranscript, mayScribe,
   readDeepgram, patientTurns, patientText,
   unsupportedNegative, BLANKET_CLAIM,
+  SECTION_SPEAKER, MAX_DRAFT_RATIO, hardenedACertainty, readSections,
 } = require('../services/ai/scribeContract');
 
 // THE MOST IMPORTANT TEST IN THIS FILE.
-test('the scribe may draft what the patient SAID, and nothing a pharmacist decides', () => {
-  // Subjective is reportage. Everything else on that screen is a judgement or
-  // a measurement, and a model drafting one of those is a model making a
-  // clinical decision — the line §38 draws.
-  assert.deepEqual(SCRIBABLE, ['subjective']);
+//
+// AMENDED 2026-10-10, on the owner’s decision, and the amendment is the
+// interesting part. It used to assert SCRIBABLE === [‘subjective’] on the
+// rule that "a model drafting an assessment is a model making a clinical
+// decision".
+//
+// THAT RULE HAS NOT CHANGED. It was being enforced in the wrong place. When
+// a pharmacist SAYS "chest is clear, looks viral, honey and fluids, come
+// back in five days", the assessment and the plan were made by a person;
+// writing them into the right boxes is transcription, and refusing to do it
+// was making a pharmacist retype a decision they had already spoken.
+//
+// So the line moved from WHICH SECTION to WHOSE WORDS, which is a stronger
+// claim and is what this test now pins.
+test('every section is drafted from the voice that owns it, and no other', () => {
+  // The patient reports; the pharmacist observes, assesses and decides.
+  // Nothing may be drafted from a voice that did not say it.
+  assert.deepEqual(SECTION_SPEAKER, {
+    subjective: 'patient',
+    objective: 'pharmacist',
+    assessment: 'pharmacist',
+    plan: 'pharmacist',
+  });
 
+  // Subjective comes from the PATIENT and from nobody else. A pharmacist’s
+  // question or advice filed there is a fabricated patient report, which is
+  // the failure this whole provider choice exists to prevent.
+  assert.equal(SECTION_SPEAKER.subjective, 'patient');
+  for (const section of ['objective', 'assessment', 'plan']) {
+    assert.equal(SECTION_SPEAKER[section], 'pharmacist',
+      `${section} may be drafted from the patient’s voice`);
+  }
+
+  // Exactly the four SOAP boxes, and the scribe is offered for each.
+  assert.deepEqual([...SCRIBABLE].sort(), ['assessment', 'objective', 'plan', 'subjective']);
+  for (const section of SCRIBABLE) {
+    assert.equal(mayScribe(section), true);
+    assert.ok(SECTION_SPEAKER[section], `${section} is scribable but has no owning voice`);
+  }
+
+  // THE STRUCTURED RECORDS STAY FORBIDDEN, and for a different reason than
+  // before. Filling one is not writing down what somebody said: a problem
+  // carries a certainty and a pointer, an intervention names who was
+  // contacted, a referral names a destination and an urgency. Each has its
+  // own validation and its own audit trail. The summary is DERIVED and has
+  // nowhere to be written at all.
   for (const section of NEVER_SCRIBABLE) {
     assert.equal(mayScribe(section), false, `the scribe was offered for ${section}`);
+    assert.ok(!SECTION_SPEAKER[section], `${section} is forbidden but has an owning voice`);
   }
-  // The ones that would be worst, named explicitly so this cannot be widened
-  // without somebody deleting the line that says why.
-  for (const section of ['assessment', 'objective', 'plan', 'referral', 'problems']) {
+  for (const section of ['problems', 'interventions', 'referral', 'prescription', 'summary']) {
     assert.ok(NEVER_SCRIBABLE.includes(section), `${section} is not on the forbidden list`);
-    assert.equal(mayScribe(section), false);
   }
+
   assert.equal(mayScribe('allergies'), false);
   assert.equal(mayScribe(null), false);
-  assert.equal(mayScribe('subjective'), true);
 });
 
 test('the instruction says that saying LESS is correct', () => {
@@ -456,4 +495,90 @@ test('an answer cut off by the token limit is refused, not reported as silence',
   // was the measured failure; anything near it will fail the same way.
   const budget = Number((src.match(/maxTokens:\s*(\d+)/) || [])[1]);
   assert.ok(budget >= 1000, `maxTokens is ${budget}, which measured as too small at 400`);
+});
+
+/* ==========================================================================
+ * The SOAP note, routed by who spoke (2026-10-10)
+ * ======================================================================== */
+
+test('a stated maybe is never written down as a diagnosis', () => {
+  // THE SHARPEST RISK IN LETTING A MODEL NEAR THE ASSESSMENT. A pharmacist
+  // who says "I think it MIGHT be viral" has recorded a working impression.
+  // Filed as "Viral upper respiratory infection" it has become a diagnosis,
+  // and the next person to read the note cannot tell the difference — they
+  // see a clinician's firm conclusion where there was a maybe.
+  const hedged = 'I think this is most likely viral, it might just be the dust.';
+
+  assert.equal(hardenedACertainty('Viral upper respiratory infection.', hedged), true);
+  assert.equal(hardenedACertainty('Bacterial chest infection.', hedged), true);
+
+  // The hedge kept, in any of the forms a pharmacist actually uses.
+  for (const kept of [
+    'Most likely a viral upper respiratory infection.',
+    'Probably viral.',
+    'Looks like a viral infection.',
+    'Possibly dust irritation.',
+    'Could be viral, could be the dust.',
+    'Suspected viral upper respiratory infection.',
+  ]) {
+    assert.equal(hardenedACertainty(kept, hedged), false, `a kept hedge was refused: ${kept}`);
+  }
+
+  // A pharmacist who was CERTAIN is not forced to sound uncertain. If they
+  // hedged nothing, a flat assessment is a faithful record of a flat
+  // statement.
+  assert.equal(hardenedACertainty('Viral upper respiratory infection.',
+    'This is a viral upper respiratory infection.'), false);
+
+  // Nothing written is nothing to harden.
+  assert.equal(hardenedACertainty('', hedged), false);
+  assert.equal(hardenedACertainty(null, hedged), false);
+});
+
+test('the model answers in JSON, and anything else yields no sections', () => {
+  // A section the parser could not read must come back ABSENT rather than as
+  // the raw reply. Dropping a model's apology into the Assessment box is the
+  // meta-answer failure in the worst possible section.
+  const good = readSections('{"subjective":"Cough five days.","objective":"","assessment":"","plan":""}');
+  assert.equal(good.subjective, 'Cough five days.');
+
+  // Wrapped in a fence, as models like to do.
+  assert.equal(
+    readSections('```json\n{"subjective":"Cough."}\n```').subjective,
+    'Cough.',
+  );
+
+  for (const notJson of [
+    '', null, undefined, 'I am sorry, I could not read the transcript.',
+    '[1,2,3]', '"a string"', '{broken', '42',
+  ]) {
+    assert.deepEqual(readSections(notJson), {},
+      `${JSON.stringify(notJson)} produced sections`);
+  }
+});
+
+test('a faithful write-up of everything somebody said is not an invention', () => {
+  // MEASURED, and the reason this check changed shape. The old rule was
+  // "shorter than the source", and on a real consultation the Subjective came
+  // back at 462 characters from 444 of speech — refused by FOUR PER CENT, on
+  // the normal case, for the single most important section.
+  //
+  // The Subjective covers ALL of a patient's speech so it lands near 1.0; the
+  // other three cover part of the pharmacist's so they land near 0.2–0.4.
+  assert.ok(MAX_DRAFT_RATIO > 1, 'a faithful write-up may be slightly longer than the speech');
+
+  const speech = 'a'.repeat(444);
+  assert.equal(withinTranscript('b'.repeat(462), speech), true, 'the measured real case');
+
+  // What it still refuses: a model answering a short recording with
+  // paragraphs. That runs to multiples, not to 4%.
+  assert.equal(withinTranscript('b'.repeat(Math.ceil(444 * MAX_DRAFT_RATIO) + 1), speech), false);
+  assert.equal(withinTranscript('b'.repeat(4440), speech), false);
+
+  // An empty draft is always fine — the honest answer to a thin recording.
+  assert.equal(withinTranscript('', speech), true);
+  // A draft with NO source cannot be grounded by length at all, so it fails
+  // closed rather than dividing by nothing.
+  assert.equal(withinTranscript('Reports a cough.', ''), false);
+  assert.equal(withinTranscript('Reports a cough.', null), false);
 });

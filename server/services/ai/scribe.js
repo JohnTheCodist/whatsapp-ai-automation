@@ -22,6 +22,7 @@ const { chat, LlmUnavailable } = require('./llmClient');
 const {
   SYSTEM_PROMPT, readTranscript, readDraft, withinTranscript,
   readDeepgram, patientText,
+  SOAP_PROMPT, SECTION_SPEAKER, readSections, hardenedACertainty,
 } = require('./scribeContract');
 
 /**
@@ -245,7 +246,120 @@ async function scribe(parsed, patientSpeaker = null) {
     throw e;
   }
 }
+
+/**
+ * The whole note, routed by who spoke.
+ *
+ * ONE model call, not two, and the reason is the pharmacist standing at a
+ * counter: this deployment's model spends several seconds thinking, and two
+ * sequential calls would double a wait the owner specifically asked to be
+ * swift. The call is given both halves, clearly labelled, and told which
+ * half each section comes from.
+ *
+ * THE PROMPT IS A HINT; THE CHECK IS THE GUARANTEE. Each section is
+ * validated against the words of the person who owns it — the Subjective
+ * against the patient's turns, the other three against the pharmacist's — so
+ * a model that ignores the labelling and files the pharmacist's advice as
+ * the patient's report is caught by `withinTranscript` and the absence rule
+ * rather than trusted not to.
+ */
+async function draftNote(parsed, { patientSpeaker = null, pharmacistSpeaker = null } = {}) {
+  const patient = patientText(parsed, patientSpeaker);
+  const pharmacist = patientText(parsed, pharmacistSpeaker);
+
+  const empty = {
+    subjective: '', objective: '', assessment: '', plan: '',
+    refused: {}, transcript: parsed?.text || '',
+  };
+
+  // Nothing usable from EITHER voice. No call, no cost, no opportunity to
+  // invent — the same fail-closed rule the single-section path has.
+  if (!readTranscript(patient).usable && !readTranscript(pharmacist).usable) {
+    return { ...empty, refused: { all: 'too_short' } };
+  }
+
+  const reply = await chat({
+    messages: [
+      { role: 'system', content: SOAP_PROMPT },
+      {
+        role: 'user',
+        content: [
+          'THE PATIENT SAID:',
+          patient || '(nothing recorded from the patient)',
+          '',
+          'THE PHARMACIST SAID:',
+          pharmacist || '(nothing recorded from the pharmacist)',
+        ].join('\n'),
+      },
+    ],
+    temperature: 0,
+    // Four sections of thinking, on a model that reasons before answering.
+    // 400 measured as too small for ONE section; see the note on maxTokens
+    // in draftSubjective.
+    maxTokens: 2000,
+  });
+
+  if (reply?.finishReason === 'length') {
+    return { ...empty, refused: { all: 'truncated' } };
+  }
+
+  const got = readSections(reply?.content);
+  const out = { ...empty };
+  const refused = {};
+
+  for (const [section, speaker] of Object.entries(SECTION_SPEAKER)) {
+    const source = speaker === 'patient' ? patient : pharmacist;
+    const candidate = String(got[section] || '').trim();
+    if (!candidate) continue;
+
+    // THE SECTION IS GROUNDED IN ITS OWN SPEAKER'S WORDS. A section drafted
+    // from a voice that said nothing is the clearest possible sign the model
+    // has written something it was not given.
+    if (!readTranscript(source).usable) {
+      refused[section] = 'wrong_speaker';
+      continue;
+    }
+
+    const checked = readDraft(candidate, { source });
+    if (!checked.ok) {
+      refused[section] = checked.refused;
+      continue;
+    }
+    if (!withinTranscript(checked.draft, source)) {
+      refused[section] = 'longer_than_transcript';
+      continue;
+    }
+    // Only the assessment: a stated "might be" written as a flat diagnosis
+    // has changed the clinical meaning, and the next reader cannot tell.
+    if (section === 'assessment' && hardenedACertainty(checked.draft, source)) {
+      refused[section] = 'hardened_certainty';
+      continue;
+    }
+    out[section] = checked.draft;
+  }
+
+  out.refused = refused;
+  out.transcript = parsed?.text || '';
+  return out;
+}
+
+/** `draftNote`, but never throwing when the provider is down. */
+async function scribeNote(parsed, speakers = {}) {
+  try {
+    return await draftNote(parsed, speakers);
+  } catch (e) {
+    if (e instanceof LlmUnavailable) {
+      return {
+        subjective: '', objective: '', assessment: '', plan: '',
+        refused: { all: 'model_unavailable' },
+        transcript: parsed?.text || '',
+      };
+    }
+    throw e;
+  }
+}
+
 module.exports = {
-  transcribe, listen, draftSubjective, scribe,
+  transcribe, listen, draftSubjective, scribe, draftNote, scribeNote,
   isTranscriptionConfigured, transcriptionUrl, MAX_AUDIO_BYTES,
 };

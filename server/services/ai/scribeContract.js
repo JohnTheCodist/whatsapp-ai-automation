@@ -34,12 +34,23 @@
  * A model drafting any of those is a model making a clinical decision, which
  * is the line §38 draws.
  */
-const SCRIBABLE = Object.freeze(['subjective']);
+// AMENDED 2026-10-10 (owner). Was ['subjective'] only. See the SOAP block below
+// for why routing by WHOSE WORDS is the same rule enforced in a better place.
+const SCRIBABLE = Object.freeze(['subjective', 'objective', 'assessment', 'plan']);
 
 /** Sections a scribe must never be offered for, named so a test can say why. */
+/**
+ * Sections a scribe must never be offered for, named so a test can say why.
+ *
+ * These are STRUCTURED RECORDS, not prose: a problem carries a certainty and
+ * a pointer, an intervention names who was contacted, a referral names a
+ * destination and an urgency. Filling one is not writing down what somebody
+ * said — it is creating a record with its own rules, its own audit trail and
+ * its own validation. The summary is DERIVED and has no store at all.
+ */
 const NEVER_SCRIBABLE = Object.freeze([
-  'assessment', 'objective', 'plan', 'problems', 'interventions',
-  'referral', 'prescription', 'care-program', 'summary',
+  'problems', 'interventions', 'referral', 'prescription',
+  'care-program', 'summary',
 ]);
 
 /**
@@ -291,11 +302,39 @@ function readDraft(raw, { source = null } = {}) {
  * that is LONGER has had material added to it, and the only place that
  * material can have come from is the model.
  */
-function withinTranscript(draft, transcript) {
+/**
+ * How much longer than the speech a faithful write-up may be.
+ *
+ * MEASURED, not chosen. On a realistic consultation against the live model:
+ *
+ *     subjective   draft 462   source 444   ratio 1.04   <- REFUSED by d <= t
+ *     objective    draft 141   source 666   ratio 0.21
+ *     assessment   draft 160   source 666   ratio 0.24
+ *     plan         draft 293   source 666   ratio 0.44
+ *
+ * The Subjective covers ALL of the patient's speech, so it lands near 1.0;
+ * the other three each cover part of the pharmacist's, so they land low. The
+ * old absolute rule therefore refused the single most important section by
+ * FOUR PER CENT, on the normal case.
+ *
+ * THIS IS A LOOSENING, and worth naming as one. What it still catches is
+ * what it was really for: a model answering a short recording with
+ * paragraphs, which runs to multiples rather than to 4%. What it does NOT
+ * catch, and never did, is a fabricated symptom that fits inside the budget
+ * — "Reports cough and vomiting" from a transcript saying only "cough" was
+ * already passing at ANY threshold, because it is shorter. Negatives are
+ * grounded by unsupportedNegative; positives need entity-level grounding,
+ * which is its own piece of work and is not pretended at here.
+ */
+const MAX_DRAFT_RATIO = 1.5;
+
+function withinTranscript(draft, transcript, { ratio = MAX_DRAFT_RATIO } = {}) {
   const d = String(draft || '').trim().length;
   const t = String(transcript || '').trim().length;
   if (d === 0) return true;
-  return d <= t;
+  // A draft with no source at all cannot be grounded by length either.
+  if (t === 0) return false;
+  return d <= t * ratio;
 }
 
 /** Which section this draft may be offered for. Never anything else. */
@@ -379,6 +418,178 @@ function patientText(parsed, patientSpeaker) {
   return patientTurns(parsed, patientSpeaker).map((t) => t.text).join(' ').trim();
 }
 
+
+/* ==========================================================================
+ * SOAP, routed by WHO SPOKE (owner's decision, 2026-10-10)
+ *
+ * Phase 1 drafted the Subjective section and nothing else, on the rule that a
+ * model drafting an assessment is a model making a clinical decision.
+ *
+ * THAT RULE HAS NOT CHANGED. What changed is the realisation that it was
+ * being enforced in the wrong place. When a pharmacist says out loud "chest
+ * is clear, this looks viral, honey and fluids and come back in five days",
+ * the assessment and the plan were MADE BY A PERSON. Writing them into the
+ * right boxes is transcription. Refusing to is not safety — it is making a
+ * pharmacist type out a decision they have already spoken.
+ *
+ * So the line moves from WHICH SECTION to WHOSE WORDS:
+ *
+ *     the patient's voice     -> Subjective, and nothing else
+ *     the pharmacist's voice  -> Objective, Assessment, Plan
+ *     neither                 -> nothing at all
+ *
+ * The model still invents nothing and still decides nothing. It files what
+ * each person actually said. The dangerous version — reading a conversation
+ * and INFERRING an assessment nobody stated — is what the per-section checks
+ * below exist to refuse, and it is refused the same way a fabricated symptom
+ * is: by grounding each section in the words of the person who owns it.
+ * ======================================================================== */
+
+/** The four boxes a scribe may fill, and who each one comes from. */
+const SECTION_SPEAKER = Object.freeze({
+  subjective: 'patient',
+  objective: 'pharmacist',
+  assessment: 'pharmacist',
+  plan: 'pharmacist',
+});
+
+/**
+ * The instruction for the pharmacist's own words.
+ *
+ * Separate from SYSTEM_PROMPT because the rules are genuinely different. The
+ * patient's prompt is defensive about inventing symptoms; this one is
+ * defensive about inventing CERTAINTY. "It might be viral, but let us see"
+ * filed as "Viral upper respiratory infection" has hardened a maybe into a
+ * diagnosis, and the next person to read the note cannot tell.
+ */
+/**
+ * The instruction for ONE call covering both voices.
+ *
+ * It is given the two halves separately and told which section comes from
+ * which — but the labelling is a hint, not the guarantee. Each section is
+ * checked against its own speaker's words afterwards, so a model that files
+ * the pharmacist's advice as the patient's report is caught rather than
+ * trusted not to do it.
+ */
+const SOAP_PROMPT = [
+  "You are a scribe for a Nigerian community pharmacist. You are given what",
+  "the PATIENT said and what the PHARMACIST said in one consultation, and you",
+  "write four sections of a clinical note.",
+  "",
+  "WHERE EACH SECTION COMES FROM. This is the most important instruction:",
+  "",
+  "SUBJECTIVE  — ONLY from what THE PATIENT said: what they reported about",
+  "              their symptoms and history.",
+  "OBJECTIVE   — ONLY from what THE PHARMACIST said they observed or",
+  "              measured: a blood pressure, a temperature, how the patient",
+  "              looked, what an examination found.",
+  "ASSESSMENT  — ONLY from what THE PHARMACIST said they think is going on.",
+  "PLAN        — ONLY from what THE PHARMACIST said they would do, advise,",
+  "              supply or arrange.",
+  "",
+  "RULES, in order of importance:",
+  "",
+  "1. Use ONLY what was actually said. Never add a symptom, a measurement, a",
+  "   diagnosis, a medicine, a dose or a follow-up interval that nobody",
+  "   spoke. If a section was not discussed, return an empty string for it.",
+  "   Most consultations leave at least one section empty. That is correct.",
+  "",
+  "2. KEEP THE PHARMACIST'S UNCERTAINTY EXACTLY AS THEY EXPRESSED IT. If",
+  "   they said it might be, or looks like, or could be, write that. Never",
+  "   turn a maybe into a diagnosis.",
+  "",
+  "3. Do not decide anything yourself. You are not assessing the patient and",
+  "   you are not recommending treatment. If the pharmacist did not say what",
+  "   they think it is, the assessment is EMPTY — do not work it out from",
+  "   the symptoms.",
+  "",
+  "4. Never put the pharmacist's words in Subjective. Their questions and",
+  "   their advice are not something the patient reported.",
+  "",
+  "5. Do not state an absence nobody stated. If the patient did not mention",
+  "   fever, do not write that they deny fever.",
+  "",
+  "6. Plain clinical English, past tense, no preamble and no headings inside",
+  "   the text.",
+  "",
+  "Answer with JSON only, exactly:",
+  "{\"subjective\": \"...\", \"objective\": \"...\", \"assessment\": \"...\", \"plan\": \"...\"}",
+].join('\n');
+const PHARMACIST_PROMPT = [
+  'You are a scribe for a Nigerian community pharmacist. You are given the',
+  "PHARMACIST'S OWN WORDS from a consultation they have just had, and you sort",
+  'them into three sections of a clinical note.',
+  '',
+  'OBJECTIVE  — what they observed or measured. A blood pressure, a',
+  '             temperature, how the patient looked, what an examination',
+  '             found.',
+  'ASSESSMENT — their impression of what is going on, in their words.',
+  'PLAN       — what they decided to do, advise, supply or arrange.',
+  '',
+  'RULES, in order of importance:',
+  '',
+  '1. Use ONLY what the pharmacist actually said. Never add a measurement, a',
+  '   diagnosis, a medicine, a dose or a follow-up interval that was not',
+  '   spoken. If a section was not discussed, return an empty string for it.',
+  '   Most consultations will leave at least one section empty. That is',
+  '   correct and expected.',
+  '',
+  '2. KEEP THEIR UNCERTAINTY EXACTLY AS THEY EXPRESSED IT. If they said it',
+  '   "might be" or "looks like" or "could be", write that. Never turn a',
+  '   maybe into a diagnosis. This is the most important rule here.',
+  '',
+  '3. Do not decide anything yourself. You are not assessing the patient and',
+  '   you are not recommending treatment. If the pharmacist did not say what',
+  '   they think it is, the assessment is empty — do not work it out from the',
+  '   symptoms.',
+  '',
+  '4. Do not record a question they asked the patient as a finding.',
+  '',
+  '5. Plain clinical English, past tense, no preamble and no headings inside',
+  '   the text.',
+  '',
+  'Answer with JSON only, exactly: {"objective": "...", "assessment": "...",',
+  '"plan": "..."}',
+].join('\n');
+
+/**
+ * Words that harden a stated maybe into a stated fact.
+ *
+ * Checked against the pharmacist's own words the same way a negative is
+ * checked against the patient's: if the draft asserts something flatly and
+ * the speaker hedged it, the draft has changed the clinical meaning.
+ */
+const HEDGE = /\b(?:might|maybe|may be|possibl\w*|probabl\w*|likely|unlikely|looks like|seems|appears|suspect\w*|query|consider\w*|could be|not sure|unsure|think it|rule out|\bdd?x\b)\b/i;
+
+/**
+ * Did the draft drop a hedge the pharmacist actually used?
+ *
+ * Only asked of the ASSESSMENT, because that is the section where certainty
+ * is the clinical content. "Viral infection" and "probably viral" are
+ * different claims, and the second is the one that was made.
+ */
+function hardenedACertainty(draft, source) {
+  const said = String(source || '');
+  const wrote = String(draft || '');
+  if (!wrote.trim()) return false;
+  // The pharmacist hedged somewhere and the draft hedges nowhere.
+  return HEDGE.test(said) && !HEDGE.test(wrote);
+}
+
+/** Parse the model's JSON, tolerating a code fence around it. */
+function readSections(raw) {
+  const text = String(raw == null ? '' : raw).trim()
+    .replace(/^```[a-z]*\s*/i, '').replace(/```$/, '').trim();
+  if (!text) return {};
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+
 module.exports = {
   SCRIBABLE,
   NEVER_SCRIBABLE,
@@ -389,7 +600,14 @@ module.exports = {
   unsupportedNegative,
   BLANKET_CLAIM,
   withinTranscript,
+  MAX_DRAFT_RATIO,
   mayScribe,
+  SECTION_SPEAKER,
+  PHARMACIST_PROMPT,
+  SOAP_PROMPT,
+  HEDGE,
+  hardenedACertainty,
+  readSections,
   readDeepgram,
   patientTurns,
   patientText,

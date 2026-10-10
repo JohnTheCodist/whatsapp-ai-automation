@@ -1773,6 +1773,101 @@ unused `written` binding in `consultations.js`'s `amendConsultation` and it
 **predates this change** — present at HEAD (`0d0f180`), verified by linting
 `git show HEAD:…` directly, and never recorded there. Not folded in here.
 
+
+**The scribe writes the whole note, routed by who spoke, 2026-10-10 →
+2185/1443/735/7 (no database); 2185/2180/0/5 with one.** SCRIBE_PLAN.md §15,
+on the owner's decision. Client 346.
+
+**The rule did not change. It was being enforced in the wrong place.**
+
+Phase 1 drafted the Subjective and nothing else, on the rule that *a model
+drafting an assessment is a model making a clinical decision*. That rule
+stands. What was wrong is where it sat. When a pharmacist says out loud
+*"chest is clear, this looks viral, honey and fluids, come back in five
+days"*, the assessment and the plan **were made by a person**. Writing them
+into the right boxes is transcription. Refusing to was not safety — it was
+making a pharmacist retype a decision they had already spoken.
+
+So the line moved from WHICH SECTION to WHOSE WORDS:
+
+```
+the patient's voice      ->  Subjective, and nothing else
+the pharmacist's voice   ->  Objective, Assessment, Plan
+neither                  ->  nothing at all
+```
+
+**The structured records stay forbidden**, and now for a sharper reason.
+`problems`, `interventions`, `referral`, `prescription`, `care-program` and
+`summary` are not prose: each is a record with its own validation and its own
+audit trail, and filling one is not writing down what somebody said.
+
+**One model call, four validations.** The call gets both halves labelled and
+is told which section comes from which — but the labelling is a HINT and the
+check is the guarantee. Each section is validated against the words of the
+person who owns it, so a model that ignores the labels and files the
+pharmacist's advice as the patient's report is caught rather than trusted.
+One call rather than two because the owner asked for swift and this
+deployment's model reasons for seconds: measured **8.3s** for all four.
+
+**A new refusal — `hardenedACertainty`.** The sharpest risk in letting a model
+near an Assessment. *"I think it MIGHT be viral"* filed as *"Viral upper
+respiratory infection"* has turned a working impression into a diagnosis, and
+the next person to read the note cannot tell. Asked only of the Assessment,
+because that is the section where certainty IS the clinical content.
+
+**`withinTranscript` became a ratio, and that is a LOOSENING named as one.**
+The first live run refused the Subjective at 462 characters from 444 of
+speech — four per cent over, on the normal case, for the most important
+section. Measured:
+
+```
+subjective   draft 462   source 444   ratio 1.04   <- REFUSED
+objective    draft 141   source 666   ratio 0.21
+assessment   draft 160   source 666   ratio 0.24
+plan         draft 293   source 666   ratio 0.44
+```
+
+The Subjective covers ALL of a patient's speech so it lands near 1.0; the
+others cover part of the pharmacist's. Capped at 1.5 now. It still catches a
+model answering a short recording with paragraphs; it never caught a
+fabricated symptom that fits inside the budget, at any threshold, because that
+is SHORTER — which needs entity-level grounding and has its own task.
+
+3 server tests added, all database-free, so the skipped ceiling did not move.
+6 client tests. **Six mutations run against the new safety logic; all six
+turned the right test red.**
+
+**Two existing invariants were AMENDED with the product, not relaxed.**
+`scribeContract`'s pinned `SCRIBABLE === ['subjective']`; it now pins the
+stronger claim that every section is drafted from the voice that owns it AND
+that a forbidden section has no owning voice at all.
+`consultationLayout`'s microphone invariant pinned an early `return` the mode
+machine replaced; it now pins **reachability** — the microphone is opened in
+exactly one place, that place renders only under mode `ready`, and `ready` is
+reachable only via a consented note or the server's own acceptance of consent.
+
+**The interface**, to design.md rather than around it. A real choice — *With
+voice* and *Type it*, side by side and the same size, with a test asserting
+typing is never described as a fallback, because an interface that makes voice
+the obvious path will push somebody into recording a patient who did not want
+it. Primary is the desk's near-black fill, never emerald. **Recording is
+carried by motion, not red**: red is reserved for a person waiting on a human,
+and a static mark replaces the pulse under `prefers-reduced-motion`.
+
+**Two bugs the browser found.** The two choice cards were crushed — "With
+voice" onto two lines, its description onto five — because the media query
+asked how wide the WINDOW was while the cards sit in a column that also gives
+215px to a sidebar and 260px to the context panel. `auto-fit` asks how much
+room is actually HERE: measured 1 column at 413px, 2 equal columns at 816px.
+And the running API was still answering with the OLD response shape, caught by
+checking the contract rather than assuming it — exactly how the public
+WhatsApp number field saved nothing for a month (2026-09-09).
+
+**Dead code left behind, deliberately.** `draftSubjective` and `scribe()` in
+`scribe.js` are no longer called by anything. Their comments were corrected to
+name the live function so they do not mislead, but removing them is its own
+change rather than a footnote in this one.
+
 ### Why 735 tests skip
 
 `TEST_DATABASE_URL` is **not yet configured**. Every database-backed suite
@@ -1920,10 +2015,10 @@ After `npm test`, compare:
 
 | Observation | Meaning |
 |---|---|
-| **No test database:** 1440 pass / 735 skip / 7 fail, categories A+B | No regression. Proceed. |
-| **Test database configured:** 2177 pass / 0 skip / 4-5 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. Measured, not derived: 2182/2177/0/5 on 2026-10-10 against a local PostgreSQL 17.10, plus a possible SIXTH between 23:00 and 00:00 UTC only — the websiteAnalytics timezone-window test described above, which is a test yardstick and not in this baseline (2142/2137/0/4-5 before the AI scribe; 2139/2135/0/4 before the Consultation redesign; 2128/2123/0/5 before Messages phase 4; 2114/2109/0/5 before Consultation phase 3; 2087/2081/0/5 before Consultation phase 2; 2056/2051/0/5 before Consultation phase 1; 2039/2034/0/5 before Messages phase 3; 2022/2017/0/5 before Messages phase 2; 1999/1994/0/5 before Messages; 1997/1992/0/5 before follow-up phase 3; 1992/1987/0/5 before follow-up phase 2; 1964/1959/0/5 before follow-ups; 1961/1956/0/5 before care-programme phase 3; 1950/1946/0/4 before phase 2; 1909/1905/0/4 before care programmes; 1878/1874/0/4 before tests; 1842/1838/0/4 before conditions; 1812/1807/0/5 before allergies; 1791/1786/0/5 on 2026-09-21 before the review; 1686/1681/0/5 on 2026-09-19 before the patients module). The fifth failure is "writing pre-keys costs a constant number of round trips", the known-flaky one (see below) — it appears in some runs and not others, and is not a regression either way. |
+| **No test database:** 1443 pass / 735 skip / 7 fail, categories A+B | No regression. Proceed. |
+| **Test database configured:** 2180 pass / 0 skip / 4-5 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. Measured, not derived: 2185/2180/0/5 on 2026-10-10 against a local PostgreSQL 17.10, plus a possible SIXTH between 23:00 and 00:00 UTC only — the websiteAnalytics timezone-window test described above, which is a test yardstick and not in this baseline (2182/2177/0/5 before SOAP routing; 2142/2137/0/4-5 before the AI scribe; 2139/2135/0/4 before the Consultation redesign; 2128/2123/0/5 before Messages phase 4; 2114/2109/0/5 before Consultation phase 3; 2087/2081/0/5 before Consultation phase 2; 2056/2051/0/5 before Consultation phase 1; 2039/2034/0/5 before Messages phase 3; 2022/2017/0/5 before Messages phase 2; 1999/1994/0/5 before Messages; 1997/1992/0/5 before follow-up phase 3; 1992/1987/0/5 before follow-up phase 2; 1964/1959/0/5 before follow-ups; 1961/1956/0/5 before care-programme phase 3; 1950/1946/0/4 before phase 2; 1909/1905/0/4 before care programmes; 1878/1874/0/4 before tests; 1842/1838/0/4 before conditions; 1812/1807/0/5 before allergies; 1791/1786/0/5 on 2026-09-21 before the review; 1686/1681/0/5 on 2026-09-19 before the patients module). The fifth failure is "writing pre-keys costs a constant number of round trips", the known-flaky one (see below) — it appears in some runs and not others, and is not a regression either way. |
 | Any failure NOT among the 9 | **You broke something.** Fix the code, not the test. |
-| Fewer than 1440 passing | Something stopped running. Find out what. |
+| Fewer than 1443 passing | Something stopped running. Find out what. |
 | More than 735 skipped | A suite started skipping. That is a silent loss of coverage, not a pass — unless you added tests that skip, in which case say so and move the ceiling in the same commit. |
 | "writing pre-keys costs a constant number of round trips" fails | Known flaky against a local database, ~1 run in 4. Not in the baseline on purpose. Do not re-run until green — read the entry above and fix the yardstick. |
 

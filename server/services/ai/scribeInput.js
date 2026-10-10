@@ -80,7 +80,7 @@ function readTurn(raw, index) {
 /**
  * The drafting request: a transcript, and which voice in it is the patient.
  *
- * Returns the same shape `readDeepgram` produces, so `scribe()` cannot tell
+ * Returns the same shape `readDeepgram` produces, so `draftNote()` cannot tell
  * whether it was handed a provider's answer or a round trip through a browser
  * — one code path, tested once.
  */
@@ -143,7 +143,21 @@ function readScribeDraftInput(body = {}) {
     throw bad('Say which voice is the patient.', 'patientSpeaker');
   }
 
+  // WHO THE OTHER VOICE IS, derived rather than asked for.
+  //
+  // With exactly two voices and one of them named as the patient, the other
+  // is the pharmacist — so the screen asks ONE question instead of two. With
+  // three or more voices (a relative in the shop, a colleague passing) it
+  // stays null: guessing which of two unnamed voices is the pharmacist would
+  // put a stranger’s words into a clinical assessment.
+  let pharmacistSpeaker = null;
+  if (Number.isInteger(patientSpeaker) && speakers.length === 2) {
+    pharmacistSpeaker = speakers.find((n) => n !== patientSpeaker);
+    if (!Number.isInteger(pharmacistSpeaker)) pharmacistSpeaker = null;
+  }
+
   return {
+    pharmacistSpeaker,
     parsed: {
       turns,
       speakers,

@@ -30,7 +30,7 @@ const {
   readAmendmentInput,
 } = require('../services/clinical/consultationInput');
 const { medicationContext, listMedications } = require('../services/clinical/medications');
-const { listen, scribe, isTranscriptionConfigured } = require('../services/ai/scribe');
+const { listen, scribeNote, isTranscriptionConfigured } = require('../services/ai/scribe');
 const { LlmUnavailable } = require('../services/ai/llmClient');
 const { readScribeDraftInput, SCRIBE_REFUSALS } = require('../services/ai/scribeInput');
 
@@ -452,7 +452,10 @@ router.post('/:id/consultations/:consultationId/scribe/draft', requireAuth,
       const input = readScribeDraftInput(req.body);
       let result;
       try {
-        result = await scribe(input.parsed, input.patientSpeaker);
+        result = await scribeNote(input.parsed, {
+          patientSpeaker: input.patientSpeaker,
+          pharmacistSpeaker: input.pharmacistSpeaker,
+        });
       } catch (e) {
         throw refuseUnavailable(e);
       }
@@ -460,10 +463,18 @@ router.post('/:id/consultations/:consultationId/scribe/draft', requireAuth,
       // The draft is RETURNED, never written. The pharmacist accepts it
       // through the ordinary PATCH or discards it, and a draft nobody
       // accepted leaves nothing behind.
+      // FOUR SECTIONS, each already grounded in the voice that owns it, and
+      // each with its own refusal. A note where the assessment was thrown
+      // away but the subjective survived is the normal case, not an error —
+      // the screen shows what came back and says why the rest did not.
       res.json({
-        draft: result.draft,
+        sections: {
+          subjective: result.subjective,
+          objective: result.objective,
+          assessment: result.assessment,
+          plan: result.plan,
+        },
         refused: result.refused,
-        section: 'subjective',
       });
     } catch (err) { next(err); }
   });

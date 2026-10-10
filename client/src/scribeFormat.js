@@ -209,3 +209,80 @@ export {
   NOT_STORED,
   canDraft,
 };
+
+/* ==========================================================================
+ * The SOAP write-up (owner's decision, 2026-10-10)
+ * ======================================================================== */
+
+/**
+ * How a pharmacist chooses to work, offered as a real choice rather than a
+ * setting buried somewhere.
+ *
+ * TYPING IS A FIRST-CLASS OPTION, listed beside voice and not beneath it. A
+ * noisy shop, a patient who would rather not be recorded, a pharmacist who
+ * simply prefers to type — none of those is a degraded path, and an interface
+ * that treats voice as the real way and typing as the fallback will push
+ * somebody into recording a patient who did not want to be.
+ */
+const START_HEADING = 'How do you want to write this up?';
+const START_VOICE = 'With voice';
+const START_VOICE_NOTE = 'Talk to the patient. The note writes itself.';
+const START_TYPE = 'Type it';
+const START_TYPE_NOTE = 'Fill the sections in yourself.';
+
+/** The four boxes, in the order a clinician reads them. */
+const SOAP_SECTIONS = Object.freeze([
+  { id: 'subjective', label: 'Subjective', from: 'What the patient told you' },
+  { id: 'objective', label: 'Objective', from: 'What you observed or measured' },
+  { id: 'assessment', label: 'Assessment', from: 'Your impression' },
+  { id: 'plan', label: 'Plan', from: 'What you decided' },
+]);
+
+/** The recording clock, as a pharmacist reads a stopwatch. */
+function elapsedLabel(seconds) {
+  const s = Math.max(0, Math.floor(Number(seconds) || 0));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+const RECORDING_NOW = 'Recording';
+const RECORDING_NOTE = 'Talk normally. Stop when you are done and the note will be written up.';
+const STOP_AND_WRITE = 'Stop and write up';
+const WRITING_UP = 'Writing up the note…';
+
+/**
+ * Why a section came back empty, said per section.
+ *
+ * AN EMPTY SECTION IS USUALLY CORRECT, not a failure — most consultations
+ * never mention an examination finding, and a note that invented one would be
+ * the whole problem. So a section that is simply empty says nothing at all,
+ * and only a section that was REFUSED explains itself.
+ */
+const SECTION_REFUSALS = Object.freeze({
+  wrong_speaker: 'Nothing was drafted here because that voice did not say anything.',
+  invented_negative: 'A line was dropped because it stated something nobody said.',
+  hardened_certainty: 'A line was dropped because it turned your "maybe" into a diagnosis.',
+  longer_than_transcript: 'A line was dropped for being longer than what was said.',
+  meta: 'The assistant answered about the recording instead of writing the note.',
+});
+
+function sectionRefusalNote(code) {
+  if (!code) return null;
+  return SECTION_REFUSALS[code] || 'A line was dropped because it could not be checked against what was said.';
+}
+
+/** Did anything at all come back? */
+function anyDrafted(sections) {
+  return SOAP_SECTIONS.some((s) => String(sections?.[s.id] || '').trim().length > 0);
+}
+
+const NOTHING_DRAFTED = 'Nothing could be written up from that recording. The transcript is below — type what matters.';
+const ACCEPT_NOTE = 'Put this in the note';
+const REVIEW_NOTE = 'Read it before you accept it. Nothing is saved until you do.';
+
+export {
+  START_HEADING, START_VOICE, START_VOICE_NOTE, START_TYPE, START_TYPE_NOTE,
+  SOAP_SECTIONS, elapsedLabel,
+  RECORDING_NOW, RECORDING_NOTE, STOP_AND_WRITE, WRITING_UP,
+  SECTION_REFUSALS, sectionRefusalNote, anyDrafted,
+  NOTHING_DRAFTED, ACCEPT_NOTE, REVIEW_NOTE,
+};

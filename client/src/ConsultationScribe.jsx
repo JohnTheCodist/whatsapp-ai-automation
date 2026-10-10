@@ -1,31 +1,43 @@
 /**
- * The AI scribe, in the Subjective section.
+ * The AI scribe: a pharmacist talks to the patient, and the note writes
+ * itself into SOAP.
  *
- * SCRIBE_PLAN.md. A pharmacist records the consultation, the recording is
- * transcribed with the voices separated, THEY say which voice is the patient,
- * and the assistant drafts the Subjective from that voice alone.
+ * SCRIBE_PLAN.md. The consultation is recorded, Deepgram separates the
+ * voices, the pharmacist says which voice is the patient, and each section is
+ * drafted from the voice that owns it:
  *
- * FOUR THINGS THIS COMPONENT WILL NOT DO, and each is a decision rather than
- * an omission:
+ *     the patient's voice     -> Subjective
+ *     the pharmacist's voice  -> Objective, Assessment, Plan
+ *
+ * FOUR THINGS THIS COMPONENT WILL NOT DO, each a decision rather than an
+ * omission:
  *
  *   1. It never opens the microphone before consent is on the server. The
- *      button does not exist until then — not disabled, absent, because a
- *      greyed-out record button invites a pharmacist to find the way round it.
- *   2. It never saves. The draft goes into the parent's Subjective field
- *      through the ordinary `set`, so the note has exactly one writer and a
- *      draft nobody accepted leaves no trace.
- *   3. It never keeps the audio. The Blob is handed to `fetch` and dropped;
- *      the MediaRecorder's chunks are released when the component unmounts.
+ *      control does not exist until then — not disabled, ABSENT, because a
+ *      greyed-out record button invites somebody to find the way round it.
+ *   2. It never saves. Accepting calls the parent's `set`, exactly as a
+ *      keystroke does, so the note has one writer and a draft nobody accepted
+ *      leaves no trace.
+ *   3. It never keeps the audio. The Blob goes to `fetch` and is dropped; the
+ *      recorder's chunks are released on stop AND on unmount.
  *   4. It never guesses which voice is the patient. With two voices and no
  *      answer there is no draft button at all.
+ *
+ * TYPING IS OFFERED BESIDE VOICE, NOT BENEATH IT. A noisy shop, a patient who
+ * would rather not be recorded, a pharmacist who simply prefers to type —
+ * none of those is a degraded path, and an interface that treats voice as the
+ * real way will push somebody into recording a patient who did not want it.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   CONSENT_SCRIPT, CONSENT_CONFIRM, CONSENT_HEADING, NOT_ASKED, consentedNote,
-  STEP_ACTION, draftRefusalNote, speakerLabel, SPEAKER_QUESTION, SPEAKER_HELP,
-  transcriptNote, DRAFT_HEADING, DRAFT_HELP, ACCEPT_LABEL, DISCARD_LABEL,
-  TRANSCRIPT_HEADING, acceptWarning, NOT_STORED, canDraft,
+  speakerLabel, SPEAKER_QUESTION, SPEAKER_HELP, transcriptNote,
+  TRANSCRIPT_HEADING, acceptWarning, NOT_STORED, canDraft, draftRefusalNote,
+  START_HEADING, START_VOICE, START_VOICE_NOTE, START_TYPE, START_TYPE_NOTE,
+  SOAP_SECTIONS, elapsedLabel, RECORDING_NOW, RECORDING_NOTE, STOP_AND_WRITE,
+  WRITING_UP, sectionRefusalNote, anyDrafted, NOTHING_DRAFTED, ACCEPT_NOTE,
+  REVIEW_NOTE, DISCARD_LABEL,
 } from './scribeFormat.js';
 
 /**
@@ -33,7 +45,6 @@ import {
  *
  * `getUserMedia` is absent on an insecure origin and on an older browser, and
  * a record button that throws when pressed is worse than no record button.
- * Checked once, because the answer cannot change while the screen is open.
  */
 function micAvailable() {
   return Boolean(
@@ -48,38 +59,39 @@ function micAvailable() {
 export default function ConsultationScribe({
   customerId, consultationId, note, available, existing, onAccept, whenLabel,
 }) {
-  const [consenting, setConsenting] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [working, setWorking] = useState(false);
+  // 'choose' | 'typing' | 'ready' | 'recording' | 'working' | 'turns' | 'review'
+  const [mode, setMode] = useState('choose');
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [elapsed, setElapsed] = useState(0);
 
   const [turns, setTurns] = useState(null);
   const [speakers, setSpeakers] = useState([]);
   const [diarised, setDiarised] = useState(false);
   const [patientSpeaker, setPatientSpeaker] = useState(null);
 
-  const [draft, setDraft] = useState(null);
-  const [refused, setRefused] = useState(null);
+  const [sections, setSections] = useState(null);
+  const [refused, setRefused] = useState({});
 
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
+  const tickRef = useRef(null);
 
   const consentAt = note?.scribeConsentAt || null;
 
-  /** Let go of the microphone. Called on stop AND on unmount. */
+  /** Let go of the microphone and drop the audio. Stop AND unmount. */
   const release = useCallback(() => {
-    try { recorderRef.current?.stream?.getTracks?.().forEach((t) => t.stop()); } catch { /* already gone */ }
-    try { streamRef.current?.getTracks?.().forEach((t) => t.stop()); } catch { /* already gone */ }
+    try { streamRef.current?.getTracks?.().forEach((t) => t.stop()); } catch { /* gone */ }
+    try { recorderRef.current?.stream?.getTracks?.().forEach((t) => t.stop()); } catch { /* gone */ }
+    if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
     recorderRef.current = null;
     streamRef.current = null;
-    // The recorded chunks are the audio. Dropping the reference is what makes
-    // "we do not keep it" true on this side of the wire.
+    // The chunks ARE the audio. Dropping the reference is what makes "we do
+    // not keep it" true on this side of the wire.
     chunksRef.current = [];
   }, []);
 
-  // Leaving the screen must not leave the microphone on, and must not leave a
-  // recording in memory.
   useEffect(() => release, [release]);
 
   if (!available) return null;
@@ -96,25 +108,33 @@ export default function ConsultationScribe({
     return body;
   }
 
+  function reset() {
+    release();
+    setMode('choose');
+    setTurns(null);
+    setSections(null);
+    setRefused({});
+    setPatientSpeaker(null);
+    setElapsed(0);
+    setError(null);
+  }
+
   async function confirmConsent() {
-    setConsenting(true);
+    setBusy(true);
     setError(null);
     try {
       const updated = await readReply(await fetch(`${base}/scribe/consent`, { method: 'POST' }));
       onAccept?.({ consented: updated });
+      setMode('ready');
     } catch (e) {
       setError(e.message);
     } finally {
-      setConsenting(false);
+      setBusy(false);
     }
   }
 
   async function start() {
     setError(null);
-    setDraft(null);
-    setRefused(null);
-    setTurns(null);
-    setPatientSpeaker(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -123,20 +143,23 @@ export default function ConsultationScribe({
       rec.ondataavailable = (e) => { if (e.data?.size) chunksRef.current.push(e.data); };
       recorderRef.current = rec;
       rec.start();
-      setRecording(true);
+      setElapsed(0);
+      tickRef.current = setInterval(() => setElapsed((n) => n + 1), 1000);
+      setMode('recording');
     } catch {
       // Refusing the microphone is a normal answer, not a fault. Say what it
       // means for the work rather than reporting a browser error.
       setError('This browser did not give access to the microphone. You can still type the note.');
       release();
+      setMode('choose');
     }
   }
 
   async function stop() {
     const rec = recorderRef.current;
     if (!rec) return;
-    setRecording(false);
-    setWorking(true);
+    if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
+    setMode('working');
     setError(null);
 
     const audio = await new Promise((resolve) => {
@@ -146,7 +169,7 @@ export default function ConsultationScribe({
     release();
 
     if (!audio || !audio.size) {
-      setWorking(false);
+      setMode('ready');
       setError('That recording was empty. Nothing was sent.');
       return;
     }
@@ -158,190 +181,252 @@ export default function ConsultationScribe({
       setTurns(heard.turns || []);
       setSpeakers(heard.speakers || []);
       setDiarised(Boolean(heard.diarised));
-      // No default. With two voices the pharmacist answers; with one or none
-      // there is nothing to answer and the whole transcript is used.
       setPatientSpeaker(null);
+
+      // ONE VOICE, OR NONE WE COULD SEPARATE: there is no question to ask, so
+      // the write-up runs straight away rather than stopping to ask something
+      // with one answer.
+      if ((heard.speakers || []).length <= 1) {
+        await writeUp(heard.turns || [], null);
+      } else {
+        setMode('turns');
+      }
     } catch (e) {
       setError(e.message);
-    } finally {
-      setWorking(false);
+      setMode('ready');
     }
   }
 
-  async function makeDraft() {
-    setWorking(true);
+  async function writeUp(useTurns, speaker) {
+    setMode('working');
     setError(null);
     try {
       const got = await readReply(await fetch(`${base}/scribe/draft`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ turns, patientSpeaker }),
+        body: JSON.stringify({ turns: useTurns, patientSpeaker: speaker }),
       }));
-      setDraft(got.draft || '');
-      setRefused(got.refused || null);
+      setSections(got.sections || {});
+      setRefused(got.refused || {});
+      setMode('review');
     } catch (e) {
       setError(e.message);
-    } finally {
-      setWorking(false);
+      setMode(speakers.length > 1 ? 'turns' : 'ready');
     }
   }
 
   function accept() {
-    onAccept?.({ subjective: draft });
-    setDraft(null);
-    setTurns(null);
-    setRefused(null);
+    onAccept?.({ sections });
+    reset();
   }
 
-  function discard() {
-    setDraft(null);
-    setRefused(null);
-    setTurns(null);
-    setPatientSpeaker(null);
-  }
+  /* ---- the microphone this browser cannot open -------------------------- */
+  const canRecord = micAvailable();
 
-  /* ---- consent ---------------------------------------------------------- */
-  if (!consentAt) {
+  /* ---- 1. how do you want to work? -------------------------------------- */
+  if (mode === 'choose' || mode === 'typing') {
     return (
-      <div className="ui-scribe" data-step="consent">
-        <p className="ui-cprog-quiet">{CONSENT_HEADING}</p>
-        {/* The script, marked as something to say rather than something to
-            read. A pharmacist should be able to glance at it and speak. */}
-        <blockquote className="ui-scribe-script">{CONSENT_SCRIPT}</blockquote>
-        <p className="ui-allergy-help">{NOT_ASKED}</p>
-        <button type="button" className="ui-psection-link" disabled={consenting} onClick={confirmConsent}>
-          {CONSENT_CONFIRM}
-        </button>
+      <div className="ui-scribe" data-step={mode}>
+        <p className="ui-scribe-ask">{START_HEADING}</p>
+        <div className="ui-scribe-choices">
+          {canRecord && (
+            <button
+              type="button"
+              className="ui-scribe-choice ui-scribe-choice-primary"
+              disabled={busy}
+              onClick={() => setMode(consentAt ? 'ready' : 'consent')}
+            >
+              <span className="ui-scribe-choice-icon" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                  <rect x="5.6" y="1.6" width="4.8" height="8" rx="2.4" />
+                  <path d="M3.2 7.6a4.8 4.8 0 0 0 9.6 0M8 12.4v2" />
+                </svg>
+              </span>
+              <span className="ui-scribe-choice-text">
+                <strong>{START_VOICE}</strong>
+                <small>{START_VOICE_NOTE}</small>
+              </span>
+            </button>
+          )}
+          <button
+            type="button"
+            className="ui-scribe-choice"
+            onClick={() => setMode('typing')}
+          >
+            <span className="ui-scribe-choice-icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                <rect x="1.4" y="3.6" width="13.2" height="8.8" rx="1.6" />
+                <path d="M4.4 6.6h.01M7 6.6h.01M9.6 6.6h.01M12 6.6h.01M5 9.6h6" />
+              </svg>
+            </span>
+            <span className="ui-scribe-choice-text">
+              <strong>{START_TYPE}</strong>
+              <small>{START_TYPE_NOTE}</small>
+            </span>
+          </button>
+        </div>
+        {!canRecord && (
+          <p className="ui-allergy-help">This browser cannot record. You can still type the note.</p>
+        )}
         {error && <p className="ui-allergy-failed">{error}</p>}
       </div>
     );
   }
 
-  /* ---- a microphone this browser cannot open ---------------------------- */
-  if (!micAvailable()) {
+  /* ---- 2. consent ------------------------------------------------------- */
+  if (mode === 'consent' && !consentAt) {
     return (
-      <div className="ui-scribe" data-step="unavailable">
-        <p className="ui-allergy-help">
-          This browser cannot record. You can still type the note.
-        </p>
+      <div className="ui-scribe" data-step="consent">
+        <p className="ui-scribe-ask">{CONSENT_HEADING}</p>
+        <blockquote className="ui-scribe-script">{CONSENT_SCRIPT}</blockquote>
+        <p className="ui-allergy-help">{NOT_ASKED}</p>
+        <div className="ui-scribe-actions">
+          <button type="button" className="ui-scribe-go" disabled={busy} onClick={confirmConsent}>
+            {CONSENT_CONFIRM}
+          </button>
+          <button type="button" className="ui-psection-link" onClick={reset}>Back</button>
+        </div>
+        {error && <p className="ui-allergy-failed">{error}</p>}
       </div>
     );
   }
 
-  const step = working ? 'working' : (recording ? 'recording' : (turns ? 'turns' : 'ready'));
-  const replaces = acceptWarning(existing);
-  const note2 = transcriptNote({ diarised, speakers });
+  /* ---- 3. ready, recording, working ------------------------------------- */
+  if (mode === 'ready' || mode === 'recording' || mode === 'working') {
+    return (
+      <div className="ui-scribe" data-step={mode}>
+        {mode === 'ready' && (
+          <>
+            <p className="ui-cprog-quiet">{consentedNote(consentAt, whenLabel)}</p>
+            <div className="ui-scribe-actions">
+              <button type="button" className="ui-scribe-go" onClick={start}>Start recording</button>
+              <button type="button" className="ui-psection-link" onClick={reset}>Back</button>
+            </div>
+            <p className="ui-allergy-help">{NOT_STORED}</p>
+          </>
+        )}
 
-  return (
-    <div className="ui-scribe" data-step={draft !== null ? 'drafted' : step}>
-      <p className="ui-cprog-quiet">{consentedNote(consentAt, whenLabel)}</p>
+        {mode === 'recording' && (
+          <div className="ui-scribe-live">
+            <span className="ui-scribe-pulse" aria-hidden="true" />
+            <span className="ui-scribe-live-label">{RECORDING_NOW}</span>
+            <span className="ui-scribe-clock tabular-nums">{elapsedLabel(elapsed)}</span>
+            <button type="button" className="ui-scribe-go" onClick={stop}>{STOP_AND_WRITE}</button>
+          </div>
+        )}
+        {mode === 'recording' && <p className="ui-allergy-help">{RECORDING_NOTE}</p>}
 
-      {!turns && draft === null && (
-        <>
+        {mode === 'working' && (
+          <div className="ui-scribe-live" data-working="true">
+            <span className="ui-scribe-spin" aria-hidden="true" />
+            <span className="ui-scribe-live-label">{WRITING_UP}</span>
+          </div>
+        )}
+
+        {error && <p className="ui-allergy-failed">{error}</p>}
+      </div>
+    );
+  }
+
+  /* ---- 4. which voice is the patient? ----------------------------------- */
+  if (mode === 'turns') {
+    const hint = transcriptNote({ diarised, speakers });
+    return (
+      <div className="ui-scribe" data-step="turns">
+        <fieldset className="ui-scribe-who">
+          <legend>{SPEAKER_QUESTION}</legend>
+          <p className="ui-allergy-help">{SPEAKER_HELP}</p>
+          {speakers.map((s) => {
+            const first = (turns || []).find((t) => t.speaker === s);
+            return (
+              <label key={s} className="ui-scribe-voice">
+                <input
+                  type="radio"
+                  name="patient-voice"
+                  checked={patientSpeaker === s}
+                  onChange={() => setPatientSpeaker(s)}
+                />
+                <span className="ui-scribe-voice-text">
+                  <strong>{speakerLabel(s)}</strong>
+                  {/* The first thing each voice said, so the choice is made
+                      from the words rather than from a number. */}
+                  <small>{first ? `“${first.text.slice(0, 90)}”` : ''}</small>
+                </span>
+              </label>
+            );
+          })}
+        </fieldset>
+        {hint && <p className="ui-allergy-help">{hint}</p>}
+        <div className="ui-scribe-actions">
           <button
             type="button"
-            className={recording ? 'ui-psection-link ui-scribe-live' : 'ui-psection-link'}
-            disabled={working}
-            onClick={recording ? stop : start}
+            className="ui-scribe-go"
+            disabled={!canDraft({ turns, speakers, patientSpeaker })}
+            onClick={() => writeUp(turns, patientSpeaker)}
           >
-            {recording ? STEP_ACTION.recording : (working ? STEP_ACTION.working : STEP_ACTION.ready)}
+            Write up the note
           </button>
-          <p className="ui-allergy-help">{NOT_STORED}</p>
-        </>
-      )}
-
-      {/* ---- the transcript, and the one question --------------------- */}
-      {turns && draft === null && (
-        <div className="ui-scribe-heard">
-          <p className="ui-cprog-quiet">{TRANSCRIPT_HEADING}</p>
-          {note2 && <p className="ui-allergy-help">{note2}</p>}
-          <ol className="ui-scribe-turns">
-            {turns.map((t, i) => (
-              <li key={i} data-speaker={t.speaker === null ? 'unknown' : t.speaker}>
-                <span className="ui-cprog-quiet">{speakerLabel(t.speaker)}</span>
-                <span>{t.text}</span>
-              </li>
-            ))}
-          </ol>
-
-          {speakers.length > 1 && (
-            <fieldset className="ui-scribe-who">
-              <legend>{SPEAKER_QUESTION}</legend>
-              <p className="ui-allergy-help">{SPEAKER_HELP}</p>
-              {speakers.map((s) => (
-                <label key={s}>
-                  <input
-                    type="radio"
-                    name="patient-voice"
-                    checked={patientSpeaker === s}
-                    onChange={() => setPatientSpeaker(s)}
-                  />
-                  <span>{speakerLabel(s)}</span>
-                </label>
-              ))}
-            </fieldset>
-          )}
-
-          <div className="ui-scribe-actions">
-            <button
-              type="button"
-              className="ui-psection-link"
-              disabled={working || !canDraft({ turns, speakers, patientSpeaker })}
-              onClick={makeDraft}
-            >
-              {working ? 'Drafting…' : 'Draft the Subjective'}
-            </button>
-            <button type="button" className="ui-psection-link" onClick={discard}>
-              {DISCARD_LABEL}
-            </button>
-          </div>
+          <button type="button" className="ui-psection-link" onClick={reset}>{DISCARD_LABEL}</button>
         </div>
-      )}
+        {error && <p className="ui-allergy-failed">{error}</p>}
+      </div>
+    );
+  }
 
-      {/* ---- the draft, BESIDE what was said -------------------------- */}
-      {draft !== null && (
-        <div className="ui-scribe-draft">
-          {refused && <p className="ui-allergy-help">{draftRefusalNote(refused)}</p>}
+  /* ---- 5. review -------------------------------------------------------- */
+  const got = anyDrafted(sections);
+  const replaces = acceptWarning(existing);
+  return (
+    <div className="ui-scribe ui-scribe-review" data-step="review">
+      {!got && <p className="ui-allergy-help">{NOTHING_DRAFTED}</p>}
+      {got && <p className="ui-allergy-help">{REVIEW_NOTE}</p>}
+      {refused.all && <p className="ui-allergy-help">{draftRefusalNote(refused.all)}</p>}
 
-          {draft !== '' && (
-            <>
-              <p className="ui-cprog-quiet">{DRAFT_HEADING}</p>
+      {got && SOAP_SECTIONS.map(({ id, label, from }) => {
+        const value = sections?.[id] || '';
+        const why = sectionRefusalNote(refused[id]);
+        // An EMPTY section says nothing at all. Most consultations never
+        // mention an examination finding, and a panel explaining each absence
+        // is the 188 words of prose the redesign removed.
+        if (!value && !why) return null;
+        return (
+          <div className="ui-scribe-section" key={id}>
+            <div className="ui-scribe-section-head">
+              <strong>{label}</strong>
+              <small>{from}</small>
+            </div>
+            {value && (
               <textarea
-                rows={5}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                aria-label={DRAFT_HEADING}
+                rows={Math.min(8, Math.max(2, Math.ceil(value.length / 68)))}
+                value={value}
+                aria-label={label}
+                onChange={(e) => setSections((p) => ({ ...p, [id]: e.target.value }))}
               />
-              <p className="ui-allergy-help">{DRAFT_HELP}</p>
-              {replaces && <p className="ui-allergy-help">{replaces}</p>}
-            </>
-          )}
-
-          <details className="ui-scribe-raw">
-            <summary>{TRANSCRIPT_HEADING}</summary>
-            <ol className="ui-scribe-turns">
-              {(turns || []).map((t, i) => (
-                <li key={i} data-speaker={t.speaker === null ? 'unknown' : t.speaker}>
-                  <span className="ui-cprog-quiet">{speakerLabel(t.speaker)}</span>
-                  <span>{t.text}</span>
-                </li>
-              ))}
-            </ol>
-          </details>
-
-          <div className="ui-scribe-actions">
-            {draft !== '' && (
-              <button type="button" className="ui-psection-link" onClick={accept}>
-                {ACCEPT_LABEL}
-              </button>
             )}
-            <button type="button" className="ui-psection-link" onClick={discard}>
-              {DISCARD_LABEL}
-            </button>
+            {why && <p className="ui-allergy-help">{why}</p>}
           </div>
-        </div>
-      )}
+        );
+      })}
 
+      <details className="ui-scribe-raw">
+        <summary>{TRANSCRIPT_HEADING}</summary>
+        <ol className="ui-scribe-turns">
+          {(turns || []).map((t, i) => (
+            <li key={i} data-speaker={t.speaker === null ? 'unknown' : t.speaker}>
+              <span className="ui-cprog-quiet">{speakerLabel(t.speaker)}</span>
+              <span>{t.text}</span>
+            </li>
+          ))}
+        </ol>
+      </details>
+
+      {replaces && got && <p className="ui-allergy-help">{replaces}</p>}
+      <div className="ui-scribe-actions">
+        {got && (
+          <button type="button" className="ui-scribe-go" onClick={accept}>{ACCEPT_NOTE}</button>
+        )}
+        <button type="button" className="ui-psection-link" onClick={reset}>{DISCARD_LABEL}</button>
+      </div>
       {error && <p className="ui-allergy-failed">{error}</p>}
     </div>
   );

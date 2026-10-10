@@ -487,3 +487,151 @@ rewords ("non-productive" for "nothing comes out"), so requiring every content
 word to appear would refuse everything. Closing it properly needs entity-level
 grounding, which is its own piece of work and is deliberately not attempted
 here.
+
+---
+
+## 15. SOAP, routed by who spoke — 2026-10-10
+
+The owner asked for the whole note, not just the Subjective: *"then it can go
+to soap format swiftly and cleanly like a doctor was the one that transcribed
+it and placed it there."*
+
+### The rule did not change. It was being enforced in the wrong place.
+
+Phase 1 drafted Subjective and nothing else, on the rule that **a model
+drafting an assessment is a model making a clinical decision**. That rule
+stands. What was wrong is where it sat.
+
+When a pharmacist says out loud *"chest is clear, this looks viral, honey and
+fluids, come back in five days"*, the assessment and the plan **were made by a
+person**. Writing them into the right boxes is transcription. Refusing to was
+not safety — it was making a pharmacist retype a decision they had already
+spoken.
+
+So the line moves from WHICH SECTION to WHOSE WORDS:
+
+```
+the patient's voice      ->  Subjective, and nothing else
+the pharmacist's voice   ->  Objective, Assessment, Plan
+neither                  ->  nothing at all
+```
+
+**The structured records stay forbidden**, and now for a sharper reason.
+`problems`, `interventions`, `referral`, `prescription`, `care-program` and
+`summary` are not prose: a problem carries a certainty and a pointer, an
+intervention names who was contacted, a referral names a destination and an
+urgency. Filling one is not writing down what somebody said — it is creating a
+record with its own validation and its own audit trail.
+
+### One call, four validations
+
+The model gets both halves labelled and is told which section comes from
+which. **The labelling is a hint; the check is the guarantee.** Each section is
+then validated against the words of the person who owns it, so a model that
+ignores the labels and files the pharmacist's advice as the patient's report
+is caught rather than trusted.
+
+One call rather than two, because this deployment's model reasons for several
+seconds and the owner asked for swift. Measured: **8.3s** for all four
+sections.
+
+### The new refusal: a hardened certainty
+
+The sharpest risk in letting a model near an Assessment. A pharmacist who says
+*"I think it MIGHT be viral"* has recorded a working impression; filed as
+*"Viral upper respiratory infection"* it has become a diagnosis, and the next
+person to read the note **cannot tell the difference**.
+
+`hardenedACertainty` refuses an assessment that drops a hedge the speaker
+used. It is asked only of the Assessment, because that is the section where
+certainty IS the clinical content.
+
+### Measured end to end, against the live model
+
+A realistic eleven-turn consultation, patient named as voice 1:
+
+| | |
+|---|---|
+| Time | **8.3s** |
+| Refused | **nothing** |
+| Subjective | the patient's words only — including "No fever", which they said |
+| Objective | 36.8°C, throat red, chest clear — the pharmacist's measurements |
+| Assessment | *"Most likely a viral upper respiratory infection; it might just be the dust…"* — **the hedge survived** |
+| Plan | lozenge, honey and lime, water, window closed, return at five days |
+
+The pharmacist's questions ("Is it worse at any particular time?") appear
+**nowhere**. The patient's symptoms stayed out of Objective.
+
+### What this forced: `withinTranscript` became a ratio
+
+The first run refused the Subjective as `longer_than_transcript`. Measured:
+
+```
+subjective   draft 462   source 444   ratio 1.04   <- REFUSED
+objective    draft 141   source 666   ratio 0.21
+assessment   draft 160   source 666   ratio 0.24
+plan         draft 293   source 666   ratio 0.44
+```
+
+The Subjective covers ALL of a patient's speech so it lands near 1.0; the
+others cover part of the pharmacist's so they land low. The absolute rule
+therefore refused the most important section **by four per cent, on the normal
+case**.
+
+It is now a ratio capped at 1.5. **This is a loosening and is named as one.**
+What it still catches is what it was for — a model answering a short recording
+with paragraphs, which runs to multiples. What it never caught, at any
+threshold, is a fabricated symptom that fits inside the budget; that needs
+entity-level grounding and has its own task.
+
+### The interface
+
+- **A real choice, not a feature announcement.** "How do you want to write
+  this up?" offers *With voice* and *Type it* side by side, the same size.
+  Typing is never described as a fallback — a test asserts that, because an
+  interface which makes voice the obvious path will push somebody into
+  recording a patient who did not want it.
+- **The primary is the desk's near-black fill**, never emerald. design.md:
+  keeping the accent off buttons is what lets it keep meaning *healthy* in a
+  status pill two inches away.
+- **Recording is carried by motion, not red.** design.md reserves red for a
+  person waiting on a human; a pulsing red dot here would outrank the one
+  thing on this screen allowed to be urgent. A static mark under
+  `prefers-reduced-motion`, with the word still saying the state.
+- **The transcript appears only when you stop**, as asked. During recording
+  there is a pulse, the word "Recording" and a stopwatch.
+- **One voice means no question.** If Deepgram returns a single speaker there
+  is nothing to ask, so the write-up runs straight through instead of posing a
+  question with one answer.
+
+### A responsive bug the browser found
+
+The two choice cards were crushed — "With voice" wrapping onto two lines, its
+description onto five. The media query asked how wide the **window** was,
+while the cards sit inside a work column that also gives 215px to a sidebar
+and 260px to the context column. On a 1000px window they had ~340px and the
+`560px` breakpoint never fired.
+
+`grid-template-columns: repeat(auto-fit, minmax(210px, 1fr))` asks how much
+room is actually HERE, which is the question. The breakpoint was deleted.
+
+### Tests
+
+9 added — 6 on the client (the choice wording, the section provenance, the
+stopwatch, the per-section refusals, the empty write-up, the accept control)
+and 3 on the server (the hedge rule, the JSON parsing, the measured ratio).
+**6 mutations run against the new safety logic; all 6 turned the right test
+red.**
+
+**Two existing invariants were AMENDED with the product, not relaxed:**
+
+- `scribeContract`'s "the scribe may draft what the patient SAID" pinned
+  `SCRIBABLE === ['subjective']`. It now pins the stronger claim — that every
+  section is drafted from the voice that owns it, and that a forbidden section
+  has no owning voice at all.
+- `consultationLayout`'s microphone invariant pinned an early `return` that
+  the mode machine replaced. It now pins **reachability** directly: the
+  microphone is opened in exactly one place, that place renders only under
+  mode `ready`, and `ready` is reachable only via a consented note or the
+  server's own acceptance of consent. That is a sharper claim than the
+  ordering check it replaced.

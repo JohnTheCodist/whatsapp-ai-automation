@@ -18,6 +18,9 @@ import {
   speakerLabel, SPEAKER_QUESTION, NOT_SEPARATED, ONE_VOICE, transcriptNote,
   DRAFT_HEADING, ACCEPT_LABEL, WILL_REPLACE, acceptWarning,
   NOT_STORED, canDraft, SCRIBE_STEPS,
+  START_HEADING, START_VOICE, START_VOICE_NOTE, START_TYPE, START_TYPE_NOTE,
+  SOAP_SECTIONS, elapsedLabel, SECTION_REFUSALS, sectionRefusalNote,
+  anyDrafted, NOTHING_DRAFTED, ACCEPT_NOTE, REVIEW_NOTE,
 } from './scribeFormat.js';
 
 // THE MOST IMPORTANT TEST IN THIS FILE.
@@ -234,4 +237,122 @@ test('the steps keep the question BETWEEN hearing and drafting', () => {
   expect(SCRIBE_STEPS.indexOf('drafted')).toBeGreaterThan(SCRIBE_STEPS.indexOf('turns'));
   // And consent comes before anything else.
   expect(SCRIBE_STEPS[0]).toBe('consent');
+});
+
+/* ==========================================================================
+ * The SOAP write-up (owner's decision, 2026-10-10)
+ * ======================================================================== */
+
+test('typing is offered as a choice, not as a fallback', () => {
+  // An interface that makes voice the obvious path and typing the thing you
+  // do when it fails will push somebody into recording a patient who did not
+  // want to be recorded. Both are offered, both are described, and the
+  // question asks how you want to WORK rather than announcing a feature.
+  expect(START_HEADING).toMatch(/how do you want/i);
+  expect(START_VOICE).toBeTruthy();
+  expect(START_TYPE).toBeTruthy();
+
+  // Each says what it is for, so neither reads as the leftover option.
+  expect(START_VOICE_NOTE.length).toBeGreaterThan(10);
+  expect(START_TYPE_NOTE.length).toBeGreaterThan(10);
+
+  // Typing is never described as a failure, a fallback or a second best.
+  for (const demeaning of [/instead/i, /fall ?back/i, /manual/i, /if .* fail/i, /can't|cannot/i]) {
+    expect(START_TYPE_NOTE, `typing is described as a fallback: ${demeaning}`)
+      .not.toMatch(demeaning);
+  }
+});
+
+test('every SOAP section says which voice it came from', () => {
+  // The whole claim this feature makes is that each section was drafted from
+  // the person who owns it. A pharmacist checking a draft needs that said on
+  // screen, beside the text, not buried in a help page.
+  expect(SOAP_SECTIONS.map((s) => s.id)).toEqual(
+    ['subjective', 'objective', 'assessment', 'plan'],
+  );
+  for (const s of SOAP_SECTIONS) {
+    expect(s.label, `${s.id} has no label`).toBeTruthy();
+    expect(s.from, `${s.id} does not say where it came from`).toBeTruthy();
+  }
+
+  // Subjective is the patient's; the other three are the pharmacist's. The
+  // wording has to keep that visible, because it is the difference between a
+  // report and a clinical judgement.
+  expect(SOAP_SECTIONS[0].from).toMatch(/patient/i);
+  for (const s of SOAP_SECTIONS.slice(1)) {
+    expect(s.from, `${s.id} reads as the patient's words`).toMatch(/you/i);
+    expect(s.from).not.toMatch(/patient told/i);
+  }
+});
+
+test('the recording clock reads like a stopwatch', () => {
+  // A pharmacist glances at this mid-consultation. Raw seconds ("94") is a
+  // number they then have to convert.
+  expect(elapsedLabel(0)).toBe('0:00');
+  expect(elapsedLabel(7)).toBe('0:07');
+  expect(elapsedLabel(94)).toBe('1:34');
+  expect(elapsedLabel(600)).toBe('10:00');
+  expect(elapsedLabel(3661)).toBe('61:01');
+
+  // Nonsense never renders as NaN on a live screen.
+  for (const junk of [null, undefined, -5, 'x', NaN]) {
+    expect(elapsedLabel(junk), `${junk} produced a bad clock`).toBe('0:00');
+  }
+});
+
+test('an empty section says nothing; a REFUSED one explains itself', () => {
+  // THE DISTINCTION THAT KEEPS THIS HONEST. Most consultations never mention
+  // an examination finding, so an empty Objective is correct and needs no
+  // sentence — a panel explaining each absence is the 188 words of prose the
+  // consultation redesign removed.
+  //
+  // A section that was DROPPED is different: something was written and thrown
+  // away, and a pharmacist who is not told that will assume nothing was said.
+  expect(sectionRefusalNote(null)).toBe(null);
+  expect(sectionRefusalNote(undefined)).toBe(null);
+
+  for (const code of ['wrong_speaker', 'invented_negative', 'hardened_certainty',
+    'longer_than_transcript', 'meta']) {
+    const said = sectionRefusalNote(code);
+    expect(said, `${code} has no sentence`).toBeTruthy();
+    // None of them is a claim about the patient. "Nothing was drafted" is
+    // about the recording; "no symptoms were reported" would be a finding
+    // this software invented.
+    expect(said).not.toMatch(/no symptoms|denies|patient reports|normal/i);
+  }
+
+  // The one that matters most reads as what it is: the assistant refusing to
+  // harden the pharmacist's own maybe.
+  expect(SECTION_REFUSALS.hardened_certainty).toMatch(/maybe|diagnosis/i);
+
+  // An unknown code still says something rather than rendering blank.
+  expect(sectionRefusalNote('something_new')).toBeTruthy();
+});
+
+test('a write-up with nothing in it is reported, not shown as four empty boxes', () => {
+  expect(anyDrafted({ subjective: 'Cough five days.' })).toBe(true);
+  expect(anyDrafted({ plan: 'Honey and fluids.' })).toBe(true);
+
+  for (const nothing of [
+    {}, null, undefined,
+    { subjective: '', objective: '', assessment: '', plan: '' },
+    { subjective: '   ' },
+    // A key that is not a SOAP section does not count as a draft.
+    { notes: 'something' },
+  ]) {
+    expect(anyDrafted(nothing), `${JSON.stringify(nothing)} counted as drafted`).toBe(false);
+  }
+
+  expect(NOTHING_DRAFTED).toMatch(/transcript/i);
+  // And it talks about the RECORDING, never about the patient.
+  expect(NOTHING_DRAFTED).not.toMatch(/no symptoms|nothing wrong|patient/i);
+});
+
+test('the accept control names the note, and says nothing is saved yet', () => {
+  expect(ACCEPT_NOTE).toMatch(/note/i);
+  expect(ACCEPT_NOTE).not.toMatch(/^(ok|apply|confirm|done|save)$/i);
+  // The review step's whole purpose, said once: read it, and nothing has
+  // happened yet.
+  expect(REVIEW_NOTE).toMatch(/read it/i);
+  expect(REVIEW_NOTE).toMatch(/nothing is saved/i);
 });

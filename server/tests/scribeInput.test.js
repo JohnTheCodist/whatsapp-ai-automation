@@ -142,7 +142,7 @@ test('nothing to draft from is refused before a model is reached', () => {
 });
 
 test('the parsed shape is the one the provider produces, so there is ONE code path', () => {
-  // `scribe()` must not be able to tell whether it was handed Deepgram's
+  // `draftNote()` must not be able to tell whether it was handed Deepgram's
   // answer or a round trip through a browser. Two shapes would mean two paths
   // through the drafting code and one of them tested.
   const fromProvider = readDeepgram({

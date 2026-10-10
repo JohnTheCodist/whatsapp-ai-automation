@@ -217,7 +217,14 @@ test('the scribe never writes to the note', () => {
   expect(SCRIBE).not.toMatch(/method:\s*.(?:PATCH|PUT|DELETE)./);
 
   // The accept path hands the text UPWARDS and nowhere else.
-  expect(SCRIBE).toMatch(/onAccept\?\.\(\{ subjective: draft \}\)/);
+  // AMENDED 2026-10-10 with the SOAP rewrite. The rule is unchanged and the
+  // shape is not: the scribe used to hand up one string and now hands up
+  // four sections. What matters is still that it hands them UP rather than
+  // writing them itself.
+  expect(SCRIBE).toMatch(/onAccept\?\.\(\{ sections \}\)/);
+  // And the parent lands them through the same `set` a keystroke uses, so
+  // the note keeps exactly one writer.
+  expect(JSX).toMatch(/if \(value\) set\(field, value\);/);
 });
 
 test('the scribe keeps no audio anywhere', () => {
@@ -249,22 +256,31 @@ test('the microphone cannot be reached before consent is on the server', () => {
   // find the way round it, and the way round it is to tick the consent box
   // without saying anything to the patient.
   //
-  // ORDERING, not slicing: the consent branch and its early return both come
-  // BEFORE any mention of a microphone in the file, so there is no path from
-  // "nobody asked" to a recording.
-  const gate = SCRIBE.indexOf('if (!consentAt) {');
-  expect(gate, 'the consent gate is gone').toBeGreaterThan(-1);
+  // AMENDED 2026-10-10 with the SOAP rewrite, which replaced the early
+  // return with a MODE machine. Ordering no longer proves anything, so this
+  // pins the reachability directly, which is a sharper claim than before.
 
-  const mic = SCRIBE.indexOf('data-step="unavailable"');
-  expect(mic).toBeGreaterThan(gate);
-  const branch = SCRIBE.slice(gate, mic);
-  expect(branch, 'the consent branch does not return early').toMatch(/return \(/);
-  expect(branch, 'the consent branch can reach the microphone')
-    .not.toMatch(/getUserMedia|MediaRecorder/);
+  // The microphone is OPENED in exactly one place. Matched as a CALL, not
+  // as a mention: the file also feature-detects it and names it in a
+  // comment, and counting those made this assertion fail on its own
+  // premise the first time it ran.
+  const opens = SCRIBE.match(/await navigator\.mediaDevices\.getUserMedia\(/g) || [];
+  expect(opens.length, `the microphone is opened ${opens.length} times`).toBe(1);
 
-  // And the consent read comes from the NOTE — the server’s answer — rather
-  // than from a flag this component sets for itself, which the client could
-  // simply decline to unset.
+  // That place is start(), and start() is only rendered under mode 'ready'.
+  expect(SCRIBE).toMatch(/async function start\(\)[\s\S]*?getUserMedia/);
+  expect(SCRIBE).toMatch(/mode === 'ready' &&[\s\S]*?onClick=\{start\}/);
+
+  // And 'ready' is reachable in exactly two ways: the choose screen, which
+  // sends an unconsented pharmacist to the consent step instead, and
+  // confirmConsent's success path, which runs only after the SERVER accepted
+  // the consent. Neither lets somebody who has asked nobody reach a
+  // microphone.
+  expect(SCRIBE).toMatch(/setMode\(consentAt \? 'ready' : 'consent'\)/);
+  expect(SCRIBE).toMatch(/await fetch\(`\$\{base\}\/scribe\/consent`[\s\S]*?setMode\('ready'\)/);
+
+  // The consent read comes from the NOTE — the server’s answer — rather
+  // than a flag this component sets for itself and could decline to unset.
   expect(SCRIBE).toMatch(/const consentAt = note\?\.scribeConsentAt \|\| null;/);
 });
 

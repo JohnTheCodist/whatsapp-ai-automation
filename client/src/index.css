@@ -428,7 +428,7 @@ nav[aria-label="Sections"] {
 @media (hover: hover) and (pointer: fine) {
   .ui-rail:hover {
     --rail-inset: -24px;
-    --rail-shadow: 10px 0 28px -14px oklch(20.5% 0 0 / 0.22);
+    --rail-shadow: 14px 0 34px -10px oklch(20.5% 0 0 / 0.30), 1px 0 0 0 oklch(20.5% 0 0 / 0.08);
     --rail-dur: 320ms;
     --rail-ease: var(--ui-ease-out);
     --rail-delay: 70ms;
@@ -488,7 +488,7 @@ nav[aria-label="Sections"] {
    after the pointer had left. */
 .ui-rail:has(:focus-visible) {
   --rail-inset: -24px;
-  --rail-shadow: 10px 0 28px -14px oklch(20.5% 0 0 / 0.22);
+  --rail-shadow: 14px 0 34px -10px oklch(20.5% 0 0 / 0.30), 1px 0 0 0 oklch(20.5% 0 0 / 0.08);
   --rail-dur: 320ms;
   --rail-ease: var(--ui-ease-out);
   --rail-delay: 0ms;
@@ -3899,6 +3899,227 @@ tr:focus-within .ui-row-actions,
   text-transform: uppercase;
   letter-spacing: 0.04em;
   cursor: pointer;
+}
+
+
+/* ---- the scribe's own controls (SCRIBE_PLAN.md) ------------------------
+   Written to design.md, not around it:
+   - PRIMARY is the desk's near-black fill, never emerald. Keeping the accent
+     off buttons is what lets it keep meaning "healthy" in a status pill two
+     inches away.
+   - NO RED, including on the live recording dot. Red is reserved for a person
+     waiting on a human, and a pulsing red dot here would outrank the one
+     thing on this screen allowed to be urgent. The dot carries "live" with
+     MOTION instead, and falls back to a static mark when motion is declined.
+   - Flat: hairlines on white, no shadows. */
+
+/* The question above the two choices. A 14/600 section heading, the same
+   voice as every other heading on this screen. */
+.ui-scribe-ask {
+  margin: 0 0 10px;
+  color: var(--ui-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Two real choices, side by side and the same size. Typing is not a fallback
+   and must not look like one — an interface that makes voice the only
+   obvious path pushes somebody into recording a patient who did not want it. */
+/* AUTO-FIT, not a media query, and the difference is the whole bug.
+   A `max-width: 560px` breakpoint asks how wide the WINDOW is. This panel
+   sits inside the work column, which also has a 215px sidebar and a 260px
+   context column taking from it — so on a 1000px window the cards had about
+   340px between them and the breakpoint never fired. The result was "With
+   voice" wrapping onto two lines and its description onto five.
+   `auto-fit` asks how much room is actually HERE, which is the question. */
+.ui-scribe-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.ui-scribe-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.ui-scribe-choice:hover { background: var(--ui-sunk); border-color: var(--ui-line-strong); }
+.ui-scribe-choice:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
+.ui-scribe-choice:disabled { opacity: 0.55; cursor: default; }
+
+/* The primary of the two: the desk's "Save" treatment. */
+.ui-scribe-choice-primary {
+  border-color: var(--ui-ink);
+  background: var(--ui-ink);
+  color: var(--ui-paper);
+}
+.ui-scribe-choice-primary:hover {
+  background: #000;
+  border-color: #000;
+}
+
+.ui-scribe-choice-icon {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--ui-sunk);
+  color: var(--ui-ink);
+}
+.ui-scribe-choice-primary .ui-scribe-choice-icon {
+  background: rgb(255 255 255 / 0.14);
+  color: var(--ui-paper);
+}
+
+.ui-scribe-choice-text { display: grid; gap: 2px; min-width: 0; }
+.ui-scribe-choice-text strong { font-size: 13.5px; font-weight: 600; }
+.ui-scribe-choice-text small {
+  color: var(--ui-ink-faint);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.ui-scribe-choice-primary .ui-scribe-choice-text small { color: rgb(255 255 255 / 0.72); }
+
+/* The primary action inside the panel — "Start recording", "Stop and write
+   up", "Put this in the note". design.md's CTA: near-black, white, 8px,
+   13px/500. */
+.ui-scribe-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  border: 1px solid var(--ui-ink);
+  border-radius: 8px;
+  background: var(--ui-ink);
+  color: var(--ui-paper);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.ui-scribe-go:hover { background: #000; }
+.ui-scribe-go:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
+.ui-scribe-go:disabled { opacity: 0.45; cursor: default; }
+
+/* The live bar. One row: state, clock, stop. */
+.ui-scribe-live {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 10px;
+  background: var(--ui-surface);
+}
+.ui-scribe-live-label { font-size: 13.5px; font-weight: 600; color: var(--ui-ink); }
+.ui-scribe-live .ui-scribe-go { margin-left: auto; }
+
+/* Live, carried by motion rather than by colour. */
+.ui-scribe-pulse {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ui-ink);
+  animation: ui-scribe-breathe 1.4s ease-in-out infinite;
+}
+@keyframes ui-scribe-breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.82); }
+}
+
+.ui-scribe-clock {
+  color: var(--ui-ink-soft);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-scribe-spin {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--ui-line-strong);
+  border-top-color: var(--ui-ink);
+  border-radius: 50%;
+  animation: ui-scribe-spin 700ms linear infinite;
+}
+@keyframes ui-scribe-spin { to { transform: rotate(360deg); } }
+
+/* Somebody who asked their OS for less motion gets a static mark, not a
+   sweeping one — and the state is still legible because the WORD says it. */
+@media (prefers-reduced-motion: reduce) {
+  .ui-scribe-pulse { animation: none; }
+  .ui-scribe-spin { animation: none; border-top-color: var(--ui-line-strong); }
+}
+
+/* Choosing a voice. Each option shows the first thing that voice SAID, so the
+   choice is made from words rather than from a number. */
+.ui-scribe-voice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 9px 11px;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  cursor: pointer;
+}
+.ui-scribe-voice:hover { background: var(--ui-sunk); }
+.ui-scribe-voice:has(:checked) { border-color: var(--ui-ink); }
+.ui-scribe-voice-text { display: grid; gap: 2px; min-width: 0; }
+.ui-scribe-voice-text strong { font-size: 13.5px; font-weight: 600; }
+.ui-scribe-voice-text small {
+  color: var(--ui-ink-faint);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* The written-up note. One card per section, each labelled with WHERE it came
+   from — which is the whole claim this feature makes and the thing a
+   pharmacist checks before accepting. */
+.ui-scribe-review { display: grid; gap: 10px; }
+.ui-scribe-section {
+  padding: 10px 12px;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-surface);
+}
+.ui-scribe-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin-bottom: 6px;
+}
+.ui-scribe-section-head strong { font-size: 13.5px; font-weight: 600; color: var(--ui-ink); }
+.ui-scribe-section-head small { font-size: 12px; color: var(--ui-ink-faint); }
+.ui-scribe-section textarea {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/* Phone: the two choices stack, and the live bar lets the stop button drop
+   onto its own line rather than squeezing the clock. */
+@media (max-width: 560px) {
+  .ui-scribe-live { flex-wrap: wrap; }
+  .ui-scribe-live .ui-scribe-go { margin-left: 0; width: 100%; justify-content: center; }
 }
 
 /* Narrow screens: the voice label stacks above its line rather than
