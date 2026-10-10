@@ -1776,7 +1776,39 @@ unused `written` binding in `consultations.js`'s `amendConsultation` and it
 
 **The scribe writes the whole note, routed by who spoke, 2026-10-10 →
 2185/1443/735/7 (no database); 2185/2180/0/5 with one.** SCRIBE_PLAN.md §15,
-on the owner's decision. Client 346.
+on the owner's decision. Client 348.
+
+**The collapsed rail, same day** — the owner: *"the collapsed strip look
+sparse and the icons too thin"*. Both measured rather than guessed at.
+
+```
+rail height      610px
+4 rows x 36px    144px of content
+empty space      466px   — 76% of the column
+```
+
+The cause of "sparse" was that `.ui-rail-pill` was **transparent at rest**, so
+every icon was a bare glyph floating in a 56px column — while design.md
+already specified the collapsed strip as *"36px icon TILES"*. Restoring it, not
+adding to it.
+
+Restored as a hairline **ring rather than a fill**, and the reason is
+measurable: a resting fill had to live between the sidebar's 97.9% lightness
+and hover's 94.6%, about one and a half per cent, and the first attempt at 4%
+landed on 94.8% — close enough to hover that pointing at a row did nothing
+visible. A ring costs no lightness, so hover keeps its fill change.
+
+Icons now draw at 2.3 in the rail, 2.5 on the current page. **The colour was
+left alone**: `--ui-ink-soft` is design.md's explicit choice for inactive nav,
+while stroke weight is specified nowhere and is what was actually wrong.
+
+2 client tests, 5 mutations, all caught — one of them by an *existing* test
+asserting the pinned panel enters the same state as hover.
+
+**The remaining emptiness is STRUCTURAL and was not changed.** The strip shows
+only the current module's screens (2, for Clinics) and pins Setup and Billing
+to the foot. Both are design.md's choices, and reversing either is the owner's
+call rather than a drive-by.
 
 **The rule did not change. It was being enforced in the wrong place.**
 

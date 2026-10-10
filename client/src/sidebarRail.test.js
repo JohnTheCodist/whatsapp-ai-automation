@@ -151,3 +151,61 @@ test('a browser that refuses localStorage still gets a working sidebar', () => {
   expect(guarded.length, 'an unguarded localStorage call will throw in a private window')
     .toBe(2);
 });
+
+/* ==========================================================================
+ * The collapsed strip's weight (2026-10-10)
+ * ======================================================================== */
+
+test('every icon in the collapsed strip sits on a tile, not loose in the column', () => {
+  // The owner's words: the collapsed strip "looks sparse". Measured on a real
+  // screen — four 36px rows in a 610px rail, 466px of it empty — and the
+  // cause was that `.ui-rail-pill` was TRANSPARENT at rest, so each icon was
+  // a bare glyph floating in a 56px column.
+  //
+  // design.md already specified otherwise: the collapsed strip is "36px icon
+  // TILES". This was restoring the spec, not adding to it.
+  const pill = rulesMatching('.ui-rail-pill').find((r) => r.media === null
+    && r.selector.trim() === '.ui-rail-pill');
+  expect(pill, 'the .ui-rail-pill rule is gone').toBeTruthy();
+  expect(pill.body, 'the resting pill draws no mark at all')
+    .toMatch(/box-shadow:\s*var\(--rail-rest-ring/);
+
+  // A RING rather than a fill, and the reason is measurable. A resting fill
+  // had to live between the sidebar's 97.9% lightness and hover's 94.6% —
+  // about one and a half per cent — and the first attempt at 4% landed on
+  // 94.8%, so close to hover that pointing at a row did nothing visible.
+  // A hairline costs no lightness, so hover keeps its fill change.
+  const closed = rulesMatching('.ui-rail').find((r) => r.media === null
+    && r.selector.trim() === '.ui-rail');
+  expect(closed.body).toMatch(/--rail-rest-ring:\s*inset/);
+  expect(closed.body, 'the resting mark is a fill, which collides with hover')
+    .toMatch(/--rail-rest-tile:\s*transparent/);
+
+  // And it is cleared in every OPEN state — a mark on every full-width row
+  // would be a boxed list rather than a panel.
+  for (const sel of ['.ui-rail:hover', ".ui-rail[data-pinned='true']", '.ui-rail:has(:focus-visible)']) {
+    const open = rulesMatching(sel).find((r) => r.selector.includes(sel));
+    expect(open, `no rule for ${sel}`).toBeTruthy();
+    expect(open.body, `${sel} keeps the resting ring`).toMatch(/--rail-rest-ring:\s*none/);
+  }
+});
+
+test('the rail draws its icons heavier than the same icon on white', () => {
+  // The owner's other words: the icons are "too thin". Icons.jsx draws at
+  // stroke-width 2 on a 24 viewBox rendered at 22px — an effective 1.83px —
+  // and at --ui-ink-soft on the sidebar's near-white that reads washed out.
+  //
+  // The COLOUR is design.md's explicit choice for inactive nav and is left
+  // alone. The weight is specified nowhere, and is what was actually wrong.
+  const rule = rulesMatching('.ui-rail-row svg').find((r) => r.media === null);
+  expect(rule, 'the rail no longer weights its icons').toBeTruthy();
+  const weight = Number((rule.body.match(/stroke-width:\s*([\d.]+)/) || [])[1]);
+  expect(weight, `rail icons draw at ${weight}`).toBeGreaterThan(2);
+
+  // The current page is heavier still, so "you are here" survives for anyone
+  // who cannot separate two greys — the same reasoning as the white tile.
+  const active = rulesMatching('.ui-rail-row[aria-current="page"] svg').find((r) => r.media === null);
+  expect(active, 'the active row draws its icon at the same weight as the rest').toBeTruthy();
+  const activeWeight = Number((active.body.match(/stroke-width:\s*([\d.]+)/) || [])[1]);
+  expect(activeWeight).toBeGreaterThan(weight);
+});
