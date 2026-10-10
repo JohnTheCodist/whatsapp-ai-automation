@@ -181,3 +181,46 @@ A redirect from `/p/<address>` to the subdomain. It would make the shorter
 address canonical for SEO, and it would also break every printed flyer the day
 DNS has a bad hour. That is a decision to take once subdomains have been live
 and boring for a while.
+
+## Two things that bite on Windows (found 2026-10-10)
+
+**`createdb` is not in the package.** The `@embedded-postgres/windows-x64`
+build ships `initdb.exe`, `pg_ctl.exe` and `postgres.exe` and *not* the client
+binaries, so the `createdb` line above fails with "No such file or directory".
+Create the database over the wire instead, with the `postgres` client this
+repo already depends on:
+
+```bash
+node -e "const p=require('postgres');(async()=>{const s=p('postgres://postgres:scratchpw@127.0.0.1:55432/postgres',{max:1});if(!(await s\`select 1 from pg_database where datname='rxnaija_test'\`).length)await s.unsafe('create database rxnaija_test');await s.end();})()"
+```
+
+**Do not start it from a backgrounded agent shell.** `pg_ctl start` holds the
+pipe on Windows, so a backgrounded tool call never returns, hits its time
+limit, and is killed — which takes the server down with it and leaves the data
+directory needing crash recovery. Start it detached from the shell instead:
+
+```powershell
+Start-Process -FilePath "$bin\postgres.exe" -ArgumentList @("-D",$data,"-p","55432","-c","listen_addresses=127.0.0.1") -RedirectStandardError "$root\pg.log" -WindowStyle Hidden
+```
+
+It recovers cleanly if it does get killed ("redo done at …"), so a lost server
+costs a restart rather than a rebuild.
+
+## Driving the dashboard against it
+
+`dotenv` does not override a variable that is already set, so the API can be
+pointed at the test database from the environment without touching
+`server/.env` — which matters, because that file's `DATABASE_URL` is
+**production**:
+
+```bash
+DATABASE_URL="postgres://postgres:scratchpw@127.0.0.1:55432/rxnaija_test" DEV_AUTH_BYPASS=true NODE_ENV=development PORT=4100 node scripts/dev-server.js
+```
+
+`DEV_AUTH_BYPASS` creates a "Dev Pharmacy" on the first request if the database
+has none, which is also how to confirm which database you are on: one pharmacy
+called Dev Pharmacy is the test one, five real names is production.
+
+Note that the bypass is **server-side only**. The React dashboard still asks
+for a Supabase sign-in, so API-level verification works but clicking through
+the screens does not.

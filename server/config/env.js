@@ -190,6 +190,39 @@ const env = {
     timeoutMs: parseInt(process.env.LLM_TIMEOUT_MS || '20000', 10),
   },
 
+  /**
+   * Speech-to-text for the consultation scribe (SCRIBE_PLAN.md). DEEPGRAM.
+   *
+   * ITS OWN CONFIG, NOT THE CHAT PROVIDER'S. The chat model here is DeepSeek,
+   * which has no audio endpoint — so deriving a transcription URL from
+   * `LLM_API_URL` would POST a patient's recording to a path that does not
+   * exist, on a provider that never offered the service. They are two
+   * different services and they are configured separately.
+   *
+   * Deepgram rather than Whisper because the scribe is AMBIENT — it hears
+   * two people — and Deepgram returns SPEAKER-SEPARATED utterances, which
+   * Whisper does not. Subjective is specifically what the PATIENT said, so
+   * without speaker labels the model has to guess which half of a
+   * conversation to write down, and a guess there lands in a clinical
+   * record as "the patient reported".
+   *
+   * Unset is the committed default, and it is a safe one: with no key the
+   * scribe does not appear at all, and the Subjective box is typed as it is
+   * today. Nothing about the consultation depends on it.
+   */
+  transcription: {
+    apiKey: process.env.TRANSCRIPTION_API_KEY || '',
+    apiUrl: process.env.TRANSCRIPTION_API_URL || 'https://api.deepgram.com/v1/listen',
+    // Nova-3 is Deepgram's current general model and the one that handles
+    // accented English best. Named here rather than hard-coded so a better
+    // one is a config change.
+    model: process.env.TRANSCRIPTION_MODEL || 'nova-3',
+    // Audio takes longer than text. A five-minute consultation is well
+    // inside this; the cap exists so a stalled upload fails rather than
+    // holding a request open.
+    timeoutMs: parseInt(process.env.TRANSCRIPTION_TIMEOUT_MS || '120000', 10),
+  },
+
   // Worker loop. In MVP the worker runs in-process; set WORKER_ENABLED=false
   // on any extra web dyno so only one process claims jobs.
   worker: {

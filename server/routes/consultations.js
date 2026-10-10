@@ -13,6 +13,7 @@
  */
 
 const express = require('express');
+const multer = require('multer');
 const { requireAuth } = require('../middleware/auth');
 const {
   consultationDefinitions, listConsultations, getConsultation,
@@ -20,14 +21,18 @@ const {
   addProblem, updateProblem, removeProblem,
   addIntervention, removeIntervention,
   setReferral, setPrescriptionReview, setCareProgram,
-  amendConsultation, consultationHistory,
+  amendConsultation, consultationHistory, consultationPatient,
+  recordScribeConsent, scribeGate, recordScribeUse,
 } = require('../services/clinical/consultations');
 const {
   readConsultationInput, readConsultationPatch, readErrorInput, consultationOptions,
   readProblemInput, readInterventionInput, readReferralInput, readPrescriptionInput,
   readAmendmentInput,
 } = require('../services/clinical/consultationInput');
-const { medicationContext } = require('../services/clinical/medications');
+const { medicationContext, listMedications } = require('../services/clinical/medications');
+const { listen, scribe, isTranscriptionConfigured } = require('../services/ai/scribe');
+const { LlmUnavailable } = require('../services/ai/llmClient');
+const { readScribeDraftInput, SCRIBE_REFUSALS } = require('../services/ai/scribeInput');
 
 const router = express.Router();
 
@@ -65,7 +70,14 @@ function actor(req) {
 router.get('/:id/consultations/options', requireAuth, async (req, res, next) => {
   try {
     const types = await consultationDefinitions(req.pharmacyId);
-    res.json(consultationOptions(types));
+    // Composed here rather than in `consultationOptions`, which is pure and
+    // has no business reading the environment. An unconfigured deployment
+    // says so and the screen shows no microphone at all — the scribe is an
+    // addition to this module, never a dependency of it.
+    res.json({
+      ...consultationOptions(types),
+      scribe: { available: isTranscriptionConfigured() },
+    });
   } catch (err) { next(err); }
 });
 
@@ -95,9 +107,25 @@ router.get('/:id/consultations', requireAuth, async (req, res, next) => {
  * Read-only by construction — nothing in it writes, and the consultation
  * screen links into each section rather than editing from the header (§5).
  */
+// §12 and §28 — everything the patient-context column shows, in one call.
+//
+// COMPOSED HERE rather than by widening `medicationContext`, which the
+// Medications screen and the review also read: the banner needs a name and
+// an age that no other caller wants, and a shared read that grows a key per
+// screen is how it stops being obvious what any of them actually use.
 router.get('/:id/consultations/context', requireAuth, async (req, res, next) => {
   try {
-    res.json(await medicationContext(req.pharmacyId, customerId(req)));
+    const id = customerId(req);
+    // `medicationContext` carries conditions, vitals, allergies, tests, care
+    // programmes and follow-ups, but NOT the medication list — its own caller
+    // already has that. §12 wants medicines on the banner, so they are read
+    // here, through the Medications service that owns them.
+    const [context, patient, meds] = await Promise.all([
+      medicationContext(req.pharmacyId, id),
+      consultationPatient(req.pharmacyId, id),
+      listMedications(req.pharmacyId, id, { status: 'current' }),
+    ]);
+    res.json({ ...context, patient, medications: meds.medications || [] });
   } catch (err) { next(err); }
 });
 
@@ -254,5 +282,190 @@ router.get('/:id/consultations/:consultationId/history', requireAuth, async (req
     ));
   } catch (err) { next(err); }
 });
+
+/* ==========================================================================
+ * The AI scribe (SCRIBE_PLAN.md)
+ *
+ * THREE REQUESTS, NOT ONE, and the split is the safety design rather than
+ * REST tidiness:
+ *
+ *   1. consent    the patient is told, and that is written down
+ *   2. listen     audio in, speaker-separated turns out, NOTHING drafted
+ *   3. draft      the pharmacist has said which voice is the patient
+ *
+ * Step 2 stops short on purpose. The one question a model must not answer is
+ * WHICH VOICE IS THE PATIENT, because its answer lands in a clinical record
+ * as "the patient reported". A person answers it, in one tap, between the
+ * two requests.
+ *
+ * NOTHING HERE WRITES TO THE NOTE. The draft comes back to the screen and
+ * the pharmacist accepts it through the ordinary PATCH, as if they had typed
+ * it — so the note has exactly one writer and a draft nobody accepted leaves
+ * no trace in the record.
+ * ======================================================================== */
+
+/**
+ * In memory, like the catalogue upload, and for a stronger reason: a patient
+ * recording on this box's disk is a copy of health data that nothing in this
+ * product knows how to delete.
+ */
+const AUDIO_TYPES = new Set([
+  'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/mpga',
+  'audio/wav', 'audio/x-wav', 'audio/m4a', 'audio/x-m4a', 'audio/aac',
+  'video/webm', 'video/mp4',
+]);
+
+const uploadAudio = multer({
+  storage: multer.memoryStorage(),
+  // The same cap `scribe.js` enforces. Checked twice on purpose: this one
+  // stops a large body at the door, and the service one holds for any caller
+  // that is not this route.
+  limits: { fileSize: 25 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => {
+    // A browser MediaRecorder sends a codec suffix: audio/webm;codecs=opus.
+    const base = String(file.mimetype || '').split(';')[0].trim().toLowerCase();
+    if (!AUDIO_TYPES.has(base)) {
+      return cb(new Error(`${file.mimetype} is not a recording this can transcribe.`));
+    }
+    cb(null, true);
+  },
+}).single('audio');
+
+/** Multer reports its own errors; turn them into something a person can act on. */
+function handleAudio(req, res, next) {
+  uploadAudio(req, res, (err) => {
+    if (!err) return next();
+    const e = new Error(err.code === 'LIMIT_FILE_SIZE'
+      ? 'That recording is too long to transcribe.'
+      : err.message);
+    e.status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+    e.code = 'BAD_AUDIO';
+    next(e);
+  });
+}
+
+/**
+ * Turn the gate into something the screen can say out loud.
+ *
+ * Each refusal gets its own sentence, because "cannot record" tells a
+ * pharmacist nothing about what to do next and the three reasons have three
+ * different answers: ask the patient, open a new consultation, or nothing.
+ */
+/**
+ * A provider that is down is NOT an internal error.
+ *
+ * FOUND BY DRIVING THE ENDPOINT, not by a test. `LlmUnavailable` carries no
+ * `status`, so an unreachable transcription provider came back as a 500
+ * "Something went wrong" — which tells a pharmacist at a counter nothing,
+ * and in particular does not tell them the thing that is true: the
+ * microphone is no use right now and the note has to be typed.
+ *
+ * Degrading to typing is the whole design of this feature, so the sentence
+ * says so. Same shape as `routes/pharmacies.js` and `routes/website.js`,
+ * which reached this conclusion first.
+ */
+function refuseUnavailable(err) {
+  if (!(err instanceof LlmUnavailable)) return err;
+  const e = new Error(
+    'Voice transcription is not available right now. Type the note instead, or try again shortly.',
+  );
+  e.status = 503;
+  e.code = 'LLM_UNAVAILABLE';
+  // The sentence above is ours and is the actionable half of this reply, so
+  // it is marked for the user. Without this, errorHandler masks every 5xx
+  // message and a pharmacist is told only that something went wrong.
+  e.expose = true;
+  return e;
+}
+
+function refuseScribe(gate) {
+  const err = new Error(SCRIBE_REFUSALS[gate.reason] || SCRIBE_REFUSALS.no_consent);
+  err.status = gate.reason === 'not_found' ? 404 : 409;
+  err.code = gate.reason === 'not_found' ? 'NOT_FOUND' : gate.reason.toUpperCase();
+  return err;
+}
+
+// §7. The patient was told. Recorded before any microphone may open.
+router.post('/:id/consultations/:consultationId/scribe/consent', requireAuth, async (req, res, next) => {
+  try {
+    res.json(await recordScribeConsent(
+      req.pharmacyId, customerId(req), req.params.consultationId, actor(req),
+    ));
+  } catch (err) { next(err); }
+});
+
+// Audio in, turns out. Nothing is drafted here and nothing is saved.
+router.post('/:id/consultations/:consultationId/scribe', requireAuth, handleAudio,
+  async (req, res, next) => {
+    try {
+      if (!isTranscriptionConfigured()) {
+        const err = new Error('Voice transcription is not set up for this pharmacy.');
+        err.status = 503; err.code = 'SCRIBE_UNAVAILABLE';
+        throw err;
+      }
+
+      const patient = customerId(req);
+      const id = req.params.consultationId;
+
+      // READ NOW, not trusted from the screen. A tab open for an hour holds
+      // a consultation that may since have been finalised, and a consent
+      // flag in client state is a gate the client can decline to send.
+      const gate = await scribeGate(req.pharmacyId, patient, id);
+      if (!gate.allowed) throw refuseScribe(gate);
+
+      let parsed;
+      try {
+        parsed = await listen(req.file?.buffer, { mimetype: req.file?.mimetype });
+      } catch (e) {
+        throw refuseUnavailable(e);
+      }
+
+      // On the record BEFORE the draft step, and whatever the pharmacist
+      // does with it. "Was this patient recorded?" has to be answerable even
+      // when the answer was thrown away.
+      await recordScribeUse(req.pharmacyId, patient, id, {
+        speakers: parsed.speakers.length,
+        diarised: parsed.diarised,
+        turns: parsed.turns.length,
+      }, actor(req));
+
+      // The turns and who spoke them. NOT a draft — that waits for a person
+      // to say which voice is the patient.
+      res.json({
+        turns: parsed.turns,
+        speakers: parsed.speakers,
+        diarised: parsed.diarised,
+      });
+    } catch (err) { next(err); }
+  });
+
+// The pharmacist has named the patient. Draft from THAT VOICE only.
+router.post('/:id/consultations/:consultationId/scribe/draft', requireAuth,
+  async (req, res, next) => {
+    try {
+      const patient = customerId(req);
+      const id = req.params.consultationId;
+
+      const gate = await scribeGate(req.pharmacyId, patient, id);
+      if (!gate.allowed) throw refuseScribe(gate);
+
+      const input = readScribeDraftInput(req.body);
+      let result;
+      try {
+        result = await scribe(input.parsed, input.patientSpeaker);
+      } catch (e) {
+        throw refuseUnavailable(e);
+      }
+
+      // The draft is RETURNED, never written. The pharmacist accepts it
+      // through the ordinary PATCH or discards it, and a draft nobody
+      // accepted leaves nothing behind.
+      res.json({
+        draft: result.draft,
+        refused: result.refused,
+        section: 'subjective',
+      });
+    } catch (err) { next(err); }
+  });
 
 module.exports = router;

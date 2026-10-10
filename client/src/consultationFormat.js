@@ -295,3 +295,154 @@ export function snapshotLines(amendment) {
 }
 
 export const NO_HISTORY = 'No history recorded';
+
+/* ==========================================================================
+ * The redesign — what a pharmacist sees, and how much of it
+ * ======================================================================== */
+
+/**
+ * The sections, in the order a consultation is worked.
+ *
+ * §30: SOAP is the backbone but not the wording. A pharmacist thinks
+ * "why are they here, what did they tell me, what did I find, what do I
+ * think, what did I do" — not "subjective, objective".
+ */
+export const SECTION_ORDER = Object.freeze([
+  'triage', 'reason', 'subjective', 'objective', 'assessment', 'problems',
+  'interventions', 'referral', 'prescription', 'plan', 'care-program',
+  'summary', 'amend', 'history',
+]);
+
+/**
+ * WHICH SECTIONS A TYPE ACTUALLY OPENS WITH (§31).
+ *
+ * THE PROBLEM THIS SOLVES. The first build showed all fourteen sections for
+ * every consultation type, so a three-minute minor ailment presented the same
+ * wall as a comprehensive medication review. §31 asks for Simple, Standard
+ * and Comprehensive; §30 says not to force a long note for a simple
+ * interaction.
+ *
+ * NO NEW COLUMN AND NO NEW VOCABULARY. The answer is already in the type:
+ * `requiredSections` is what must be filled to finalise and `emphasis` is
+ * what that type is about. A section is shown when it is required, or
+ * emphasised, or already has something in it — and everything else moves
+ * behind one "More" control rather than being deleted, because a pharmacist
+ * who needs Referral on a cough consultation must still be able to reach it.
+ */
+/**
+ * Sections whose visibility is decided by the TYPE. Everything else is
+ * decided by the note’s own state and is not part of the budget:
+ *
+ *   reason / assessment / plan / summary   always, whatever the type
+ *   amend / history                        the note’s state decides
+ *
+ * Counting the second group as "more" is what made the control promise
+ * eight sections and reveal seven — found by opening the screen and
+ * counting the headings.
+ */
+export const BUDGETED_SECTIONS = Object.freeze([
+  'triage', 'subjective', 'objective', 'problems',
+  'interventions', 'referral', 'prescription', 'care-program',
+]);
+
+export function sectionPlan(note, filled = {}) {
+  const required = new Set(note?.definition?.requiredSections || []);
+  const emphasised = new Set(note?.definition?.emphasis || []);
+
+  const shown = [];
+  const more = [];
+  for (const id of BUDGETED_SECTIONS) {
+    if (required.has(id) || emphasised.has(id) || filled[id]) shown.push(id);
+    else more.push(id);
+  }
+  return { shown, more };
+}
+
+/**
+ * The patient banner (§12) — the three facts that change what is safe to do.
+ *
+ * Allergies first and always, because that is the one that stops a
+ * recommendation. "Not recorded" is kept distinct from "none known": the
+ * allergy record has said so since 0058 and the banner must not flatten it
+ * into a reassuring blank.
+ */
+export function bannerFacts(context) {
+  const a = context?.allergies;
+  const allergies = (a?.allergies || []).map((x) => x.allergenName).filter(Boolean);
+  const state = a?.state || null;
+
+  return {
+    allergies,
+    // THREE states, never two. An empty list is not "no allergies" unless
+    // somebody asserted it.
+    allergyText: allergies.length > 0 ? allergies.join(', ')
+      : state === 'none_known' ? 'No known allergies'
+        : 'Allergies not recorded',
+    allergyTone: allergies.length > 0 ? 'ui-tone-1' : null,
+    conditions: (context?.problems?.conditions || [])
+      .map((c) => c.conditionName).filter(Boolean).slice(0, 4),
+    medications: (context?.medications || [])
+      .map((m) => [m.medicineName, m.strength].filter(Boolean).join(' ')).filter(Boolean).slice(0, 4),
+  };
+}
+
+/** "32 yrs · F", and nothing when neither is recorded. */
+export function patientLine(patient) {
+  if (!patient) return null;
+  const bits = [];
+  if (patient.age != null) bits.push(`${patient.age} yrs`);
+  if (patient.sex) bits.push(patient.sex === 'female' ? 'F' : patient.sex === 'male' ? 'M' : patient.sex);
+  return bits.length > 0 ? bits.join(' \u00b7 ') : null;
+}
+
+/**
+ * One line of the context column.
+ *
+ * EVERY LINE IS A POINTER. The context column reads from the sections that
+ * own each record and never edits them — §12: "this is context only".
+ * A block with nothing in it says so in three words rather than being hidden,
+ * because a missing panel and an empty one mean different things and the
+ * pharmacist cannot tell which they are looking at.
+ */
+export function contextBlocks(context) {
+  if (!context) return [];
+  const vitals = context.lastVitals;
+  const bp = vitals && vitals.systolic && vitals.diastolic ? `${vitals.systolic}/${vitals.diastolic}` : null;
+
+  return [
+    {
+      id: 'conditions', label: 'Conditions', tab: 'conditions',
+      items: (context.problems?.conditions || []).map((c) => c.conditionName).filter(Boolean),
+      empty: 'None recorded',
+    },
+    {
+      id: 'medications', label: 'Medications', tab: 'medications',
+      items: (context.medications || []).map((m) => [m.medicineName, m.strength].filter(Boolean).join(' ')),
+      empty: 'None recorded',
+    },
+    {
+      id: 'vitals', label: 'Recent vitals', tab: 'vitals',
+      items: [
+        bp ? `BP ${bp} mmHg` : null,
+        vitals?.pulse ? `Pulse ${vitals.pulse}` : null,
+        vitals?.temperature ? `Temp ${vitals.temperature}\u00b0C` : null,
+      ].filter(Boolean),
+      empty: 'None recorded',
+    },
+    {
+      id: 'tests', label: 'Recent tests', tab: 'tests',
+      items: (context.tests?.recent || []).map((t) => [t.testName, t.summary].filter(Boolean).join(' \u2014 ')).slice(0, 3),
+      empty: 'None recorded',
+    },
+    {
+      id: 'care-program', label: 'Care programme', tab: 'care-program',
+      items: (context.carePrograms?.active || []).map((c) => c.programName).filter(Boolean),
+      empty: 'Not enrolled',
+    },
+    {
+      id: 'followups', label: 'Open follow-ups', tab: 'followup',
+      items: (context.followups?.next || []).map((f) => f.title || f.label).filter(Boolean).slice(0, 3),
+      empty: 'Nothing outstanding',
+    },
+  ];
+}

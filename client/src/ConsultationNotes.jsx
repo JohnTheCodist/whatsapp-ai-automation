@@ -13,45 +13,47 @@
  * through `PatientSearch`, the list the Patients module already uses. A second
  * patient list would be a second answer to "who is this", which is the thing
  * every module here has been built to avoid.
+ *
+ * ONE PLACE MARKER AT A TIME (2026-10-04). This screen passes through three
+ * subjects — no patient, a patient, an open note — and the first build gave
+ * each of them its own heading AND its own back link while the app shell added
+ * a fixed title above all three. Five stacked markers, two of them back links
+ * that looked identical and went to different places. Now the screen titles
+ * itself, which is why `App.jsx` exempts it the way it exempts Setup.
  */
 
 import { useState } from 'react';
 import PatientSearch from './PatientSearch.jsx';
 import { ConsultationHistory } from './Consultation.jsx';
 
-export default function ConsultationNotes({ onOpenConversation }) {
-  const [patientId, setPatientId] = useState(null);
+export default function ConsultationNotes({ onOpenConversation, onOpenTab }) {
+  // The NAME comes with the id, so the next screen can title itself without a
+  // second request for something the pharmacist was just shown.
+  const [patient, setPatient] = useState(null);
 
-  if (patientId) {
+  if (patient) {
     return (
-      <div className="ui-followup-main">
-        <div className="ui-followup-head">
-          <button type="button" className="ui-psection-link" onClick={() => setPatientId(null)}>
-            ← Choose another patient
-          </button>
-        </div>
-        <ConsultationHistory
-          // Keyed so a different patient is always a fresh component: a note
-          // must never be on screen under the wrong patient's name while
-          // another loads. The same rule PatientRecord follows.
-          key={patientId}
-          customerId={patientId}
-          onOpenConversation={onOpenConversation}
-        />
-      </div>
+      <ConsultationHistory
+        // Keyed so a different patient is always a fresh component: a note
+        // must never be on screen under the wrong patient's name while
+        // another loads. The same rule PatientRecord follows.
+        key={patient.id}
+        customerId={patient.id}
+        patientName={patient.name}
+        onChoosePatient={() => setPatient(null)}
+        onOpenConversation={onOpenConversation}
+        onOpenTab={onOpenTab}
+      />
     );
   }
 
   return (
     <div className="ui-followup-main">
-      <div className="ui-followup-head">
-        <h3 className="ui-allergy-heading">Consultation notes</h3>
-      </div>
-      <p className="ui-allergy-help">
-        Choose the patient you are consulting with. The triage desk is the screen
-        beside this one — this is where what you assessed and did is written down.
-      </p>
-      <PatientSearch onOpen={setPatientId} />
+      <header className="ui-consult-page">
+        <h1>Consultation notes</h1>
+        <p>Choose the patient you are consulting with.</p>
+      </header>
+      <PatientSearch onOpen={(id, p) => setPatient({ id, name: p?.name || null })} />
     </div>
   );
 }

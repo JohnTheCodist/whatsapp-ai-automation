@@ -228,6 +228,100 @@ function readInternalNoteInput(body = {}) {
 }
 
 
+
+/* ==========================================================================
+ * Phase 4 — starting a conversation, inside the window the patient opened
+ * ======================================================================== */
+
+/**
+ * How long a customer-initiated reply window stays open. WhatsApp's, not
+ * ours — `inboundIngest.js` sets it from the same number, and this is the
+ * only other place that needs to know it.
+ */
+const REPLY_WINDOW_HOURS = 24;
+
+/** Why outreach is unavailable, in words a pharmacist can act on. */
+const OUTREACH_BLOCKED = Object.freeze({
+  never_messaged: 'This patient has never messaged the pharmacy, so there is no conversation to continue. WhatsApp only allows a business to write first using an approved template, which this product does not have.',
+  thread_open: 'There is already an open conversation with this patient. Reply in it rather than starting a second one.',
+  window_closed: 'The 24-hour window closed. WhatsApp only allows a reply within 24 hours of the patient\u2019s last message, so this patient has to write again first.',
+});
+
+/**
+ * MAY WE START A CONVERSATION WITH THIS PATIENT, RIGHT NOW?
+ *
+ * THE RULE, AND WHY IT IS THIS AND NOT §15 AS WRITTEN. The brief asks for a
+ * "+ New Message" that writes to a patient. This product sends over Baileys —
+ * WhatsApp Web automation — and NOT the Meta Cloud API, so there is no
+ * approved-template path and no compliant way to write to somebody who has
+ * not written to us. Doing it anyway is the single most reliable way to get a
+ * pharmacy’s number flagged, and five real pharmacies are on this system.
+ *
+ * So outreach is allowed in exactly ONE case: the patient messaged within the
+ * last 24 hours, and the thread they opened has since been closed or
+ * archived. That is not a business-initiated message at all — it is
+ * continuing a conversation the PATIENT started, inside the window they
+ * opened, and carries exactly the risk a reply already carries.
+ *
+ * PURE, like `communicationPolicy`: takes the state as data and returns a
+ * decision. No database and no clock beyond what the caller passes, so every
+ * branch is testable without fixtures.
+ *
+ * The window is NOT recomputed or extended here. It belongs to the patient’s
+ * last inbound message, and a window we minted ourselves would be this
+ * product inventing a permission the provider never granted — the same rule
+ * as never showing a delivery state the provider cannot verify (§8).
+ */
+function outreachState({ latest = null, now = new Date() } = {}) {
+  const at = now instanceof Date ? now : new Date(now);
+
+  if (!latest) {
+    return { allowed: false, reason: 'never_messaged', message: OUTREACH_BLOCKED.never_messaged, windowExpiresAt: null };
+  }
+  if (latest.status === 'open') {
+    return { allowed: false, reason: 'thread_open', message: OUTREACH_BLOCKED.thread_open, windowExpiresAt: latest.windowExpiresAt || null, conversationId: latest.id || null };
+  }
+
+  const expires = latest.windowExpiresAt ? new Date(latest.windowExpiresAt) : null;
+  // An unparseable or absent window fails CLOSED. A send we cannot reason
+  // about costs a message that can be sent again once the patient writes;
+  // the other way costs one that cannot be unsent.
+  if (!expires || Number.isNaN(expires.getTime()) || expires.getTime() <= at.getTime()) {
+    return { allowed: false, reason: 'window_closed', message: OUTREACH_BLOCKED.window_closed, windowExpiresAt: latest.windowExpiresAt || null };
+  }
+
+  return { allowed: true, reason: null, message: null, windowExpiresAt: latest.windowExpiresAt };
+}
+
+/**
+ * §15 — the body of a new conversation.
+ *
+ * The channel is NOT a choice. §15 says to offer only channels actually
+ * available for that patient, and WhatsApp is the only one this product
+ * sends patient-facing messages on — a select with one option that the
+ * server would refuse anything else from is a control pretending to be a
+ * decision.
+ */
+function readNewConversationInput(body = {}) {
+  const text = String(body.body == null ? '' : body.body).trim();
+  if (!text) throw badRequest('A message cannot be empty.', 'body');
+  if (text.length > 4000) throw badRequest('A message must be 4000 characters or fewer.', 'body');
+
+  // Optional, and absent rather than defaulted to `general` — 0063 refused a
+  // default for the same reason: a topic nobody chose is this product
+  // inventing what a conversation was about.
+  let topic = null;
+  if (body.topic !== undefined && body.topic !== null && body.topic !== '') {
+    topic = String(body.topic).trim();
+    if (!TOPIC_IDS.includes(topic)) throw badRequest('That is not a topic this product records.', 'topic');
+  }
+
+  if (body.channel !== undefined && body.channel !== null && body.channel !== 'whatsapp') {
+    throw badRequest('WhatsApp is the only channel this product sends patient messages on.', 'channel');
+  }
+
+  return { body: text, topic, channel: 'whatsapp' };
+}
 /** The label for a topic id, for a screen. Never invents one. */
 const topicLabel = (id) => (TOPICS.find((t) => t.id === id) || {}).label || null;
 
@@ -240,10 +334,17 @@ const messageOptions = () => ({
   // What this phase deliberately cannot do, said out loud so the screen does
   // not have to guess whether to draw the buttons (MESSAGES_PLAN.md §11).
   capabilities: {
-    // Still false, and deliberately: this product is strictly reactive and
-    // does not start conversations WITH PATIENTS. Phase 3 changed nothing
-    // about that (MESSAGES_PLAN.md §11, decision 2).
-    canStartConversation: false,
+    // AMENDED with phase 4. This product can now start a conversation, but
+    // ONLY inside the 24-hour window the patient themselves opened — see
+    // `outreachState`, which argues it at length. It is still NOT true that
+    // this product writes to patients first: unprompted outreach would need
+    // an approved template, and Baileys has no such thing.
+    //
+    // This flag says what the PRODUCT can do. Whether it can be done for a
+    // particular patient right now is a different question with a different
+    // answer every day, and it rides on that patient's own read.
+    canStartConversation: true,
+    canStartConversationUnprompted: false,
     canSendAttachment: false,
     // Built in phase 3 (0066). An internal thread never leaves the pharmacy,
     // so starting one is not outreach.
@@ -257,5 +358,6 @@ module.exports = {
   LINK_KINDS, LINK_KIND_IDS, CHANNELS, CHANNEL_IDS,
   readListQuery, readTopicInput, readLinkInput,
   readInternalThreadInput, readInternalNoteInput,
+  readNewConversationInput, outreachState, OUTREACH_BLOCKED, REPLY_WINDOW_HOURS,
   topicLabel, linkKindLabel, messageOptions,
 };

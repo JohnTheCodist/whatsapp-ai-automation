@@ -602,3 +602,82 @@ Two clocks for one column, so a clinical record's last-updated time can move
 backwards. Nothing in Messages touches medications — it was exposed by running
 the suite. Deliberately absent from `test-baseline.json`, and it has its own
 task.
+
+---
+
+## Phase 4 — built (2026-10-04): §15, gated to the window the patient opened
+
+The brief was re-issued and checked section by section. **36 of 39 were
+already built** in phases 1–3. This closes the third gap; the other two are
+blocked by the brief’s own conditions, not by effort:
+
+| § | Gap | Why it is still shut |
+|---|---|---|
+| 21 | Attachments | §21 says "where the existing document/file system supports it". The only file store is the PUBLIC `pharmacy-assets` bucket — a patient’s attachment would sit at a guessable URL. |
+| 24 | Appointment links | §24 says "do not duplicate appointment information", and there is still no appointments table to point at. Third feature to hit this. |
+
+### The scope is narrower than §15, and that is the decision
+
+§15 asks for a button that messages a patient. This product sends over
+**Baileys** — WhatsApp Web automation — not the Meta Cloud API, so there is
+no approved-template path and no compliant way to write to somebody who has
+not written to us. Doing it anyway is the fastest route to a flagged number,
+and five real pharmacies are on this system.
+
+So outreach is allowed in exactly one case:
+
+```
+patient wrote within 24h  AND  that thread is now closed   →  allowed
+anything else                                              →  refused, with the reason
+```
+
+That is not a business-initiated message. It is **continuing a conversation
+the patient started**, inside the window they opened, and carries exactly the
+risk a reply already carries.
+
+### How it is built
+
+- **No migration.** `conversations.window_expires_at` and `channel` already
+  exist. 0070 is still the last migration in the repository.
+- **No second send path.** The message goes through `sendAndRecordOutbound`,
+  so the internal-thread guard, the consent check and the transport are the
+  ones that already exist. **GOLDEN-007 is unaffected.**
+- **The gate is PURE** (`outreachState`), like `communicationPolicy`. It fails
+  CLOSED on a window it cannot parse, and treats expiry-exactly-now as closed.
+- **The window is CARRIED, never reset.** It belongs to the patient’s last
+  inbound message; minting a fresh 24 hours would be granting ourselves a
+  permission WhatsApp never gave.
+- **The screen is told, not left to guess.** The patient’s own read carries
+  the decision *and its reason*, so an unavailable button is a sentence
+  explaining the rule rather than a dead control.
+
+### Tests
+
+**11 server — 3 database-free and 8 needing a database**, plus **2 client**.
+Measured **2139/1409/723/7** with no test database; skipped ceiling 715 → 723.
+Client 300 → 302. With a database: **2139/2135/0/4**.
+
+**Mutation testing found a real hole.** Five mutations were run against the
+gate; three turned the right tests red. The fourth (**resetting the window**
+instead of carrying it) and fifth (**dropping the in-transaction re-check**)
+left every test GREEN. Both are compliance-critical, so two more tests were
+written and both mutations then failed.
+
+### Two things caught by opening the screen
+
+**A broken import that lint and the whole suite missed.**
+`OUTREACH_WINDOW_NOTE` was added to the wrong import block, so
+`PatientMessages.jsx` imported it from `react` and got `undefined`; the
+screen threw the moment the composer opened. eslint cannot see this — the
+name IS imported and IS used — and no test rendered the component. There is
+now an invariant that cross-checks the screen’s imports against the module’s
+real exports, mutation-checked by reintroducing the bug.
+
+**§34 confirmed on the real screen.** With no connected provider the send
+failed, the composer showed *"WhatsApp is not connected."*, the pharmacist’s
+text stayed in the box, and **no conversation row was left behind**.
+
+### Still true after this phase
+
+This product does not write to a patient who has not written to us.
+`canStartConversationUnprompted` is false, and that is the flag that matters.

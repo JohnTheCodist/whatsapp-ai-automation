@@ -76,7 +76,7 @@ function RowActions({ p, onOpen }) {
     <span className="ui-row-actions" onClick={stop} onKeyDown={stop} role="presentation">
       <button
         type="button"
-        onClick={() => onOpen(p.id)}
+        onClick={() => onOpen(p.id, p)}
         aria-label={`Open ${p.name}'s record`}
         title="Open record"
         className="ui-action-btn"
@@ -143,7 +143,9 @@ function Folded({ items, className = '' }) {
 }
 
 function PatientRow({ p, today, onOpen, index = 0 }) {
-  const open = () => onOpen(p.id);
+  // The patient comes WITH the id so a caller can title its screen without
+  // a second request for a name it was just shown.
+  const open = () => onOpen(p.id, p);
   // One letter, because a column of "Female"/"Male" is a column of noise
   // next to a column of numbers. The word is still read aloud and still on
   // hover — the glyph is only what the eye gets.
@@ -250,7 +252,17 @@ export default function PatientSearch({ initialQuery = '', onOpen }) {
       setLoading(true);
       try {
         const r = await fetch(`/api/customers/search${query ? `?${query}` : ''}`, { signal: ctrl.signal });
-        const j = await r.json();
+        // A reply we cannot parse — an empty body, or the dev proxy's HTML
+        // when the API is not running. Reported 2026-10-04: a bare
+        // `r.json()` here put "Failed to execute 'json' on 'Response':
+        // Unexpected end of JSON input" on the screen, which is a browser
+        // internal and tells a pharmacist nothing about their pharmacy.
+        let j = null;
+        try {
+          j = await r.json();
+        } catch {
+          throw new Error('The pharmacy server is not responding. Try again in a moment.');
+        }
         if (!r.ok) throw new Error(j.error || 'Could not search patients.');
         setData(j);
         setError(null);

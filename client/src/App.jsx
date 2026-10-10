@@ -423,6 +423,30 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
   // The module this screen belongs to, or null on Setup and Billing — where
   // the sidebar lists the modules instead, so there is always a way back in.
   const currentModule = moduleOfTab(tab);
+  // Whether the sidebar is held open. design.md's rail opens on hover and
+  // closes when the pointer leaves, which is right for a cursor passing
+  // through and wrong for somebody who wants to SEE where they are while
+  // they work. Pinning is a third way into the SAME open state — it sets no
+  // styles of its own — and it is remembered, because a navigation that
+  // forgets how you left it is a navigation you re-adjust every morning.
+  const [railPinned, setRailPinned] = useState(() => {
+    try {
+      return localStorage.getItem('rxnaija.rail.pinned') === '1';
+    } catch {
+      // Private windows and blocked site data: unpinned is the documented
+      // default, so falling back to it changes nothing.
+      return false;
+    }
+  });
+  const toggleRail = () => {
+    setRailPinned((v) => {
+      try {
+        localStorage.setItem('rxnaija.rail.pinned', v ? '0' : '1');
+      } catch { /* the preference is a convenience; losing it breaks nothing */ }
+      return !v;
+    });
+  };
+
   const pageTitle = titleFor(tab);
   const crumbTitle = crumbFor(tab);
   const openPatient = (id) => { setPatientToOpen(id); setTab('customers'); };
@@ -442,9 +466,12 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
           content beside it never moves; the panel inside opens OVER the
           page. Its right hairline is the strip's edge while the panel is
           closed. z-30 lifts the open panel above the sticky header. */}
-      <div className="sticky top-0 z-30 h-screen w-14 shrink-0 border-r border-[var(--ui-line)] bg-[var(--ui-sidebar)]">
+      <div
+        className={`sticky top-0 z-30 h-screen shrink-0 border-r border-[var(--ui-line)] bg-[var(--ui-sidebar)] transition-[width] duration-200 ${railPinned ? 'w-[214px]' : 'w-14'}`}
+      >
       <nav
         aria-label="Sections"
+        data-pinned={railPinned ? 'true' : 'false'}
         className="ui-rail absolute inset-y-0 left-0 flex w-[214px] flex-col gap-1 overflow-y-auto overflow-x-hidden border-r border-[var(--ui-line)] bg-[var(--ui-surface)] px-2 py-4"
       >
         {/* The workspace row, in the shape of the desk's "Stock / ERPNext"
@@ -462,12 +489,30 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
           >
             R
           </button>
-          <span className="ui-rail-fade min-w-0 leading-tight" style={{ '--i': 0 }}>
+          <span className="ui-rail-fade min-w-0 flex-1 leading-tight" style={{ '--i': 0 }}>
             <span className="block truncate text-[14px] font-semibold text-[var(--ui-ink)]">
               {pharmacyName || 'Your pharmacy'}
             </span>
             <span className="block text-[12px] text-[var(--ui-ink-faint)]">RxNaija</span>
           </span>
+          {/* Hold the panel open, or let it go back to closing itself. It
+              lives in the fade, so it is only reachable once the panel is
+              open — a control for closing something you cannot see would be
+              its own puzzle. `aria-pressed` carries the state, so it reads
+              correctly without depending on the icon. */}
+          <button
+            type="button"
+            onClick={toggleRail}
+            aria-pressed={railPinned}
+            title={railPinned ? 'Unpin the sidebar' : 'Keep the sidebar open'}
+            className="ui-rail-fade ui-rail-pin shrink-0"
+            style={{ '--i': 0 }}
+          >
+            <span className="sr-only">
+              {railPinned ? 'Unpin the sidebar' : 'Keep the sidebar open'}
+            </span>
+            <span aria-hidden="true">{railPinned ? '«' : '»'}</span>
+          </button>
         </div>
 
         {/* The group label names the module you are in — the desk's
@@ -813,7 +858,14 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
             {/* Setup is the one screen that titles itself: its heading names
                 the settings AREA you are in ("Customer contact"), which a
                 fixed "Setup" above it would only repeat one level too high. */}
-            {tab !== SETUP.id && !isHome && (
+            {/* Consultation notes is the second screen that titles itself,
+                for the same reason Setup does: what you are looking at
+                changes as you work. Choosing a patient, then opening a note,
+                are three different subjects, and a fixed "Consultation notes"
+                above all three forced the screen to re-state where you were
+                underneath it — which is how one page ended up with five
+                stacked place markers. */}
+            {tab !== SETUP.id && tab !== 'consultation-notes' && !isHome && (
               <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
                 <div>
                   <h1 className="text-xl font-semibold tracking-tight text-[var(--ui-ink)]">{pageTitle}</h1>

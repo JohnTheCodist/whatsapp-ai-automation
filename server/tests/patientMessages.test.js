@@ -374,13 +374,29 @@ test('reading a patient\'s messages creates nothing and sends nothing', { skip: 
     [],
   );
 
-  // Phase 3 (0066) added the one thing here that creates a conversation, and
-  // the assertion was tightened rather than relaxed: it must be the INTERNAL
-  // one and nothing else. An export that created a patient-facing thread
-  // would be outreach, which this product does not do.
+  // AMENDED 2026-10-04 with the product, by owner decision. Phase 3's version
+  // read "it must be the INTERNAL one and nothing else", because an export
+  // that created a patient-facing thread would be outreach. Phase 4 adds
+  // `startPatientConversation`, so that sentence is no longer the rule.
+  //
+  // THE RULE IT BECOMES IS NARROWER, NOT WIDER: this product still never
+  // writes to a patient who has not written to us. What phase 4 allows is
+  // continuing a conversation the PATIENT started, inside the 24-hour window
+  // they opened — which is why the list below is closed and why the gate is
+  // asserted immediately after it.
   assert.deepEqual(
-    Object.keys(messages).filter((k) => /create|start/i.test(k)),
-    ['createInternalThread'],
+    Object.keys(messages).filter((k) => /create|start/i.test(k)).sort(),
+    ['createInternalThread', 'startPatientConversation'],
+  );
+
+  // And the new one is GATED. A patient with no history cannot be written to,
+  // which is the property the old assertion was really protecting.
+  const fresh = await patient(ctx.a.id);
+  assert.equal((await messages.patientOutreachState(ctx.a.id, fresh)).allowed, false);
+  await assert.rejects(
+    () => messages.startPatientConversation(ctx.a.id, fresh,
+      { body: 'Unprompted', topic: null, channel: 'whatsapp' }, { actorId: ctx.userA }),
+    (e) => { assert.equal(e.code, 'OUTSIDE_WINDOW'); return true; },
   );
 });
 
@@ -912,4 +928,220 @@ test('the assistant loads history BY CONVERSATION, so an internal note cannot re
   // nothing was written.
   const stored = await db`select count(*)::int as n from messages where conversation_id = ${internal.id}`;
   assert.equal(stored[0].n, 1);
+});
+
+/* ==========================================================================
+ * Phase 4 — starting a conversation inside the window the patient opened
+ * ======================================================================== */
+
+/** A WhatsApp thread for this patient, with the window set where we say. */
+async function thread(pharmacyId, customerId, { status = 'closed', window = null } = {}) {
+  const [c] = await db`
+    insert into conversations
+      (pharmacy_id, customer_id, channel, status, workflow_state, mode,
+       last_message_at, window_expires_at, closed_at, closed_reason)
+    values (${pharmacyId}, ${customerId}, 'whatsapp', ${status},
+            ${status === 'open' ? 'open' : 'resolved'}, 'human',
+            now(), ${window},
+            ${status === 'closed' ? new Date() : null}, ${status === 'closed' ? 'resolved' : null})
+    returning id
+  `;
+  return c.id;
+}
+
+const hoursFromNow = (h) => new Date(Date.now() + h * 3600 * 1000);
+
+// THE MOST IMPORTANT TEST IN THIS BLOCK.
+test('a patient who never wrote to us cannot be messaged, and nothing is written trying', { skip: SKIP && skipReason }, async () => {
+  // The case §15 literally asks for, and the one that stays shut. On Baileys
+  // there is no approved template, so this would be a non-compliant send
+  // against a live pharmacy's number.
+  const p = await patient(ctx.a.id);
+
+  const state = await messages.patientOutreachState(ctx.a.id, p);
+  assert.equal(state.allowed, false);
+  assert.equal(state.reason, 'never_messaged');
+
+  await assert.rejects(
+    () => messages.startPatientConversation(ctx.a.id, p, { body: 'Hello', topic: null, channel: 'whatsapp' }, { actorId: ctx.userA }),
+    (e) => { assert.equal(e.status, 409); assert.equal(e.code, 'OUTSIDE_WINDOW'); return true; },
+  );
+
+  // Refused BEFORE anything was written: no conversation, no message.
+  const [{ count: convs }] = await db`
+    select count(*)::int as count from conversations
+    where pharmacy_id = ${ctx.a.id} and customer_id = ${p}
+  `;
+  assert.equal(convs, 0);
+  // Scoped through the conversation: `messages` has no customer_id, which is
+  // itself the point — a message belongs to a thread, and the thread belongs
+  // to the patient.
+  const [{ count: msgs }] = await db`
+    select count(*)::int as count from messages m
+    join conversations c on c.id = m.conversation_id
+    where m.pharmacy_id = ${ctx.a.id} and c.customer_id = ${p}
+  `;
+  assert.equal(msgs, 0, 'a refused outreach must not leave a message behind');
+});
+
+test('once the 24-hour window closes the patient has to write again', { skip: SKIP && skipReason }, async () => {
+  const p = await patient(ctx.a.id);
+  await thread(ctx.a.id, p, { status: 'closed', window: hoursFromNow(-1) });
+
+  const state = await messages.patientOutreachState(ctx.a.id, p);
+  assert.equal(state.allowed, false);
+  assert.equal(state.reason, 'window_closed');
+
+  await assert.rejects(
+    () => messages.startPatientConversation(ctx.a.id, p, { body: 'Are you there?', topic: null, channel: 'whatsapp' }, { actorId: ctx.userA }),
+    (e) => { assert.equal(e.code, 'OUTSIDE_WINDOW'); return true; },
+  );
+
+  // The archived thread is untouched — §19: history is never changed
+  // because somebody tried to write.
+  const [{ count }] = await db`
+    select count(*)::int as count from conversations
+    where pharmacy_id = ${ctx.a.id} and customer_id = ${p} and status = 'open'
+  `;
+  assert.equal(count, 0);
+});
+
+test('an open thread is replied to, and naming it is how the screen says so', { skip: SKIP && skipReason }, async () => {
+  const p = await patient(ctx.a.id);
+  const open = await thread(ctx.a.id, p, { status: 'open', window: hoursFromNow(8) });
+
+  const state = await messages.patientOutreachState(ctx.a.id, p);
+  assert.equal(state.allowed, false);
+  assert.equal(state.reason, 'thread_open');
+  assert.equal(state.conversationId, open);
+
+  await assert.rejects(
+    () => messages.startPatientConversation(ctx.a.id, p, { body: 'Second thread', topic: null, channel: 'whatsapp' }, { actorId: ctx.userA }),
+    (e) => { assert.equal(e.code, 'THREAD_OPEN'); return true; },
+  );
+});
+
+test('inside the window the gate opens, and the window is CARRIED not reset', { skip: SKIP && skipReason }, async () => {
+  // The one allowed case: the patient wrote within 24 hours and the thread
+  // was archived. The send itself needs a connected provider, which a test
+  // database has none of — so this proves the GATE opens and then that the
+  // attempt stops at the provider, which is §34 behaving correctly.
+  const p = await patient(ctx.a.id);
+  const expires = hoursFromNow(8);
+  await thread(ctx.a.id, p, { status: 'closed', window: expires });
+
+  const state = await messages.patientOutreachState(ctx.a.id, p);
+  assert.equal(state.allowed, true, 'an archived thread inside the window may be continued');
+  assert.equal(new Date(state.windowExpiresAt).getTime(), expires.getTime(),
+    'the window reported is the PATIENT\u2019s, carried over, never a fresh 24 hours we minted');
+
+  // No connected WhatsApp account in a test database: the attempt is refused
+  // at the provider, visibly, rather than looking like it was sent (§34).
+  await assert.rejects(
+    () => messages.startPatientConversation(ctx.a.id, p, { body: 'Your refill is ready.', topic: 'medication', channel: 'whatsapp' }, { actorId: ctx.userA }),
+    (e) => { assert.equal(e.code, 'NOT_CONNECTED'); return true; },
+  );
+});
+
+/**
+ * A connected provider row, so the gate can be driven past the NOT_CONNECTED
+ * check and the conversation it creates can be inspected. The send itself
+ * still fails — there is no live socket in a test database — which is the
+ * point: the row is committed before the send, so what it carries is
+ * observable either way.
+ */
+async function connectedAccount(pharmacyId) {
+  const [a] = await db`
+    insert into whatsapp_accounts (pharmacy_id, provider, status)
+    values (${pharmacyId}, 'baileys', 'connected')
+    returning id
+  `;
+  return a.id;
+}
+
+// Found by mutation: resetting the window to a fresh 24 hours left every
+// test green, and that mutation is a live non-compliance bug.
+test('the new thread carries the patient\u2019s window, never one we minted', { skip: SKIP && skipReason }, async () => {
+  // The window belongs to the PATIENT’s last inbound message. Minting a
+  // fresh 24 hours because we sent something would be this product granting
+  // itself a permission WhatsApp never gave — our row would say the thread is
+  // live while the provider refuses the next send.
+  const p = await patient(ctx.a.id);
+  const expires = hoursFromNow(8);
+  await thread(ctx.a.id, p, { status: 'closed', window: expires });
+  await connectedAccount(ctx.a.id);
+
+  // The send fails (no socket). The conversation is committed before it, so
+  // what it carries is observable regardless.
+  await assert.rejects(() => messages.startPatientConversation(ctx.a.id, p,
+    { body: 'Your refill is ready.', topic: 'medication', channel: 'whatsapp' }, { actorId: ctx.userA }));
+
+  const [created] = await db`
+    select window_expires_at, status, workflow_state, mode, topic, channel
+    from conversations
+    where pharmacy_id = ${ctx.a.id} and customer_id = ${p} and status = 'open'
+  `;
+  assert.ok(created, 'the thread was opened');
+  assert.equal(new Date(created.window_expires_at).getTime(), expires.getTime(),
+    'the window was RESET instead of carried');
+
+  // And the rest of the row is what a pharmacist writing by hand means:
+  assert.equal(created.channel, 'whatsapp');
+  assert.equal(created.mode, 'human', 'a pharmacist is writing, so the assistant must not answer the reply');
+  assert.equal(created.topic, 'medication');
+});
+
+// Also found by mutation: deleting the in-transaction re-check left every
+// test green, because a race cannot be reproduced from a single caller.
+test('the gate is re-read inside the transaction that writes', { skip: SKIP && skipReason }, async () => {
+  // A window can close, or a colleague can open a thread, between the check
+  // that produces a good error message and the write that actually matters.
+  // GOLDEN-007 pins a guard the same way: by asserting the SHAPE, because the
+  // race itself is not reproducible in a test.
+  const src = require('node:fs').readFileSync(
+    require('node:path').join(__dirname, '..', 'services', 'messaging', 'patientMessages.js'), 'utf8');
+  const fn = src.slice(src.indexOf('async function startPatientConversation'));
+  const body = fn.slice(0, fn.indexOf('\n}\n'));
+
+  const begin = body.indexOf('db.begin');
+  assert.ok(begin > 0, 'the write happens in a transaction');
+  const inside = body.slice(begin);
+  assert.match(inside, /latestWhatsappThread\(tx/,
+    'the transaction must re-read the thread on its OWN connection, not trust the earlier read');
+  assert.match(inside, /outreachState\(/,
+    'and run the gate again before inserting');
+  // The re-check comes BEFORE the insert, not after it.
+  assert.ok(inside.indexOf('outreachState(') < inside.indexOf('insert into conversations'),
+    'the gate must run before the row is written');
+});
+test('the gate is this pharmacy\u2019s and this patient\u2019s', { skip: SKIP && skipReason }, async () => {
+  // GOLDEN-001 on a new read. Pharmacy B must not learn, from the gate,
+  // whether pharmacy A's patient wrote recently — that is contact metadata.
+  const p = await patient(ctx.a.id);
+  await thread(ctx.a.id, p, { status: 'closed', window: hoursFromNow(8) });
+
+  assert.equal((await messages.patientOutreachState(ctx.a.id, p)).allowed, true);
+  const theirs = await messages.patientOutreachState(ctx.b.id, p);
+  assert.equal(theirs.allowed, false, 'pharmacy B must not be able to message pharmacy A\u2019s patient');
+  assert.equal(theirs.reason, 'never_messaged', 'and learns nothing about the real history');
+
+  await assert.rejects(
+    () => messages.startPatientConversation(ctx.b.id, p, { body: 'Not mine', topic: null, channel: 'whatsapp' }, { actorId: ctx.userB }),
+    (e) => e.status === 409 || e.status === 404,
+  );
+});
+
+test('the patient\u2019s own read carries whether outreach is offered', { skip: SKIP && skipReason }, async () => {
+  // The screen must not guess. It is told, with the reason, so it can say
+  // WHY the button is unavailable instead of going grey.
+  const p = await patient(ctx.a.id);
+  const before = await messages.listPatientConversations(ctx.a.id, p, {}, { userId: ctx.userA });
+  assert.equal(before.outreach.allowed, false);
+  assert.equal(before.outreach.reason, 'never_messaged');
+  assert.ok(before.outreach.message, 'the screen is given words, not just a boolean');
+
+  await thread(ctx.a.id, p, { status: 'closed', window: hoursFromNow(8) });
+  const after = await messages.listPatientConversations(ctx.a.id, p, {}, { userId: ctx.userA });
+  assert.equal(after.outreach.allowed, true);
+  assert.equal(after.outreach.message, null);
 });

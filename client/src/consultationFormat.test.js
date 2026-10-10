@@ -14,6 +14,7 @@ import {
   problemLine, referralLine, RECORD_GONE, REFERRAL_NOT_CONSIDERED,
   NO_PROBLEMS, NO_INTERVENTIONS,
   amendedNote, canAmend, historyLine, snapshotLines, HISTORY_LABEL, NO_HISTORY,
+  sectionPlan, BUDGETED_SECTIONS, bannerFacts, patientLine, contextBlocks,
   AMEND_RETIRED,
 } from './consultationFormat.js';
 
@@ -304,4 +305,102 @@ test('an empty history claims nothing about the note', () => {
   expect(NO_HISTORY).toBe('No history recorded');
   expect(NO_HISTORY).toMatch(/recorded/i);
   expect(NO_HISTORY).not.toMatch(/unchanged|never|original|untouched/i);
+});
+
+// ---- the redesign: how much a pharmacist is shown ------------------------
+
+// THE MOST IMPORTANT TEST IN THIS BLOCK.
+test('a minor ailment does not open the wall a medication review needs', () => {
+  // §31, and the complaint that caused it: the first build showed all
+  // fourteen sections for every type, so a three-minute cough consultation
+  // presented the same form as a comprehensive review.
+  const minor = {
+    definition: { requiredSections: ['reason', 'assessment', 'plan'], emphasis: ['subjective', 'objective'] },
+  };
+  const plan = sectionPlan(minor, {});
+  expect(plan.shown).toEqual(['subjective', 'objective']);
+  // Everything else is one click away, not deleted: a pharmacist who needs
+  // Referral on a cough must still be able to reach it.
+  expect(plan.more).toContain('referral');
+  expect(plan.more).toContain('problems');
+
+  // A medication review opens with what IT is about.
+  const review = {
+    definition: { requiredSections: ['reason', 'assessment', 'plan'], emphasis: ['medications', 'assessment', 'interventions'] },
+  };
+  expect(sectionPlan(review, {}).shown).toContain('interventions');
+});
+
+test('the More control promises exactly what it reveals', () => {
+  // Found by opening the screen and counting the headings: it said "More
+  // sections (8)" and revealed seven. `amend` and `history` are decided by
+  // the note's own state, so counting them in the budget over-promised.
+  const note = { definition: { requiredSections: [], emphasis: [] } };
+  const plan = sectionPlan(note, {});
+
+  // Every budgeted section lands in exactly one of the two lists...
+  expect([...plan.shown, ...plan.more].sort()).toEqual([...BUDGETED_SECTIONS].sort());
+  expect(plan.shown.length + plan.more.length).toBe(BUDGETED_SECTIONS.length);
+
+  // ...and the always-on and state-driven sections are in NEITHER, because
+  // the control does not govern them.
+  for (const id of ['reason', 'assessment', 'plan', 'summary', 'amend', 'history']) {
+    expect(plan.shown, `${id} must not be budgeted`).not.toContain(id);
+    expect(plan.more, `${id} must not be counted as hidden`).not.toContain(id);
+  }
+});
+
+test('a section with something in it is never hidden', () => {
+  // Hiding a section that has content is how a pharmacist loses a referral
+  // they already recorded.
+  const note = { definition: { requiredSections: [], emphasis: [] } };
+  expect(sectionPlan(note, {}).more).toContain('referral');
+  expect(sectionPlan(note, { referral: true }).shown).toContain('referral');
+  expect(sectionPlan(note, { referral: true }).more).not.toContain('referral');
+});
+
+test('the banner keeps "not recorded" and "none known" apart', () => {
+  // The strongest possible place to tell a pharmacist somebody is safe when
+  // nobody has ever asked. The allergy record has distinguished these since
+  // 0058 and the banner must not flatten them.
+  const known = bannerFacts({ allergies: { state: 'known', allergies: [{ allergenName: 'Penicillins' }] } });
+  expect(known.allergyText).toBe('Penicillins');
+  expect(known.allergyTone).toBe('ui-tone-1');
+
+  const none = bannerFacts({ allergies: { state: 'none_known', allergies: [] } });
+  expect(none.allergyText).toBe('No known allergies');
+  expect(none.allergyTone).toBe(null);
+
+  // Nobody asked: NOT the same claim, and never tinted.
+  const unasked = bannerFacts({ allergies: { state: 'not_assessed', allergies: [] } });
+  expect(unasked.allergyText).toBe('Allergies not recorded');
+  expect(unasked.allergyText).not.toMatch(/no known/i);
+  expect(unasked.allergyTone).toBe(null);
+
+  // And a context that failed to load says the same honest thing.
+  expect(bannerFacts(null).allergyText).toBe('Allergies not recorded');
+});
+
+test('the patient line invents no age', () => {
+  expect(patientLine({ age: 32, sex: 'female' })).toBe('32 yrs \u00b7 F');
+  expect(patientLine({ age: 32, sex: null })).toBe('32 yrs');
+  // An age nobody recorded shows nothing — never 0, never a guess.
+  expect(patientLine({ age: null, sex: 'male' })).toBe('M');
+  expect(patientLine({ age: null, sex: null })).toBe(null);
+  expect(patientLine(null)).toBe(null);
+});
+
+test('every context block points at the section that owns it, and says when empty', () => {
+  // §12: "this is context only". The column reads; the sections own.
+  const blocks = contextBlocks({});
+  expect(blocks.length).toBeGreaterThan(4);
+  for (const b of blocks) {
+    expect(b.tab, `${b.id} has nowhere to open`).toBeTruthy();
+    // An empty block SAYS it is empty rather than vanishing: a missing panel
+    // and one with nothing in it mean different things.
+    expect(b.items).toEqual([]);
+    expect(b.empty, `${b.id} disappears when empty`).toBeTruthy();
+    expect(b.empty).not.toMatch(/healthy|fine|all clear|normal/i);
+  }
+  expect(contextBlocks(null)).toEqual([]);
 });

@@ -16,9 +16,17 @@ import { fileURLToPath } from 'node:url';
 const SRC = path.dirname(fileURLToPath(import.meta.url));
 const CSS = fs.readFileSync(path.join(SRC, 'index.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 const JSX = fs.readFileSync(path.join(SRC, 'Consultation.jsx'), 'utf8');
+const NOTES = fs.readFileSync(path.join(SRC, 'ConsultationNotes.jsx'), 'utf8');
+const APP = fs.readFileSync(path.join(SRC, 'App.jsx'), 'utf8');
+// EXTENDED 2026-10-10 with the AI scribe, which is a second file rendering
+// inside this screen. Leaving it out would not have failed anything — it
+// would have silently exempted the newest `ui-` classes on the workspace
+// from the one test that checks a class name was kept, which is exactly the
+// gap this file was written after.
+const SCRIBE = fs.readFileSync(path.join(SRC, 'ConsultationScribe.jsx'), 'utf8');
 
 /** Every class name the workspace asks index.css for. */
-const usedClasses = [...JSX.matchAll(/className=(?:"([^"]+)"|\{`([^`]+)`\})/g)]
+const usedClasses = [...`${JSX}\n${SCRIBE}`.matchAll(/className=(?:"([^"]+)"|\{`([^`]+)`\})/g)]
   .flatMap((m) => (m[1] || m[2]).split(/\s+/))
   .map((c) => c.replace(/\$\{.*/, '').trim())
   .filter((c) => c.startsWith('ui-'));
@@ -40,17 +48,40 @@ test('every ui- class the workspace uses is actually defined', () => {
   expect(usedClasses.length).toBeGreaterThan(15);
 });
 
-test('a tone is carried by a pill, never by a block that fills the panel', () => {
+test('a tone is carried by an inline mark, never by a block that fills the panel', () => {
   // Found by reading the computed styles on the real screen: an emergency
-  // referral put `ui-tone-1` on a <dd>, which is display:block — so instead of
-  // an amber label the panel got a 662px tinted BAR, and `.ui-consult-summary
-  // dd` outranked it on colour so the text was not even amber.
+  // referral put `ui-tone-1` on a <dd>, which is display:block — so instead
+  // of an amber label the panel got a 662px tinted BAR, and the summary rule
+  // outranked it on colour so the text was not even amber.
+  //
+  // AMENDED 2026-10-04, and TIGHTENED. The first version matched the class
+  // NAME against /-pill/, which was a proxy for the shape. The redesign added
+  // `.ui-consult-fact` — inline-flex, fully rounded, a pill by every property
+  // that matters — and the name check failed it while a class called
+  // `x-pill` that was secretly a block would have passed. So it now checks
+  // the CSS itself.
   expect(CSS).toMatch(/\.ui-tone-1\s*\{[^}]*background/);
-  // Every tone in this screen goes on a span, and that span is a pill.
+
   for (const m of JSX.matchAll(/className=\{`([^`]*\$\{[a-zA-Z.]*tone[^`]*)`\}/g)) {
-    expect(m[1], `tone used without a pill: ${m[1]}`).toMatch(/ui-\w+-pill/);
+    const carrier = m[1].split('$')[0].trim().split(/\s+/).filter(Boolean).pop();
+    expect(carrier, `a tone with no class to sit on: ${m[1]}`).toBeTruthy();
+
+    // Find that class in the stylesheet and prove it is an inline mark.
+    const rule = CSS.match(new RegExp(String.raw`\.${carrier}\s*\{([^}]*)\}`));
+    expect(rule, `${carrier} carries a tone but has no CSS rule`).toBeTruthy();
+    const body = rule[1];
+    // ROUNDED, so the tone reads as a mark rather than a rectangle...
+    expect(body, `${carrier} carries a tone but is not rounded`).toMatch(/border-radius/);
+    // ...and NOT a block, which is what painted the 662px bar. An explicit
+    // `display: inline` is deliberately NOT required: `.ui-cprog-pill` is a
+    // <span>, already inline, and demanding the declaration would only add a
+    // line of CSS that changes nothing.
+    expect(body, `${carrier} carries a tone and is a block — it will paint a bar`)
+      .not.toMatch(/display:\s*block/);
   }
-  // And no element is given a bare tone as its whole class list.
+
+  // And no element is given a bare tone as its whole class list, which is
+  // the shape the original defect had.
   expect(JSX).not.toMatch(/className=\{\w*\.?tone\s*\|\|\s*''\}/);
 });
 
@@ -75,4 +106,180 @@ test('the note reads as one column on a phone, with no two-line links', () => {
   // A "Remove" pushed to the right of a wrapped row becomes a second line of
   // clickable text at phone width, which is the one thing that must not happen.
   expect(mobile).toMatch(/\.ui-consult-problems \.ui-psection-link/);
+});
+
+// THE MOST IMPORTANT TEST IN THIS FILE.
+test('one place marker at a time, and the note is the subject', () => {
+  // Reported 2026-10-04 as "amateur", and it measured out as FIVE stacked
+  // place markers on one screen: the app shell’s title, the screen’s own
+  // heading, "Choose another patient", "Consultations", and the note type —
+  // two of them back links that looked identical and went to different
+  // places, with the note (the actual subject) set SMALLER than the module
+  // label above it.
+
+  // The screen titles itself, the way Setup does. Without this the shell
+  // adds a sixth marker back.
+  expect(APP, 'App.jsx no longer exempts consultation-notes from the page title')
+    .toMatch(/tab !== 'consultation-notes'/);
+
+  // Exactly ONE h1 per state, and the open note’s is the note itself.
+  const noteHeads = [...JSX.matchAll(/<h1>\{([^}]+)\}<\/h1>/g)].map((m) => m[1]);
+  expect(noteHeads.length, 'the open note must have exactly one h1').toBeGreaterThan(0);
+  expect(noteHeads.join(' ')).toMatch(/typeLabel|patientName/);
+
+  // And ONE way back out of each state. Two back links that read the same
+  // and go to different places is the specific thing that was wrong.
+  const backs = [...JSX.matchAll(/className="ui-consult-back"/g)];
+  expect(backs.length, 'more than two back controls is the old stack again')
+    .toBeLessThanOrEqual(2);
+
+  // The old duplicated links are gone by name.
+  expect(JSX).not.toMatch(/\u2190 Consultations</);
+  expect(NOTES, 'ConsultationNotes must not add its own back link above the note')
+    .not.toMatch(/Choose another patient/);
+});
+
+test('the note header outranks the chrome around it', () => {
+  // The note was 15px while the module label above it was 20px — the
+  // hierarchy upside down. Whatever you are looking at is the h1.
+  const rule = CSS.match(/\.ui-consult-page h1\s*\{([^}]*)\}/);
+  expect(rule, '.ui-consult-page h1 has no rule').toBeTruthy();
+  const size = Number((rule[1].match(/font-size:\s*(\d+)px/) || [])[1]);
+  expect(size, `the note title is ${size}px — too small to be the subject`)
+    .toBeGreaterThanOrEqual(18);
+
+  // design.md: 14px / 600 section headings. They were 13px and read as
+  // field labels rather than as the sections they open.
+  const head = CSS.match(/\.ui-consult-main \.ui-psection-head\s*\{([^}]*)\}/);
+  expect(head).toBeTruthy();
+  expect(head[1]).toMatch(/font-size:\s*14px/);
+  expect(head[1]).toMatch(/font-weight:\s*600/);
+});
+
+test('a field is a field, not a page-wide grey bar', () => {
+  // At 1440px the documentation column is 840px, and an unconstrained
+  // single-line input filled all of it. The app caps prose in `ch`
+  // (.ui-mrev-blurb, .ui-mrev-blocking) and this follows that idiom.
+  // A selector appears in more than one rule — the phase-2 one that gives the
+  // field its padding, and the later one that caps it. So this asks whether
+  // ANY rule for that selector carries the cap, rather than whether the first
+  // one does: the first version matched the padding rule and failed on code
+  // that was correct.
+  const cappedIn = (selector) => [...CSS.matchAll(
+    new RegExp(String.raw`${selector}[^{}]*\{([^}]*)\}`, 'g'),
+  )].some((m) => /max-width:\s*\d+ch/.test(m[1]));
+
+  expect(cappedIn(String.raw`\.ui-consult-field select`),
+    'single-line consultation fields are uncapped — they fill the column').toBe(true);
+  expect(cappedIn(String.raw`\.ui-consult-field textarea`),
+    'consultation prose fields have no measure').toBe(true);
+});
+
+test('a one-sentence notice does not use the empty-state box', () => {
+  // `.ui-allergy-failed` is 28px of padding and a dashed border — the
+  // EMPTY-STATE style. A retired note used it for one sentence and got a
+  // wall of whitespace where its content should be.
+  expect(JSX).toMatch(/ui-consult-notice/);
+  const rule = CSS.match(/\.ui-consult-notice\s*\{([^}]*)\}/);
+  expect(rule).toBeTruthy();
+  expect(rule[1], 'the notice is dashed like an empty state').not.toMatch(/dashed/);
+});
+
+/* ==========================================================================
+ * The AI scribe, as structural invariants (SCRIBE_PLAN.md)
+ *
+ * This component makes four promises in its own header. Three of them are
+ * properties of the FILE rather than of anything a render test could reach,
+ * and they are the three that matter: it does not save, it does not keep the
+ * audio, and it does not open the microphone before consent.
+ * ======================================================================== */
+
+// THE MOST IMPORTANT SCRIBE TEST IN THIS FILE.
+test('the scribe never writes to the note', () => {
+  // A draft the pharmacist has not accepted must leave NO trace. If this
+  // component could PATCH the consultation, the note would have two writers
+  // and a machine draft could reach the record without anybody agreeing to
+  // it — which is the one thing the whole review step exists to prevent.
+  //
+  // Accepting calls the parent’s `set`, exactly as a keystroke does, and the
+  // ordinary Save is still what commits it.
+  const calls = [...SCRIBE.matchAll(/fetch\(([^)]*)/g)].map((m) => m[1]);
+  expect(calls.length, 'the fetch extraction found nothing').toBeGreaterThan(2);
+
+  // Every endpoint it touches is a scribe endpoint.
+  for (const call of calls) {
+    expect(call, `the scribe calls something that is not a scribe endpoint: ${call}`)
+      .toMatch(/scribe/);
+  }
+
+  // And it issues no PATCH, PUT or DELETE at all — the methods that change a
+  // record in this API.
+  expect(SCRIBE).not.toMatch(/method:\s*.(?:PATCH|PUT|DELETE)./);
+
+  // The accept path hands the text UPWARDS and nowhere else.
+  expect(SCRIBE).toMatch(/onAccept\?\.\(\{ subjective: draft \}\)/);
+});
+
+test('the scribe keeps no audio anywhere', () => {
+  // "The recording is not kept" is said to the patient’s face in the consent
+  // script. On the server it is true because nothing in the schema can hold
+  // one; here it is true because the Blob is handed to fetch and dropped.
+  //
+  // Every mechanism a browser offers for keeping it is named, because this
+  // failure would be invisible: the feature would work perfectly and quietly
+  // accumulate recordings of real patients.
+  for (const keeps of [
+    /localStorage/, /sessionStorage/, /indexedDB/i, /IDBDatabase/,
+    /createObjectURL/, /download/i, /showSaveFilePicker/, /FileSystemFileHandle/,
+    /sendBeacon/, /caches\./,
+  ]) {
+    expect(SCRIBE, `the scribe can keep audio via ${keeps}`).not.toMatch(keeps);
+  }
+
+  // The chunks are released, and on UNMOUNT as well as on stop — a
+  // pharmacist who navigates away mid-recording must not leave the
+  // microphone live or the audio sitting in memory.
+  expect(SCRIBE).toMatch(/chunksRef\.current = \[\]/);
+  expect(SCRIBE).toMatch(/useEffect\(release, \[release\]\)|useEffect\(\s*\(\)\s*=>\s*release\s*,/);
+  expect(SCRIBE).toMatch(/getTracks/);
+});
+
+test('the microphone cannot be reached before consent is on the server', () => {
+  // ABSENT, not disabled. A greyed-out record button is an invitation to
+  // find the way round it, and the way round it is to tick the consent box
+  // without saying anything to the patient.
+  //
+  // ORDERING, not slicing: the consent branch and its early return both come
+  // BEFORE any mention of a microphone in the file, so there is no path from
+  // "nobody asked" to a recording.
+  const gate = SCRIBE.indexOf('if (!consentAt) {');
+  expect(gate, 'the consent gate is gone').toBeGreaterThan(-1);
+
+  const mic = SCRIBE.indexOf('data-step="unavailable"');
+  expect(mic).toBeGreaterThan(gate);
+  const branch = SCRIBE.slice(gate, mic);
+  expect(branch, 'the consent branch does not return early').toMatch(/return \(/);
+  expect(branch, 'the consent branch can reach the microphone')
+    .not.toMatch(/getUserMedia|MediaRecorder/);
+
+  // And the consent read comes from the NOTE — the server’s answer — rather
+  // than from a flag this component sets for itself, which the client could
+  // simply decline to unset.
+  expect(SCRIBE).toMatch(/const consentAt = note\?\.scribeConsentAt \|\| null;/);
+});
+
+test('the scribe is only offered where the server says it exists', () => {
+  // An unconfigured deployment shows no microphone at all, rather than a
+  // control that fails when pressed. The answer comes from the options
+  // endpoint, so one deployment setting turns the whole feature off.
+  expect(SCRIBE).toMatch(/if \(!available\) return null;/);
+  expect(JSX).toMatch(/available=\{Boolean\(options\?\.scribe\?\.available\)\}/);
+
+  // And only while the note can still be written into. A draft for a
+  // finalised note has nowhere to go, which the server refuses too.
+  expect(JSX).toMatch(/\{open && \(/);
+  const at = JSX.indexOf('<ConsultationScribe');
+  expect(at).toBeGreaterThan(-1);
+  expect(JSX.slice(Math.max(0, at - 200), at), 'the scribe renders on a finalised note')
+    .toMatch(/\{open && \(/);
 });

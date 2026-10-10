@@ -442,6 +442,47 @@ nav[aria-label="Sections"] {
     --rail-pill-inset: 0 0 0 0;
   }
 }
+/* PINNED. The rail opens on hover and closes when the pointer leaves,
+   which is right for a cursor passing through and wrong for somebody who
+   wants to see where they are while they work. design.md said "there is no
+   toggle"; the owner asked for one on 2026-10-04 and the doc is amended
+   rather than contradicted.
+
+   It sets NO styles of its own — exactly the variables hover and focus set,
+   so there is one open look with three ways into it. The difference is only
+   that this one does not close itself, and that the strip behind it widens
+   so the panel PUSHES the page instead of covering it. */
+.ui-rail[data-pinned='true'] {
+  --rail-inset: -24px;
+  --rail-shadow: none;
+  --rail-dur: 200ms;
+  --rail-ease: var(--ui-ease-out);
+  --rail-delay: 0ms;
+  --rail-label-opacity: 1;
+  --rail-label-shift: 0px;
+  --rail-label-dur: 200ms;
+  --rail-label-delay: 0ms;
+  --rail-label-stagger: 0ms;
+  --rail-closed-only: 0;
+  --rail-closed-delay: 0ms;
+  --rail-pill-inset: 0 0 0 0;
+}
+
+/* The pin itself. Quiet until pointed at: it is a preference, not an
+   action, and it must not compete with the navigation it sits above. */
+.ui-rail-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--ui-ink-faint);
+  font-size: 13px;
+  line-height: 1;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.ui-rail-pin:hover { background: var(--ui-sunk); color: var(--ui-ink); }
 /* Keyboard: :focus-visible, not :focus — a mouse click leaves focus on the
    button it clicked, and plain :focus-within would then hold the panel open
    after the pointer had left. */
@@ -3742,6 +3783,131 @@ tr:focus-within .ui-row-actions,
 
 .ui-consult-actions { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 10px; }
 
+/* ---- the AI scribe (SCRIBE_PLAN.md) ------------------------------------
+
+   It sits inside the Subjective section, above the box it drafts into, and
+   is SUNK rather than raised: it is a tool beside the note, not part of the
+   record, and the surface change is what says so at a glance.
+
+   NO RED ANYWHERE, including while recording. design.md reserves red for a
+   person waiting on a human, and a live microphone is not that — the
+   recording state is carried by a weight change and a dot, the way the rest
+   of this module carries state. A red pulsing dot here would compete with
+   the one thing on this screen that is allowed to be urgent. */
+.ui-scribe {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--ui-sunk);
+}
+.ui-scribe > p { margin: 0; }
+.ui-scribe > p + p,
+.ui-scribe > * + * { margin-top: 8px; }
+
+/* The consent script, marked as something to SAY. Italic and indented so a
+   pharmacist can see at a glance that it is speech rather than interface
+   text — the one place in this module where italics are the right answer,
+   because it is a quotation. */
+.ui-scribe-script {
+  margin: 8px 0;
+  padding: 0 0 0 10px;
+  border-left: 2px solid var(--ui-line-strong, var(--ui-line));
+  color: var(--ui-ink);
+  font-size: 13.5px;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+/* Recording. A weight change and a dot, no colour of its own. */
+.ui-scribe-live { font-weight: 600; }
+.ui-scribe-live::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: baseline;
+}
+
+/* The transcript. One turn per line, the voice label in front of it, so
+   "who said this" is readable down the left edge rather than needing to be
+   parsed out of a paragraph. */
+.ui-scribe-turns {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  /* A transcript can be long. It scrolls rather than pushing the Subjective
+     box off the screen, which is the thing the pharmacist is working in. */
+  max-height: 260px;
+  overflow-y: auto;
+}
+.ui-scribe-turns > li {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ui-scribe-turns > li > span:last-child { color: var(--ui-ink); }
+
+/* The transcript group: what was heard, the question about it, and the two
+   actions. Its own element so the spacing between those three is set once
+   rather than inherited from the panel's generic sibling rule — which stacks
+   a heading, a list and a fieldset at the same distance and reads as three
+   unrelated things. */
+.ui-scribe-heard { display: grid; gap: 2px; }
+.ui-scribe-heard > p { margin: 0; }
+
+/* The one question. A fieldset, because it IS a question with options and
+   nothing here should look like a setting that already has a default. */
+.ui-scribe-who { margin: 10px 0 0; padding: 0; border: 0; }
+.ui-scribe-who legend {
+  padding: 0;
+  color: var(--ui-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.ui-scribe-who label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 14px 0 0;
+  font-size: 13.5px;
+}
+
+.ui-scribe-actions { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; }
+
+/* The draft. Bordered, so the machine text is visibly a thing sitting on
+   the surface rather than part of the note underneath it. */
+.ui-scribe-draft textarea {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  resize: vertical;
+}
+.ui-scribe-raw { margin-top: 10px; }
+.ui-scribe-raw summary {
+  color: var(--ui-ink-faint);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+/* Narrow screens: the voice label stacks above its line rather than
+   squeezing the words into a 2-word column. */
+@media (max-width: 560px) {
+  .ui-scribe-turns > li { grid-template-columns: 1fr; gap: 0; }
+}
+
+
 /* The problem list and the interventions. Numbered, because an intervention
    says "Problem 3" rather than repeating a label that can be edited. */
 .ui-consult-problems { display: grid; gap: 8px; margin: 0 0 10px; padding: 0; list-style: none; }
@@ -3820,4 +3986,277 @@ tr:focus-within .ui-row-actions,
 
 @media (max-width: 720px) {
   .ui-consult-events > li > .ui-cprog-name { flex: 1 1 100%; }
+}
+
+/* §15 — why "+ New Message" is unavailable, when it is.
+   A sentence rather than a greyed-out button: a pharmacist who sees a dead
+   control learns that the software is broken, and a pharmacist who reads
+   "the patient has to write first" learns the rule they actually work
+   inside. No tone — this is not a warning, it is how WhatsApp works. */
+.ui-msg-outreach-blocked {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--ui-sunk);
+}
+.ui-msg-outreach-blocked strong { color: var(--ui-ink); font-weight: 600; }
+
+/* ── the consultation redesign: banner + split ───────────────────────────
+   The first build was fourteen sections in one column with 188 words of
+   explanation. The explanation was compensating for the missing column:
+   a paragraph said measurements live in Vitals, where this shows the
+   vitals and a button that opens them. Structure says it better, and
+   says it every time. */
+
+/* §12 — the three facts that change what is safe to do, above everything. */
+.ui-consult-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 18px;
+  margin: 0 16px 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-surface);
+}
+.ui-consult-banner-who { display: flex; align-items: baseline; gap: 10px; }
+.ui-consult-banner-who h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--ui-ink); }
+.ui-consult-banner-facts { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-left: auto; }
+
+/* A fact reads the same whether or not it is clickable — the only
+   difference is the cursor and the hover. */
+.ui-consult-fact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--ui-sunk);
+  color: var(--ui-ink);
+  font-size: 12.5px;
+  text-align: left;
+}
+button.ui-consult-fact { transition: background-color 140ms ease; }
+button.ui-consult-fact:hover { background: var(--ui-sunk-hover); }
+.ui-consult-fact-key {
+  color: var(--ui-ink-faint);
+  font-size: 10.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* §3 — documentation on the work surface, patient context beside it. */
+.ui-consult-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 20px;
+  align-items: start;
+  padding: 0 16px;
+}
+.ui-consult-split > .ui-consult-main { min-width: 0; }
+/* The sections already carry their own 16px gutter from phase 1. */
+.ui-consult-split .ui-consult-body { padding-left: 0; padding-right: 0; }
+.ui-consult-split .ui-psection-head { padding-left: 0; padding-right: 0; }
+
+.ui-consult-context { display: grid; gap: 12px; position: sticky; top: 12px; }
+.ui-consult-ctx-block {
+  padding: 10px 12px;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  background: var(--ui-surface);
+}
+.ui-consult-ctx-block h3 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 6px;
+  color: var(--ui-ink-faint);
+  font-size: 10.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ui-consult-ctx-open { color: var(--ui-accent-ink); font-size: 11px; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.ui-consult-ctx-open:hover { text-decoration: underline; text-underline-offset: 2px; }
+.ui-consult-ctx-block ul { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.ui-consult-ctx-block li { color: var(--ui-ink); font-size: 12.5px; line-height: 1.4; }
+.ui-consult-ctx-empty { margin: 0; color: var(--ui-ink-faint); font-size: 12px; }
+
+.ui-consult-more { margin: 10px 0 0; }
+.ui-consult-foot { padding: 0 16px; }
+
+@media (max-width: 1000px) {
+  /* The context goes BELOW the note, never into a drawer: a drawer hides
+     the allergies behind a tap, and the allergies are the reason the
+     banner exists. The banner itself stays at the top on every width. */
+  .ui-consult-split { grid-template-columns: minmax(0, 1fr); }
+  .ui-consult-context { position: static; }
+  .ui-consult-banner-facts { margin-left: 0; }
+}
+
+/* ── the consultation page header ────────────────────────────────────────
+   ONE PLACE MARKER AT A TIME. The first build stacked five: the app shell's
+   title, the screen's own heading, "Choose another patient", "Consultations"
+   and the note's type — two of them back links that looked identical and
+   went to different places, and the note (the actual subject) set SMALLER
+   than the module label above it.
+
+   Now the screen titles itself, the way Setup does, and whatever you are
+   looking at is the h1: the module, then the patient, then the note. */
+.ui-consult-page { margin: 0 16px 16px; }
+.ui-consult-page h1 {
+  margin: 0;
+  color: var(--ui-ink);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.ui-consult-page > p {
+  margin: 2px 0 0;
+  color: var(--ui-ink-soft);
+  font-size: 13.5px;
+}
+
+/* The one way back, above the title rather than beside it, so it reads as
+   "out of here" and never as part of the heading. */
+.ui-consult-back {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 6px;
+  color: var(--ui-ink-soft);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.ui-consult-back:hover { color: var(--ui-ink); text-decoration: underline; text-underline-offset: 2px; }
+
+/* Status, date and amendment count on ONE line under the title, instead of
+   scattered across three rows. */
+.ui-consult-page-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 6px;
+  color: var(--ui-ink-soft);
+  font-size: 12.5px;
+}
+.ui-consult-page-meta > .ui-cprog-pill { margin-left: 0; }
+
+/* An inline notice, not the dashed empty-state box: that style is 28px of
+   padding and a dashed border, which gave a one-sentence notice more room
+   than the note it was about. */
+.ui-consult-notice {
+  margin: 0 16px 14px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--ui-tone-1-bg);
+  color: var(--ui-tone-1-fg);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ui-consult-notice strong { font-weight: 600; }
+
+/* design.md: 14px / 600 section headings. The first build set them at 13px
+   and they read as field labels rather than as the sections they open. */
+.ui-consult-main .ui-psection-head { font-size: 14px; font-weight: 600; }
+
+/* The banner's medicine list is the one thing here that can run long. */
+.ui-consult-fact > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 34ch;
+}
+
+/* A readable measure on the note's own fields.
+   At 1440px the documentation column is 840px, and a single-line input
+   stretched the whole way reads as a page-wide grey bar rather than as a
+   field — one of the things that made this screen feel unfinished. The app
+   already caps prose in `ch` (.ui-mrev-blurb, .ui-mrev-blocking), so this
+   follows that idiom rather than inventing pixel widths.
+
+   Short answers get a short box; prose gets the classic measure. */
+.ui-consult-field input,
+.ui-consult-field select { max-width: 40ch; }
+.ui-consult-field textarea { max-width: 72ch; }
+/* The summary and the triage panel are read, not typed, and the same measure
+   keeps them legible instead of running the full column. */
+.ui-consult-summary dd,
+.ui-consult-triage dd { max-width: 72ch; }
+
+/* ── the consultation list ───────────────────────────────────────────────
+   It borrowed the follow-up module's list, which is laid out for ONE line
+   of text — so four inline spans (type, reason, date, state) had nothing
+   holding them apart and the reason wrapped underneath at a random indent.
+   A pharmacist scans this for two things: what kind of consultation, and
+   what state it is in. Those are the two anchors. */
+.ui-consult-start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 14px;
+}
+.ui-consult-start select { min-width: 22ch; }
+
+.ui-consult-list {
+  display: grid;
+  gap: 6px;
+  margin: 0 16px;
+  padding: 0;
+  list-style: none;
+}
+.ui-consult-list > li > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  text-align: left;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+.ui-consult-list > li > button:hover {
+  background: var(--ui-sunk);
+  border-color: var(--ui-line-strong);
+}
+
+.ui-consult-list-main { display: grid; gap: 2px; min-width: 0; }
+.ui-consult-list-type {
+  color: var(--ui-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+/* The reason is the pharmacist's own words and can be long; one line, and
+   it gives way rather than pushing the state off the row. */
+.ui-consult-list-reason {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-ink-soft);
+  font-size: 12.5px;
+}
+
+.ui-consult-list-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+.ui-consult-list-when {
+  color: var(--ui-ink-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.ui-consult-list-meta > .ui-cprog-pill { margin-left: 0; }
+
+@media (max-width: 560px) {
+  /* The date and the state drop under the type rather than squeezing it. */
+  .ui-consult-list > li > button { flex-wrap: wrap; }
+  .ui-consult-list-meta { width: 100%; }
 }

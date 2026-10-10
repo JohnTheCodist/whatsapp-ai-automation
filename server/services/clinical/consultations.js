@@ -66,7 +66,8 @@ const CONSULTATION_SELECT = `
   referral_destination, referral_reason, referral_urgency, referral_notes,
   prescription_issues, prescriber_contacted_at, prescriber_outcome, care_program_id,
   started_at, created_by, updated_by, completed_at, finalised_by,
-  error_reason, created_at, updated_at
+  error_reason, created_at, updated_at,
+  scribe_consent_at, scribe_consent_by
 `;
 
 function shape(row, { definition = null } = {}) {
@@ -95,6 +96,12 @@ function shape(row, { definition = null } = {}) {
     completedAt: row.completed_at || null,
     finalisedBy: row.finalised_by || null,
     errorReason: row.error_reason || null,
+    // 0071. When the patient was told this consultation would be
+    // transcribed, and who confirmed it. NULL means nobody has been asked,
+    // and the scribe refuses to record — so this is not decoration on the
+    // screen, it is the gate's own input.
+    scribeConsentAt: row.scribe_consent_at || null,
+    scribeConsentBy: row.scribe_consent_by || null,
     // §17. NULL destination means referral was never considered; 'none' means
     // a pharmacist considered it and decided against. The summary renders
     // only the second, and the screen must keep them apart too.
@@ -1053,6 +1060,163 @@ async function touch(tx, pharmacyId, consultationId, actor) {
   `;
 }
 
+/**
+ * Who the pharmacist is looking at, for the banner (§12).
+ *
+ * Name, age and sex and NOTHING else. The banner sits above a clinical note
+ * all day; a phone number or an address on it is contact data on screen in a
+ * shop, read by whoever walks past the counter, for no clinical purpose.
+ *
+ * The age is DERIVED from the date of birth rather than stored, so it cannot
+ * go stale, and is null when there is no date — a patient whose age nobody
+ * recorded shows no age, never 0 and never a guess.
+ */
+async function consultationPatient(pharmacyId, customerId, { sql = null } = {}) {
+  assertPharmacyId(pharmacyId);
+  const db = sql || getSql();
+  const [row] = await db`
+    select c.display_name, c.full_name, p.date_of_birth, p.age_years, p.sex
+    from customers c
+    left join patient_profiles p
+      on p.customer_id = c.id and p.pharmacy_id = ${pharmacyId}
+    where c.id = ${customerId} and c.pharmacy_id = ${pharmacyId}
+  `;
+  if (!row) return null;
+
+  let age = row.age_years == null ? null : Number(row.age_years);
+  if (age == null && row.date_of_birth) {
+    const dob = new Date(row.date_of_birth);
+    if (!Number.isNaN(dob.getTime())) {
+      const now = new Date();
+      age = now.getUTCFullYear() - dob.getUTCFullYear();
+      const beforeBirthday = now.getUTCMonth() < dob.getUTCMonth()
+        || (now.getUTCMonth() === dob.getUTCMonth() && now.getUTCDate() < dob.getUTCDate());
+      if (beforeBirthday) age -= 1;
+      if (age < 0 || age > 130) age = null;
+    }
+  }
+
+  return {
+    name: row.full_name || row.display_name || null,
+    age,
+    sex: row.sex || null,
+  };
+}
+/* ==========================================================================
+ * The AI scribe (SCRIBE_PLAN.md)
+ * ======================================================================== */
+
+/**
+ * Record that the patient was told this consultation would be transcribed.
+ *
+ * NO ROLE GATE, deliberately. The person who asks the patient is the person
+ * standing in front of them, and in a Nigerian community pharmacy that is
+ * often a technician or an intern. Requiring a pharmacist to confirm consent
+ * would mean either waiting for one or — far more likely — the nearest person
+ * clicking it on their behalf, which is a worse record than the true one.
+ *
+ * Finalising the note still needs a pharmacist. That gate is untouched.
+ *
+ * A FINALISED note is refused. There is nothing left to write into, so a
+ * microphone opened against one could only produce a draft with nowhere to
+ * go — and a consent recorded against a closed record claims a conversation
+ * happened that the note cannot show.
+ */
+async function recordScribeConsent(pharmacyId, customerId, id, actor = {}) {
+  assertPharmacyId(pharmacyId);
+  const db = getSql();
+
+  return db.begin(async (tx) => {
+    const [existing] = await tx`
+      select id, status, scribe_consent_at from pharmacist_consultations
+      where id = ${id} and pharmacy_id = ${pharmacyId} and customer_id = ${customerId}
+      for update
+    `;
+    if (!existing) {
+      const err = new Error('Consultation not found.');
+      err.status = 404; err.code = 'NOT_FOUND';
+      throw err;
+    }
+    if (!OPEN_STATUSES.includes(existing.status)) {
+      const err = new Error('This consultation is finalised, so there is nothing left to transcribe.');
+      err.status = 409; err.code = 'FINALISED';
+      throw err;
+    }
+
+    // Already recorded: keep the FIRST confirmation. Overwriting it would
+    // move the moment the patient was actually asked, which is the one fact
+    // this column exists to hold.
+    if (existing.scribe_consent_at) {
+      return getConsultation(pharmacyId, customerId, id, { sql: tx });
+    }
+
+    await tx`
+      update pharmacist_consultations
+      set scribe_consent_at = now(), scribe_consent_by = ${actor.actorId || null}
+      where id = ${id}
+    `;
+    return getConsultation(pharmacyId, customerId, id, { sql: tx });
+  });
+}
+
+/**
+ * May a microphone open against this note?
+ *
+ * READ IN ITS OWN QUERY, immediately before the audio is accepted, rather
+ * than trusted from whatever the screen last loaded. A browser tab left open
+ * for an hour holds a consultation that may since have been finalised, and a
+ * consent flag in client state is a gate the client can simply not send.
+ *
+ * Fails CLOSED on everything it cannot establish — GOLDEN-002c's rule, in
+ * the place it matters most: "we could not tell" is never "go ahead and
+ * record".
+ */
+async function scribeGate(pharmacyId, customerId, id, { sql = null } = {}) {
+  assertPharmacyId(pharmacyId);
+  const db = sql || getSql();
+  const [row] = await db`
+    select id, status, scribe_consent_at from pharmacist_consultations
+    where id = ${id} and pharmacy_id = ${pharmacyId} and customer_id = ${customerId}
+  `;
+  if (!row) return { allowed: false, reason: 'not_found', consentAt: null };
+  if (!OPEN_STATUSES.includes(row.status)) {
+    return { allowed: false, reason: 'finalised', consentAt: row.scribe_consent_at || null };
+  }
+  if (!row.scribe_consent_at) return { allowed: false, reason: 'no_consent', consentAt: null };
+  return { allowed: true, reason: null, consentAt: row.scribe_consent_at };
+}
+
+/**
+ * Put the fact that a recording happened on the patient's record.
+ *
+ * Recorded EVEN WHEN THE PHARMACIST THROWS THE DRAFT AWAY. "Was this patient
+ * recorded?" is a question the record has to be able to answer whatever came
+ * of it — and a log that only shows the recordings somebody kept is a log
+ * that understates how often the microphone was on.
+ *
+ * What it carries is HOW, never WHAT: the number of voices, whether they
+ * were separated, and whether a draft came back. No transcript and no draft.
+ * Those are not stored anywhere by design, so an event holding one would
+ * become the single copy of the thing this feature promises not to keep.
+ */
+async function recordScribeUse(pharmacyId, customerId, id, detail = {}, actor = {}) {
+  assertPharmacyId(pharmacyId);
+  const db = getSql();
+  // A pharmacist may record twice in the same consultation — a second
+  // attempt after a noisy first one is normal — and this file's own
+  // `auditEvent` already makes every key unique, so both are kept.
+  await recordClinicalEvent(db, auditEvent(
+    pharmacyId, customerId, PATIENT_EVENTS.CONSULTATION_SCRIBE_USED, id, actor,
+    {
+      speakers: Number(detail.speakers || 0),
+      diarised: Boolean(detail.diarised),
+      turns: Number(detail.turns || 0),
+      drafted: Boolean(detail.drafted),
+      refused: detail.refused || null,
+    },
+  ));
+}
+
 module.exports = {
   consultationDefinitions,
   triageSummary,
@@ -1072,5 +1236,9 @@ module.exports = {
   setCareProgram,
   amendConsultation,
   consultationHistory,
+  consultationPatient,
   consultationsSummary,
+  recordScribeConsent,
+  scribeGate,
+  recordScribeUse,
 };

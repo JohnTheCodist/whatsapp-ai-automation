@@ -23,16 +23,50 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Loading from './Loading.jsx';
 import { readRecords } from './recordPicker.js';
+import ConsultationScribe from './ConsultationScribe.jsx';
 import {
   statusLabel, statusTone, isOpen, whenLabel, dayLabel,
   reasonLine, outstandingLine, redFlagLine, summaryLines,
   problemLine, referralLine, RECORD_GONE, REFERRAL_NOT_CONSIDERED,
   NO_PROBLEMS, NO_INTERVENTIONS, NO_TRIAGE, EMPTY,
   amendedNote, canAmend, historyLine, snapshotLines, AMEND_RETIRED, NO_HISTORY,
+  sectionPlan, bannerFacts, patientLine, contextBlocks,
 } from './consultationFormat.js';
 
+/**
+ * Read a JSON reply, and say something a pharmacist can act on when it is not
+ * one.
+ *
+ * WHY THIS EXISTS. When the API is unreachable the body is empty or HTML, and
+ * a bare `res.json()` throws "Failed to execute 'json' on 'Response':
+ * Unexpected end of JSON input" — which is what a pharmacist saw. That is a
+ * browser internal, not a fact about their pharmacy, and it tells them nothing
+ * about whether their note was saved.
+ *
+ * §34: the interface must clearly show when something did not happen. "The
+ * pharmacy server is not responding" is the honest version, and it is
+ * deliberately about the SERVER rather than about the note, because from here
+ * we genuinely cannot tell whether the write landed.
+ */
 async function readJson(res) {
-  const body = await res.json().catch(() => ({}));
+  let body = null;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+
+  if (body === null) {
+    // A reply we cannot read at all. On a 2xx this is still a failure: we
+    // asked for JSON and got something else, so we must not report success.
+    const err = new Error(res.ok
+      ? 'The pharmacy server sent a reply this screen could not read. Nothing has been changed on screen.'
+      : 'The pharmacy server is not responding. Your work has not been lost — try again in a moment.');
+    err.status = res.status;
+    err.code = 'UNREADABLE';
+    throw err;
+  }
+
   if (!res.ok) {
     const err = new Error(body.error || 'Something went wrong.');
     err.code = body.code;
@@ -235,11 +269,6 @@ function ProblemList({ customerId, note, options, open, onNote }) {
 
   return (
     <>
-      <p className="ui-allergy-help">
-        What you are assessing, with your own level of certainty. Nothing here creates a
-        Condition on the patient&rsquo;s record — record one in Conditions when you are
-        ready to.
-      </p>
       {error && <p className="ui-allergy-failed">{error}</p>}
 
       {problems.length === 0
@@ -676,10 +705,6 @@ function CareProgramPanel({ customerId, note, context, open, onNote }) {
 
   return (
     <>
-      <p className="ui-allergy-help">
-        Points this consultation at a programme the patient is already on. Nothing here
-        enrols anybody or changes a programme&rsquo;s plan.
-      </p>
       {error && <p className="ui-allergy-failed">{error}</p>}
       {active.length === 0
         ? <p className="ui-meds-count">This patient is not on a care programme.</p>
@@ -743,10 +768,6 @@ function AmendPanel({ customerId, note, onNote }) {
       {!asking
         ? (
           <>
-            <p className="ui-allergy-help">
-              This note is finalised. Correcting it keeps what it said, with your reason,
-              and reopens it so you can edit and sign it again.
-            </p>
             <button type="button" className="ui-psection-link" onClick={() => setAsking(true)}>
               Amend this note
             </button>
@@ -853,14 +874,127 @@ function HistoryPanel({ customerId, note }) {
   );
 }
 
+/* ==========================================================================
+ * The redesign — the banner and the patient-context column (§3, §12, §28)
+ * ======================================================================== */
+
+/**
+ * §12 — the three facts that change what is safe to do, above everything.
+ *
+ * Allergies first and always. It is the one that stops a recommendation, and
+ * the only item here that takes a tone.
+ *
+ * "Allergies not recorded" and "No known allergies" are DIFFERENT and stay
+ * different. The allergy record has distinguished them since 0058, and a
+ * banner that flattened them would be the strongest possible place to tell a
+ * pharmacist somebody is safe when nobody has ever asked.
+ */
+function PatientBanner({ patient, context, onOpenTab }) {
+  // Where no parent can open a tab the facts are still SHOWN — they are the
+  // three that change what is safe to do — just not as buttons.
+  const Fact = ({ tab, children, tone }) => (onOpenTab
+    ? <button type="button" className={`ui-consult-fact ${tone || ''}`} onClick={() => onOpenTab(tab)}>{children}</button>
+    : <span className={`ui-consult-fact ${tone || ''}`}>{children}</span>);
+  if (!patient && !context) return null;
+  const facts = bannerFacts(context);
+  const line = patientLine(patient);
+
+  return (
+    <header className="ui-consult-banner">
+      <div className="ui-consult-banner-who">
+        <h2>{patient?.name || 'Patient'}</h2>
+        {line && <span className="ui-cprog-card-meta">{line}</span>}
+      </div>
+
+      <div className="ui-consult-banner-facts">
+        {/* Not colour alone: the word "Allergies" is in the label, so this
+            reads the same to somebody who cannot see the tone. */}
+        <Fact tab="allergies" tone={facts.allergyTone}>
+          <span className="ui-consult-fact-key">Allergies</span>
+          <span>{facts.allergyText}</span>
+        </Fact>
+
+        {facts.conditions.length > 0 && (
+          <Fact tab="conditions">
+            <span className="ui-consult-fact-key">Conditions</span>
+            <span>{facts.conditions.join(', ')}</span>
+          </Fact>
+        )}
+
+        {facts.medications.length > 0 && (
+          <Fact tab="medications">
+            <span className="ui-consult-fact-key">Medicines</span>
+            <span>{facts.medications.join(', ')}</span>
+          </Fact>
+        )}
+      </div>
+    </header>
+  );
+}
+
+/**
+ * §28 — the patient's clinical context, beside the note rather than inside it.
+ *
+ * READ ONLY, AND THAT IS THE ARCHITECTURE. Every block is a pointer at the
+ * section that owns the record (§12: "this is context only"). Nothing here
+ * edits anything, which is why the consultation can show a patient's whole
+ * picture without becoming a second copy of it.
+ *
+ * THIS COLUMN IS WHY THE PROSE WENT. The first build explained in a paragraph
+ * that measurements live in Vitals; this shows the vitals and a button that
+ * opens them. Structure says it better than a sentence, and says it every
+ * time instead of once.
+ */
+function ContextColumn({ context, onOpenTab }) {
+  if (!context) return <Loading />;
+  const blocks = contextBlocks(context);
+
+  return (
+    <aside className="ui-consult-context" aria-label="Patient context">
+      {blocks.map((b) => (
+        <section key={b.id} className="ui-consult-ctx-block">
+          <h3>
+            {b.label}
+            {onOpenTab && (
+              <button type="button" className="ui-consult-ctx-open" onClick={() => onOpenTab(b.tab)}>
+                Open
+              </button>
+            )}
+          </h3>
+          {b.items.length === 0
+            // An empty block SAYS it is empty rather than disappearing: a
+            // missing panel and one with nothing in it mean different things,
+            // and a pharmacist cannot tell which they are looking at.
+            ? <p className="ui-consult-ctx-empty">{b.empty}</p>
+            : (
+              <ul>
+                {b.items.map((it, i) => <li key={`${b.id}-${i}`}>{it}</li>)}
+              </ul>
+            )}
+        </section>
+      ))}
+    </aside>
+  );
+}
+
 /** One consultation, open. */
-export default function Consultation({ customerId, consultationId, onBack, onOpenConversation, onChanged }) {
+// `onOpenTab` is OPTIONAL: the Clinics module opens a consultation with no
+// patient record beside it, and the context column must not draw buttons
+// that would do nothing there. Where it is absent the blocks still READ,
+// which is what the column is for.
+export default function Consultation({
+  customerId, consultationId, onBack, onOpenConversation, onChanged, onOpenTab,
+}) {
   const [note, setNote] = useState(null);
   const [options, setOptions] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState({});
   const [context, setContext] = useState(null);
+  // One control, not a per-section preference: §31 asks for complexity
+  // LEVELS, and a screen where every section remembers its own state is a
+  // screen that looks different every time it is opened.
+  const [showAll, setShowAll] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -945,40 +1079,80 @@ export default function Consultation({ customerId, consultationId, onBack, onOpe
   const tone = statusTone(note.status);
   const blocking = outstandingLine(note.outstanding);
 
+  // §31. Which sections this TYPE opens with. A minor ailment should not
+  // present the same fourteen-section wall as a comprehensive medication
+  // review — and the answer is already in the type, so nothing new is
+  // stored. Sections that are not opened move behind one control; none is
+  // removed, because a pharmacist who needs Referral on a cough must still
+  // be able to reach it.
+  const filledSections = {
+    triage: Boolean(note.triage),
+    subjective: Boolean(note.subjective),
+    objective: Boolean(note.objective),
+    problems: (note.problems || []).length > 0,
+    interventions: (note.interventions || []).length > 0,
+    referral: Boolean(note.referralDestination),
+    prescription: (note.prescriptionIssues || []).length > 0 || Boolean(note.prescriberContactedAt),
+    'care-program': Boolean(note.careProgramId),
+    amend: canAmend(note),
+    history: Boolean(note.amendmentCount),
+  };
+  const plan = sectionPlan(note, filledSections);
+  const shows = (id) => plan.shown.includes(id) || showAll;
+
   return (
     <div className="ui-consult">
-      <div className="ui-followup-head">
-        {onBack && <button type="button" className="ui-psection-link" onClick={onBack}>← Consultations</button>}
-        <span className={`ui-cprog-pill ${tone || ''}`}>{statusLabel(note.status)}</span>
-        {/* §32. Absent entirely on a note nobody has corrected — see
-            `amendedNote`, which says nothing rather than "Original". */}
-        {amendedNote(note) && (
-          <span className="ui-cprog-quiet">{amendedNote(note)}</span>
+      {/* ONE header, and the NOTE is the subject — it was previously smaller
+          than the module label above it, which is the hierarchy upside down.
+          The status, the date and the amendment count sit on one line under
+          the title instead of being scattered across three rows. */}
+      <header className="ui-consult-page">
+        {onBack && (
+          <button type="button" className="ui-consult-back" onClick={onBack}>
+            ← All consultations
+          </button>
         )}
-      </div>
+        <h1>{note.typeLabel || note.consultationType}</h1>
+        <div className="ui-consult-page-meta">
+          <span className={`ui-cprog-pill ${tone || ''}`}>{statusLabel(note.status)}</span>
+          <span>{whenLabel(note.startedAt)}</span>
+          {note.completedAt && <span>Finalised {dayLabel(note.completedAt)}</span>}
+          {/* §32. Absent entirely on a note nobody has corrected. */}
+          {amendedNote(note) && <span>{amendedNote(note)}</span>}
+        </div>
+      </header>
 
-      <h2 className="ui-followup-title">{note.typeLabel || note.consultationType}</h2>
-      <p className="ui-followup-context">
-        {whenLabel(note.startedAt)}
-        {note.completedAt ? ` · finalised ${dayLabel(note.completedAt)}` : ''}
-      </p>
+      <PatientBanner patient={context?.patient} context={context} onOpenTab={onOpenTab} />
 
       {note.status === 'entered_in_error' && (
-        <p className="ui-allergy-failed">
-          Entered in error{note.errorReason ? ` — ${note.errorReason}` : ''}. This note is
-          kept as a record of what was written; it is not deleted. {AMEND_RETIRED}
+        // A dashed 28px-padded box is the EMPTY-STATE style; using it for a
+        // one-sentence notice gave a retired note a wall of whitespace where
+        // its content should be.
+        <p className="ui-consult-notice" role="status">
+          <strong>Entered in error</strong>
+          {note.errorReason ? ` — ${note.errorReason}.` : '.'} Kept as a record of what
+          was written; not deleted. {AMEND_RETIRED}
         </p>
       )}
 
       {error && <p className="ui-allergy-failed">{error}</p>}
 
+      {/* §3 — documentation on the work surface, patient context beside it.
+          Under 1000px the context column moves BELOW the note rather than
+          into a drawer: a pharmacist on a phone scrolls past it to the
+          fields, and a drawer would hide the allergies behind a tap. */}
+      <div className="ui-consult-split">
+        <div className="ui-consult-main">
+
+      {shows('triage') && (
       <Section id="triage" title="Triage summary" emphasised={Boolean(note.triage)} filled={Boolean(note.triage)}>
         <TriagePanel triage={note.triage} onOpenConversation={onOpenConversation} />
       </Section>
+      )}
 
       <Section id="reason" title="Reason" emphasised filled={Boolean(reasonLine(note, options?.reasons || []))}>
         <label className="ui-consult-field">
-          <span className="ui-cprog-quiet">Reason</span>
+          <span className="ui-cprog-quiet">Primary reason</span>
           <select value={note.reasonCode || ''} disabled={!open || busy} onChange={(e) => set('reasonCode', e.target.value || null)}>
             <option value="">Not stated</option>
             {(options?.reasons || []).map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
@@ -992,42 +1166,66 @@ export default function Consultation({ customerId, consultationId, onBack, onOpe
           placeholder="Whether the dizziness is the new medicine" onChange={(v) => set('patientGoal', v)} />
       </Section>
 
+      {shows('subjective') && (
       <Section id="subjective" title="Subjective" emphasised={emphasis.has('subjective')} filled={Boolean(note.subjective)}>
+        {/* The scribe sits ABOVE the box it drafts into, and only while the
+            note is open. It writes nothing itself: accepting a draft calls
+            the same `set` a keystroke does, so the note has one writer and
+            the ordinary Save is still what commits it. */}
+        {open && (
+          <ConsultationScribe
+            customerId={customerId}
+            consultationId={consultationId}
+            note={note}
+            available={Boolean(options?.scribe?.available)}
+            existing={note.subjective}
+            whenLabel={whenLabel}
+            onAccept={({ subjective, consented }) => {
+              // Consent is a SERVER fact and comes back as the whole note,
+              // so it is merged rather than set — nothing is dirtied by
+              // asking the patient.
+              if (consented) setNote(consented);
+              if (typeof subjective === 'string') set('subjective', subjective);
+            }}
+          />
+        )}
         <Field label="What the patient reported" rows={5} value={note.subjective} disabled={!open || busy}
           placeholder="Onset, duration, what makes it better or worse, what they have already tried"
           onChange={(v) => set('subjective', v)} />
       </Section>
+      )}
 
+      {shows('objective') && (
       <Section id="objective" title="Objective" emphasised={emphasis.has('vitals') || emphasis.has('objective')} filled={Boolean(note.objective)}>
         {/* Measurements are recorded in Vitals and read from there. This box is
             for what was observed, not for a number another screen owns. */}
-        <p className="ui-allergy-help">
-          Measurements belong in Vitals &amp; biometrics, where they can be charted and
-          compared. Record what you observed here.
-        </p>
         <Field label="What you found" rows={4} value={note.objective} disabled={!open || busy}
           placeholder="General appearance, hydration, anything focused you examined"
           onChange={(v) => set('objective', v)} />
       </Section>
+      )}
 
       <Section id="assessment" title="Assessment" emphasised filled={Boolean(note.assessmentText)}>
-        <p className="ui-allergy-help">
-          Your clinical impression, including the uncertainty — &ldquo;possible&rdquo;,
-          &ldquo;provisional&rdquo;, &ldquo;needs evaluation&rdquo;. A definitive diagnosis is
-          not required, and nothing here creates a Condition.
-        </p>
-        <Field label="Assessment" rows={4} value={note.assessmentText} disabled={!open || busy}
+        {/* §13: the pharmacist's impression, not a diagnosis. The one piece
+            of the old prose worth keeping, as a hint on the field it is
+            about rather than a paragraph above the section. */}
+        <Field label="Assessment — your impression, including the uncertainty" rows={4}
+          value={note.assessmentText} disabled={!open || busy}
           placeholder="Possible medication-related dizziness" onChange={(v) => set('assessmentText', v)} />
       </Section>
 
+      {shows('problems') && (
       <Section id="problems" title="Problems" emphasised filled={(note.problems || []).length > 0}>
         <ProblemList customerId={customerId} note={note} options={options} open={open} onNote={setNote} />
       </Section>
+      )}
 
+      {shows('interventions') && (
       <Section id="interventions" title="What you did"
         emphasised={emphasis.has('interventions')} filled={(note.interventions || []).length > 0}>
         <InterventionList customerId={customerId} note={note} options={options} open={open} onNote={setNote} />
       </Section>
+      )}
 
       <Section id="plan" title="Plan" emphasised filled={Boolean(note.planText || (note.planActions || []).length)}>
         <div className="ui-consult-actions">
@@ -1052,27 +1250,29 @@ export default function Consultation({ customerId, consultationId, onBack, onOpe
       </Section>
 
       {/* §17. Absent from the summary until somebody decides — see ReferralPanel. */}
+      {shows('referral') && (
       <Section id="referral" title="Referral"
         emphasised={emphasis.has('referral')} filled={Boolean(note.referralDestination)}>
         <ReferralPanel customerId={customerId} note={note} options={options} open={open} onNote={setNote} />
       </Section>
+      )}
 
+      {shows('prescription') && (
       <Section id="prescription" title="Prescription review"
         emphasised={emphasis.has('prescription')}
         filled={(note.prescriptionIssues || []).length > 0 || Boolean(note.prescriberContactedAt)}>
         <PrescriptionPanel customerId={customerId} note={note} options={options} open={open} onNote={setNote} />
       </Section>
+      )}
 
+      {shows('care-program') && (
       <Section id="care-program" title="Care programme"
         emphasised={emphasis.has('care_program')} filled={Boolean(note.careProgramId)}>
         <CareProgramPanel customerId={customerId} note={note} context={context} open={open} onNote={setNote} />
       </Section>
+      )}
 
       <Section id="summary" title="Consultation summary" emphasised filled>
-        <p className="ui-allergy-help">
-          Built from what you recorded above. Nothing here is written by a model, and a
-          section you left empty is absent rather than reported as none.
-        </p>
         <SummaryPanel summary={note.summary} />
       </Section>
 
@@ -1086,16 +1286,23 @@ export default function Consultation({ customerId, consultationId, onBack, onOpe
       )}
 
       <Section id="history" title="History" emphasised={false} filled={Boolean(note.amendmentCount)}>
-        <p className="ui-allergy-help">
-          What has happened to this note, and what it said before each correction.
-          This is the note&rsquo;s own history — the patient&rsquo;s whole timeline is on
-          their record.
-        </p>
         <HistoryPanel customerId={customerId} note={note} />
       </Section>
 
+      {/* Everything this type did not open with, one click away. */}
+      {plan.more.length > 0 && (
+        <button type="button" className="ui-psection-link ui-consult-more"
+          aria-expanded={showAll} onClick={() => setShowAll((v) => !v)}>
+          {showAll ? 'Show fewer sections' : `More sections (${plan.more.length})`}
+        </button>
+      )}
+
+        </div>
+        <ContextColumn context={context} onOpenTab={onOpenTab} />
+      </div>
+
       {open && (
-        <div className="ui-followup-head">
+        <div className="ui-followup-head ui-consult-foot">
           <button type="button" className="ui-psection-link" disabled={busy || !Object.keys(dirty).length} onClick={save}>
             {busy ? 'Saving…' : 'Save draft'}
           </button>
@@ -1110,7 +1317,9 @@ export default function Consultation({ customerId, consultationId, onBack, onOpe
 }
 
 /** The patient's consultations (§28), and the way to start a new one. */
-export function ConsultationHistory({ customerId, onOpen, onOpenConversation }) {
+export function ConsultationHistory({
+  customerId, patientName, onOpen, onChoosePatient, onOpenConversation, onOpenTab,
+}) {
   const [data, setData] = useState(null);
   const [options, setOptions] = useState(null);
   const [error, setError] = useState(null);
@@ -1164,6 +1373,7 @@ export function ConsultationHistory({ customerId, onOpen, onOpenConversation }) 
         consultationId={openId}
         onBack={() => { setOpenId(null); load(); }}
         onOpenConversation={onOpenConversation}
+        onOpenTab={onOpenTab}
         onChanged={load}
       />
     );
@@ -1171,11 +1381,21 @@ export function ConsultationHistory({ customerId, onOpen, onOpenConversation }) 
 
   return (
     <div className="ui-followup-main">
-      <div className="ui-followup-head">
-        <h3 className="ui-allergy-heading">Consultations</h3>
-      </div>
+      {/* ONE place marker: the patient, because that is the subject of this
+          list. The module is already named in the breadcrumb above. */}
+      <header className="ui-consult-page">
+        {onChoosePatient && (
+          <button type="button" className="ui-consult-back" onClick={onChoosePatient}>
+            ← Choose another patient
+          </button>
+        )}
+        <h1>{patientName || 'Consultations'}</h1>
+        <p>Consultations recorded for this patient.</p>
+      </header>
 
-      <div className="ui-followup-head">
+      {/* One row, not a stacked select and button: starting a consultation is
+          a single decision and the two controls belong on the same line. */}
+      <div className="ui-consult-start">
         <label>
           <span className="sr-only">Kind of consultation</span>
           <select value={type} disabled={busy} onChange={(e) => setType(e.target.value)}>
@@ -1198,20 +1418,32 @@ export function ConsultationHistory({ customerId, onOpen, onOpenConversation }) 
         </div>
       )}
 
+      {/* Its own rows rather than the follow-up module's: that list was laid
+          out for one line of text, and four inline spans in it had nothing
+          holding them apart. What a pharmacist scans for is the TYPE and the
+          STATE, so those are the two anchors — type and reason on the left,
+          date and state on the right. */}
       {data && data.consultations.length > 0 && (
-        <ul className="ui-followup-list">
-          {data.consultations.map((c) => (
-            <li key={c.id}>
-              <button type="button" className="ui-followup-subject" onClick={() => setOpenId(c.id)}>
-                <span className="ui-followup-title">{c.typeLabel || c.consultationType}</span>
-                {reasonLine(c, options?.reasons || []) && (
-                  <span className="ui-cprog-said-text">{reasonLine(c, options?.reasons || [])}</span>
-                )}
-                <span className="ui-cprog-stamp">{dayLabel(c.startedAt)}</span>
-                <span className={`ui-cprog-pill ${statusTone(c.status) || ''}`}>{statusLabel(c.status)}</span>
-              </button>
-            </li>
-          ))}
+        <ul className="ui-consult-list">
+          {data.consultations.map((c) => {
+            const reason = reasonLine(c, options?.reasons || []);
+            return (
+              <li key={c.id}>
+                <button type="button" onClick={() => setOpenId(c.id)}>
+                  <span className="ui-consult-list-main">
+                    <span className="ui-consult-list-type">{c.typeLabel || c.consultationType}</span>
+                    {reason && <span className="ui-consult-list-reason">{reason}</span>}
+                  </span>
+                  <span className="ui-consult-list-meta">
+                    <span className="ui-consult-list-when">{dayLabel(c.startedAt)}</span>
+                    <span className={`ui-cprog-pill ${statusTone(c.status) || ''}`}>
+                      {statusLabel(c.status)}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

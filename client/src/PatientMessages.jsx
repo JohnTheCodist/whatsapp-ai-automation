@@ -29,6 +29,7 @@ import {
   timeLabel, byDay, lastActivityLabel, topicLine, stateLabel, previewLine,
   lagosToday, unreadLabel, linkLine, NO_LINKS,
   noteAuthor, INTERNAL_BANNER, PATIENT_BANNER, NO_INTERNAL_THREADS, NO_INTERNAL_HELP,
+  OUTREACH_WINDOW_NOTE,
 } from './messageFormat.js';
 
 const FILTERS = [
@@ -37,8 +38,40 @@ const FILTERS = [
   { id: 'all', label: 'All' },
 ];
 
+/**
+ * Read a JSON reply, and say something a pharmacist can act on when it is not
+ * one.
+ *
+ * WHY THIS EXISTS. When the API is unreachable the body is empty or HTML, and
+ * a bare `res.json()` throws "Failed to execute 'json' on 'Response':
+ * Unexpected end of JSON input" — which is what a pharmacist saw. That is a
+ * browser internal, not a fact about their pharmacy, and it tells them nothing
+ * about whether their note was saved.
+ *
+ * §34: the interface must clearly show when something did not happen. "The
+ * pharmacy server is not responding" is the honest version, and it is
+ * deliberately about the SERVER rather than about the note, because from here
+ * we genuinely cannot tell whether the write landed.
+ */
 async function readJson(res) {
-  const body = await res.json().catch(() => ({}));
+  let body = null;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+
+  if (body === null) {
+    // A reply we cannot read at all. On a 2xx this is still a failure: we
+    // asked for JSON and got something else, so we must not report success.
+    const err = new Error(res.ok
+      ? 'The pharmacy server sent a reply this screen could not read. Nothing has been changed on screen.'
+      : 'The pharmacy server is not responding. Your work has not been lost — try again in a moment.');
+    err.status = res.status;
+    err.code = 'UNREADABLE';
+    throw err;
+  }
+
   if (!res.ok) {
     const err = new Error(body.error || 'Something went wrong.');
     err.code = body.code;
@@ -648,6 +681,101 @@ function InternalThread({ customerId, thread, onBack, onChanged }) {
   );
 }
 
+/**
+ * §15 — start a conversation, where the window the patient opened allows it.
+ *
+ * NOT the unconditional "+ New Message" §15 describes. This product sends
+ * over Baileys and has no approved-template path, so writing to somebody who
+ * has not written to us is non-compliant and risks the pharmacy’s number.
+ * The server decides (`outreachState`) and this screen only renders the
+ * answer.
+ *
+ * WHEN IT IS UNAVAILABLE IT SAYS WHY. A greyed-out button teaches a
+ * pharmacist that the software is broken; a sentence teaches them that the
+ * patient has to write first, which is the actual rule they are working
+ * inside.
+ */
+function NewMessage({ customerId, outreach, topics, onStarted }) {
+  const [open, setOpen] = useState(false);
+  const [body, setBody] = useState('');
+  const [topic, setTopic] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  if (!outreach) return null;
+
+  if (!outreach.allowed) {
+    return (
+      <p className="ui-allergy-help ui-msg-outreach-blocked">
+        <strong>New message unavailable.</strong>{' '}{outreach.message}
+      </p>
+    );
+  }
+
+  if (!open) {
+    return (
+      <button type="button" className="ui-cprog-check" onClick={() => setOpen(true)}>
+        + New Message
+      </button>
+    );
+  }
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!body.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await readJson(await fetch(`/api/customers/${customerId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: body.trim(), topic: topic || null }),
+      }));
+      setBody('');
+      setTopic('');
+      setOpen(false);
+      onStarted?.(created);
+    } catch (err) {
+      // §34: a message that did not go must never look like one that did.
+      // The text stays in the box so nothing a pharmacist typed is lost.
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="ui-msg-followup" onSubmit={submit}>
+      <p className="ui-allergy-help">
+        {OUTREACH_WINDOW_NOTE(outreach.windowExpiresAt)}
+      </p>
+      <label>
+        <span className="ui-cprog-quiet">What is it about (optional)</span>
+        <select value={topic} disabled={busy} onChange={(e) => setTopic(e.target.value)}>
+          <option value="">Not stated</option>
+          {(topics || []).map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+        </select>
+      </label>
+      <label>
+        <span className="ui-cprog-quiet">Message</span>
+        <input
+          type="text"
+          value={body}
+          disabled={busy}
+          placeholder="Your refill is ready for collection."
+          onChange={(e) => setBody(e.target.value)}
+        />
+      </label>
+      <button type="submit" className="ui-cprog-check" disabled={busy || !body.trim()}>
+        {busy ? 'Sending…' : 'Send'}
+      </button>
+      <button type="button" className="ui-psection-link" disabled={busy} onClick={() => setOpen(false)}>
+        Cancel
+      </button>
+      {error && <p className="ui-allergy-failed">{error}</p>}
+    </form>
+  );
+}
 function StartInternalThread({ customerId, onStarted }) {
   const [open, setOpen] = useState(false);
   const [subject, setSubject] = useState('');
@@ -814,6 +942,15 @@ export default function PatientMessages({ customerId }) {
           )}
         </button>
       </div>
+
+      {channel === 'whatsapp' && (
+        <NewMessage
+          customerId={customerId}
+          outreach={data?.outreach}
+          topics={options?.topics}
+          onStarted={(created) => { load(); setOpen({ id: created.conversationId }); }}
+        />
+      )}
 
       {channel === 'internal' && (
         <>

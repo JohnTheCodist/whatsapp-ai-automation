@@ -14,7 +14,12 @@ import {
   timeLabel, dayLabel, lastActivityLabel, byDay, topicLine, stateLabel, previewLine,
   lagosToday, unreadLabel, linkLine, LINK_GONE, NO_LINKS,
   noteAuthor, INTERNAL_BANNER, PATIENT_BANNER, NO_INTERNAL_THREADS, NO_INTERNAL_HELP,
+  OUTREACH_WINDOW_NOTE,
 } from './messageFormat.js';
+import * as fmt from './messageFormat.js';
+import fsNode from 'node:fs';
+import pathNode from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // §11 of the brief: "Do not make the AI appear to be a pharmacist."
 test('the assistant is never labelled as a person', () => {
@@ -280,4 +285,68 @@ test('an internal thread never borrows the words for a patient conversation', ()
   // And the patient-facing wording is untouched.
   expect(stateLabel({ channel: 'whatsapp', status: 'open', mode: 'bot', awaitingPharmacist: false }).text)
     .toBe('Assistant is replying');
+});
+
+// ---- phase 4: starting a conversation inside the patient’s window --------
+
+test('the composer says the patient started this, and invents no deadline', () => {
+  // The pharmacist must understand they are CONTINUING something, because
+  // next time this patient has not written the button will be gone, and
+  // "the software is broken" is the wrong conclusion to reach.
+  // A minute of slack: the function FLOORS, which is the right direction for
+  // a deadline (never overstate the time left), so exactly 3h reads as 2.
+  const inThree = new Date(Date.now() + 3 * 3600000 + 60000).toISOString();
+  const note = OUTREACH_WINDOW_NOTE(inThree);
+  expect(note).toMatch(/conversation the patient started/i);
+  expect(note).toMatch(/closes in 3 hours/);
+
+  // Singular reads as English, not "1 hours".
+  expect(OUTREACH_WINDOW_NOTE(new Date(Date.now() + 3600000 + 60000).toISOString()))
+    .toMatch(/closes in 1 hour./);
+
+  // Under an hour is said as such rather than as "0 hours".
+  expect(OUTREACH_WINDOW_NOTE(new Date(Date.now() + 10 * 60000).toISOString()))
+    .toMatch(/within the hour/i);
+
+  // A window we cannot read says the plain sentence and NO time. Inventing
+  // "expires in 3 hours" from an unparseable stamp is the same mistake as
+  // showing a delivery state the provider never reported.
+  for (const bad of [null, undefined, '', 'not-a-date']) {
+    const plain = OUTREACH_WINDOW_NOTE(bad);
+    expect(plain).toMatch(/conversation the patient started/i);
+    expect(plain, `invented a deadline from ${JSON.stringify(bad)}`).not.toMatch(/[0-9]/);
+  }
+});
+
+// Found on 2026-10-04 by opening the screen, after lint AND the whole suite
+// passed: `OUTREACH_WINDOW_NOTE` had been added to the wrong import block, so
+// PatientMessages.jsx imported it from 'react' and got undefined. The screen
+// threw the moment the composer opened.
+test('the screen imports its wording from THIS module, not from somewhere else', () => {
+  // eslint cannot catch this: the name IS imported and IS used, just from a
+  // module that does not have it. Only rendering catches it, and nothing
+  // rendered this component. So the invariant is checked on the source.
+  const dir = pathNode.dirname(fileURLToPath(import.meta.url));
+  const src = fsNode.readFileSync(pathNode.join(dir, 'PatientMessages.jsx'), 'utf8');
+
+  // Every name the screen takes from messageFormat must really be exported.
+  const block = src.match(/import\s*\{([^}]+)\}\s*from\s*'\.\/messageFormat\.js'/);
+  expect(block, 'the screen no longer imports from messageFormat at all').toBeTruthy();
+  const imported = block[1].split(',').map((x) => x.trim()).filter(Boolean);
+  expect(imported.length).toBeGreaterThan(5);
+  for (const name of imported) {
+    expect(fmt[name], `PatientMessages imports ${name}, which messageFormat does not export`)
+      .toBeDefined();
+  }
+
+  // And nothing this module owns is imported from anywhere else — which is
+  // the exact bug: a wording helper pulled out of the React import.
+  const others = [...src.matchAll(/import\s*\{([^}]+)\}\s*from\s*'([^']+)'/g)]
+    .filter((m) => !m[2].includes('messageFormat'));
+  for (const m of others) {
+    for (const name of m[1].split(',').map((x) => x.trim()).filter(Boolean)) {
+      expect(fmt[name], `${name} belongs to messageFormat but is imported from ${m[2]}`)
+        .toBeUndefined();
+    }
+  }
 });

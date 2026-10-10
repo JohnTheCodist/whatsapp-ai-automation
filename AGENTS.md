@@ -436,6 +436,75 @@ says "not recorded" and never "none", because an empty Allergies card
 reading "None" is how a pharmacist gets told someone is safe by a system
 that has simply never been asked.
 
+**The Consultation redesign — fewer sections, fewer words, and the context
+the screen was already fetching, 2026-10-04 → 2142/1409/726/7 (no
+database).** The owner reported the Consultation screen as *"confusing, too
+complex, not structured properly, not neat and professional, too much
+wording"*. That measured out exactly, which is the only reason it was
+actionable:
+
+```
+14  sections stacked in ONE column
+188 words of permanent on-screen prose
+8   blocks of patient context FETCHED
+1   line of one of them RENDERED
+```
+
+**The last number explains the first two.** `GET /consultations/context`
+returned allergies, conditions, vitals, tests, care programmes and
+follow-ups, and the screen used `carePrograms.active` and threw the rest
+away. So the prose was compensating for the missing column — a paragraph
+explaining that measurements live in Vitals, where the fix is to SHOW the
+vitals with a button that opens them. **Structure says it better, and says
+it every time instead of once.**
+
+**What changed**, all of it from the brief rather than invented:
+
+- **§12 patient banner** — name, a DERIVED age, and the three facts that
+  change what is safe to do. Allergies first and always, and the three
+  allergy states stay three: "Penicillins", "No known allergies" and
+  "Allergies not recorded" are different claims and the banner is the
+  strongest possible place to flatten them by accident.
+- **§3 two columns** — documentation on the work surface, context beside it.
+  Under 1000px the context stacks BELOW rather than hiding in a drawer: a
+  drawer puts the allergies behind a tap.
+- **§28 a read-only context column** — every block points at the section
+  that owns the record, and an empty block SAYS it is empty rather than
+  vanishing, because a missing panel and an empty one mean different things.
+- **§31 complexity levels** — derived from data that already existed. A
+  type's `requiredSections` and `emphasis` already say what it is about, so
+  a section is shown when it is required, emphasised or already filled.
+  **No new column, no new vocabulary.** A minor ailment opens with **7
+  sections instead of 14**, and the rest are one click away, never deleted.
+
+**188 words of prose became 20.** The one sentence worth keeping — the
+assessment is an impression, not a diagnosis — moved onto the field's own
+label instead of a paragraph above its section.
+
+**Three bugs caught by checking the real shapes instead of assuming them.**
+The context endpoint has **no `medications` key at all** (added by composing
+in the consultation’s own route, not by widening the shared
+`medicationContext`, which Medications and the review also read); the
+allergen field is `allergenName`, not `substanceName`; and the **"More
+sections (8)" control revealed seven**, because `amend` and `history` are
+driven by the note’s state and are not part of the budget. The last was
+found by opening the screen and counting the headings.
+
+3 server tests, **all needing a database** (`consultations`: the banner
+carrying a name, a derived age and NOTHING else — asserted on the KEY LIST,
+so a phone number cannot be added to a thing that sits above a note all day
+in a shop; an age nobody recorded showing null and never 0, which on a
+banner reads as a newborn; and cross-tenant refusal). Skipped ceiling
+**723 → 726**. The client adds 8 (302 → 308). The 7 failures are the same 7
+names.
+
+**An existing invariant was AMENDED and TIGHTENED.** The tone test matched a
+class NAME against `/-pill/` as a proxy for the shape. The redesign added
+`.ui-consult-fact` — `inline-flex`, fully rounded, a pill by every property
+that matters — which the name check failed, while a class called `x-pill`
+that was secretly a block would have passed. It now reads the CSS and
+requires **rounded and not a block**, mutation-checked by turning the fact
+into a block.
 **Consultation, phase 3 — the record's integrity, 2026-09-28 →
 2128/1406/715/7 (no database).** CONSULTATION_PLAN.md §32 (amendment with a
 reason and a snapshot), §39 (entered-in-error, refined), the per-note audit
@@ -744,6 +813,86 @@ Clinics MODULE, not a section of the record, and that screen exists.
 No server test touches any of this, so the baseline above is unchanged. Client
 270 → 271.
 
+**Messages, phase 4 — §15’s "+ New Message", gated to the window the patient
+opened, 2026-10-04 → 2139/1409/723/7 (no database).** The Messages brief was
+re-issued and checked section by section: **36 of 39 were already built** in
+phases 1–3. Two of the three gaps are blocked by the brief’s OWN conditions
+rather than by effort — §21 says attachments "where the existing document/file
+system supports it", and the only file store is the PUBLIC `pharmacy-assets`
+bucket, where a patient’s attachment would sit at a guessable URL; §24 says
+"do not duplicate appointment information", and this product still has no
+appointments table to point at. This change is the third gap.
+
+**THE SCOPE IS NARROWER THAN §15 AS WRITTEN, and that is the whole decision.**
+§15 asks for a button that messages a patient. This product sends over
+**Baileys** — WhatsApp Web automation — not the Meta Cloud API, so there is
+no approved-template path and no compliant way to write to somebody who has
+not written to us. Doing it anyway is the fastest route to a flagged number,
+and five real pharmacies are on this system. So outreach is allowed in
+exactly one case:
+
+```
+the patient wrote within 24 hours          continuing what they started
+AND the thread they opened is closed   →   (allowed)
+
+anything else                          →   refused, with the reason said
+```
+
+That is not a business-initiated message. It is continuing a conversation the
+PATIENT started, inside the window they opened, and carries exactly the risk
+a reply already carries.
+
+**The gate is a PURE function** (`outreachState`), like `communicationPolicy`
+and for the same reason: every branch is testable without fixtures. It fails
+CLOSED on a window it cannot parse — GOLDEN-002c’s lesson, that "we could not
+tell" is never "it is safe to send" — and treats expiry-exactly-now as
+closed, because a boundary that rounds the wrong way is a send the provider
+refuses while our own row says it was fine.
+
+**The window is CARRIED, never reset.** It belongs to the patient’s last
+inbound message. Minting a fresh 24 hours because *we* sent something would
+be this product granting itself a permission WhatsApp never gave.
+
+**No migration and no second send path.** `window_expires_at` and `channel`
+already exist, so 0070 is still the last migration. The message goes through
+`sendAndRecordOutbound` like every other patient-facing message, so the
+internal-thread guard, the consent check and the transport are the ones that
+already exist — **GOLDEN-007 is unaffected**, because this send names a
+conversation and goes through the one path.
+
+11 server tests — **3 database-free** (`messageInput`: the gate four ways,
+an open thread told to be replied to BY ID, and the new-conversation contract
+which invents no topic and refuses any channel but WhatsApp — §15 says offer
+only channels actually available, and a select with one option the server
+would refuse anything else from is a control pretending to be a decision) and
+**8 needing a database** (`patientMessages`: a patient who never wrote refused
+with NOTHING written; the closed window; the open thread; the gate opening
+inside the window; cross-tenant refusal that also leaks no contact history;
+the patient’s own read carrying the decision AND its reason, so the screen can
+say why rather than going grey; the new thread carrying the patient’s window;
+and the gate re-read inside the transaction that writes). Skipped ceiling
+**715 → 723**. The 7 failures are the same 7 names. The client adds 2 —
+the composer wording, and the import invariant below (300 → 302). **With a
+local test database: 2139/2135/0/4.**
+
+**Mutation testing found a real hole, which is why it is worth doing.** Five
+mutations were run against the gate. The first three turned the right tests
+red. The fourth — **resetting the window instead of carrying it** — and the
+fifth — **dropping the in-transaction re-check** — left every test GREEN. Both
+are compliance-critical, so two more tests were written (one driving a
+connected-provider row so the created conversation can be inspected, one
+asserting the SHAPE of the transaction the way GOLDEN-007 does, because a
+race is not reproducible from a single caller) and both mutations then
+failed.
+
+**One phase-3 test was AMENDED with the product, and tightened in the same
+edit.** It pinned *"the only creator is `createInternalThread`, because an
+export that created a patient-facing thread would be outreach, which this
+product does not do"*. That sentence is no longer the rule. It now pins the
+closed two-name list **and** asserts the gate refuses a patient with no
+history — which is the property the old assertion was really protecting. The
+capability flag moved the same way: `canStartConversation` is now true, and
+`canStartConversationUnprompted` is false and is the one that matters.
 **Messages, phase 3 — internal threads, 2026-09-26 → 2056/1376/673/7 (no
 database).** Staff-to-staff threads about a patient (§14), which **cannot
 reach that patient** — and GOLDEN-007, which is the first entry in the golden
@@ -1506,7 +1655,125 @@ here is the same result.
 `test-baseline.json` holds the machine-readable copy that `npm run test:ci`
 reads. **The two are updated in the same commit or not at all.**
 
-### Why 715 tests skip
+
+**The AI scribe, 2026-10-10 → 2182/1440/735/7 (no database); 2182/2177/0/5
+with one.** SCRIBE_PLAN.md §12–14. The pharmacist talks to the patient instead
+of typing about them: the consultation is recorded, Deepgram separates the
+voices, **the pharmacist says which voice is the patient**, and the assistant
+drafts the Subjective from that voice alone.
+
+**That middle step is the whole design.** The one question a model must not
+answer is WHICH VOICE IS THE PATIENT, because its answer arrives in a clinical
+record as *"the patient reported"*. So it is three requests rather than one,
+and the gap between the second and third is where a person answers it in one
+tap.
+
+**Nothing in the feature writes to the note.** The draft returns to the screen
+and is accepted through the ordinary `PATCH`, exactly as a keystroke is — so
+the note has one writer and a draft nobody accepted leaves no trace anywhere.
+Pinned structurally in `consultationLayout.test.js` and mutation-checked.
+
+**0071 adds two consent columns and NOTHING that could hold a recording.**
+That is how "we do not keep the audio" stays true without anybody maintaining
+the promise, and a database test asserts it of the *whole schema* rather than
+of this table. The transcript is not stored either — which is why the client
+sends it back for the drafting step. Keeping it server-side between two
+requests would be a stored transcript of a patient consultation, and a row
+with a short lifetime is still a row.
+
+**Consent has no role gate, and that is deliberate.** The person who asks the
+patient is whoever is standing in front of them, and in a Nigerian community
+pharmacy that is often a technician or an intern. Requiring a pharmacist would
+mean waiting for one or — far more likely — the nearest person clicking it on
+their behalf, which is a **worse record than the true one**. Finalising the
+note is untouched and still needs a pharmacist, which a test proves alongside.
+
+28 tests. **19 always run**: `scribeInput` (9 — the request contract, including
+that two voices with nobody named is REFUSED rather than drafted from both),
+`scribeContract` (8 — the recalibrated absence rule below) and `errorHandler`
+(2). **9 need a database** — the consent gate: no microphone until somebody
+records that the patient was asked; the gate failing closed cross-tenant *and*
+on another patient in the same pharmacy; a finalised note having nothing left
+to transcribe; the FIRST confirmation being the one kept; a recording on the
+record even when the draft is thrown away; two recordings being two events; and
+the scribe writing nothing anywhere. Skipped ceiling **726 → 735**, declared
+here per the rule below. The 7 failures are the same 7 names. Client 340/340.
+
+**Four defects were found by driving the real endpoints and the live model, and
+every one was invisible to a green suite.**
+
+**The sharpest is the second.** The absence rule — the thing standing between
+this feature and a fabricated "no known allergies" — refused a *faithful*
+draft:
+
+```
+patient said   "No fever."   "No I do not smoke at all."
+model wrote    "No fever. Did not smoke."
+old rule       REFUSED, as an invented negative
+```
+
+A pharmacist asks "any fever?" and the patient answers, so that is the **normal
+case**. The rule would have refused nearly every honest draft while passing all
+12 of its tests. It now asks the answerable question — **did the patient say
+it?** — which is possible only because the model sees just the patient's turns,
+and which is **stricter** where it matters: it catches "Not diabetic" and "has
+never had tuberculosis", phrasings no list contained. Its own tests then caught
+that *mentioning* a thing is not *denying* it (an unrelated "no fever" was
+licensing a drafted "no chest pain"), and that a blanket claim like "no other
+symptoms" can never be supported by any transcript.
+
+The others: an unreachable transcription provider came back as a **500 with a
+masked message**, telling a pharmacist nothing — least of all that the note has
+to be typed, which is the designed degradation; `finishReason: 'length'` with
+**zero characters** on every realistic transcript, because this deployment's
+model spends tokens reasoning and they never reach `content`, so the screen
+reported a fine recording as "caught too little", a false statement about the
+patient's consultation; and an all-blank transcript claiming the same thing.
+
+**23 mutations were run** across the contract, the gate, the absence rule and
+the client invariants. 22 turned the right test red. The 23rd — making a
+**subjectless** negative ("None.", "Not recorded.") supported — left every test
+green, which is the allergy card's "None" (0058) in the worst possible place;
+a test was written and it then failed. Three of my own mutations were wrong
+rather than the code, and were retargeted.
+
+**One existing test was AMENDED, not relaxed.** `consultationLayout`'s
+class-is-defined invariant now reads `ConsultationScribe.jsx` too, because a
+second file renders inside this screen and leaving it out would silently exempt
+the newest `ui-` classes from the one test that checks a class name was kept.
+It caught a missing `.ui-scribe-heard` rule on its first run.
+
+**`errorHandler` was changed, and it had to be.** `safe = status < 500` masked
+every 5xx message, so a deliberately-written 503 sentence could not reach a
+user. `expose` is now opt-in, nothing else sets it, and a closed-list grep
+keeps it that way. **The same masking means `routes/pharmacies.js` and
+`routes/website.js` carry 503 wording that has never been seen by anybody** —
+a real defect in two other features, found while tracing this one and
+deliberately NOT fixed here.
+
+**What is NOT verified, stated plainly.** The screen was never clicked through:
+the dashboard requires a Supabase sign-in and that is the owner's account.
+There is no microphone in this environment, so `MediaRecorder` capture and the
+release-on-unmount path have never run against hardware. And the two-voice
+Deepgram path is still unexercised against real audio because the free key has
+expired — which is how the 500 above was found. **The safety machinery is
+measured; the ergonomics are not.**
+
+**A gap left open on purpose.** `withinTranscript` compares character counts,
+so it catches a long fabrication from a short recording and **cannot catch a
+short one**: "Reports cough and vomiting" from a transcript saying only "cough"
+is shorter than the source and passes. On the realistic case it measured 675
+against 689 — passing, with little margin. The absence rule grounds negatives
+in the patient's words; positive fabrication has no equivalent, because a
+faithful draft legitimately rewords ("non-productive" for "nothing comes out").
+Closing it needs entity-level grounding and is its own change.
+
+**eslint is 0 errors, 45 warnings**, not the 44 recorded above. The 45th is an
+unused `written` binding in `consultations.js`'s `amendConsultation` and it
+**predates this change** — present at HEAD (`0d0f180`), verified by linting
+`git show HEAD:…` directly, and never recorded there. Not folded in here.
+
+### Why 735 tests skip
 
 `TEST_DATABASE_URL` is **not yet configured**. Every database-backed suite
 skips itself, loudly, rather than running — and each one prints its own
@@ -1520,7 +1787,7 @@ pharmacies, a connected WhatsApp socket, and messages from that morning.
 the same database, including via a port swap or the direct-connection
 hostname.
 
-**A skipped suite is not a passing suite.** 715 tests prove nothing when the
+**A skipped suite is not a passing suite.** 735 tests prove nothing when the
 variable is unset. Do not read a green-looking run as coverage of the clinical
 engine, orders, customers, tenant isolation, the pharmacy website record, or
 the clinical records added since — allergies, conditions, tests and care
@@ -1653,11 +1920,11 @@ After `npm test`, compare:
 
 | Observation | Meaning |
 |---|---|
-| **No test database:** 1406 pass / 715 skip / 7 fail, categories A+B | No regression. Proceed. |
-| **Test database configured:** 2123 pass / 0 skip / 4-5 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. Measured, not derived: 2128/2123/0/5 on 2026-09-28 against a local PostgreSQL 17.10, plus a SIXTH between 23:00 and 00:00 UTC only — the websiteAnalytics timezone-window test described above, which is a test yardstick and not in this baseline (2114/2109/0/5 before Consultation phase 3; 2087/2081/0/5 before Consultation phase 2; 2056/2051/0/5 before Consultation phase 1; 2039/2034/0/5 before Messages phase 3; 2022/2017/0/5 before Messages phase 2; 1999/1994/0/5 before Messages; 1997/1992/0/5 before follow-up phase 3; 1992/1987/0/5 before follow-up phase 2; 1964/1959/0/5 before follow-ups; 1961/1956/0/5 before care-programme phase 3; 1950/1946/0/4 before phase 2; 1909/1905/0/4 before care programmes; 1878/1874/0/4 before tests; 1842/1838/0/4 before conditions; 1812/1807/0/5 before allergies; 1791/1786/0/5 on 2026-09-21 before the review; 1686/1681/0/5 on 2026-09-19 before the patients module). The fifth failure is "writing pre-keys costs a constant number of round trips", the known-flaky one (see below) — it appears in some runs and not others, and is not a regression either way. |
+| **No test database:** 1440 pass / 735 skip / 7 fail, categories A+B | No regression. Proceed. |
+| **Test database configured:** 2177 pass / 0 skip / 4-5 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. Measured, not derived: 2182/2177/0/5 on 2026-10-10 against a local PostgreSQL 17.10, plus a possible SIXTH between 23:00 and 00:00 UTC only — the websiteAnalytics timezone-window test described above, which is a test yardstick and not in this baseline (2142/2137/0/4-5 before the AI scribe; 2139/2135/0/4 before the Consultation redesign; 2128/2123/0/5 before Messages phase 4; 2114/2109/0/5 before Consultation phase 3; 2087/2081/0/5 before Consultation phase 2; 2056/2051/0/5 before Consultation phase 1; 2039/2034/0/5 before Messages phase 3; 2022/2017/0/5 before Messages phase 2; 1999/1994/0/5 before Messages; 1997/1992/0/5 before follow-up phase 3; 1992/1987/0/5 before follow-up phase 2; 1964/1959/0/5 before follow-ups; 1961/1956/0/5 before care-programme phase 3; 1950/1946/0/4 before phase 2; 1909/1905/0/4 before care programmes; 1878/1874/0/4 before tests; 1842/1838/0/4 before conditions; 1812/1807/0/5 before allergies; 1791/1786/0/5 on 2026-09-21 before the review; 1686/1681/0/5 on 2026-09-19 before the patients module). The fifth failure is "writing pre-keys costs a constant number of round trips", the known-flaky one (see below) — it appears in some runs and not others, and is not a regression either way. |
 | Any failure NOT among the 9 | **You broke something.** Fix the code, not the test. |
-| Fewer than 1406 passing | Something stopped running. Find out what. |
-| More than 715 skipped | A suite started skipping. That is a silent loss of coverage, not a pass — unless you added tests that skip, in which case say so and move the ceiling in the same commit. |
+| Fewer than 1440 passing | Something stopped running. Find out what. |
+| More than 735 skipped | A suite started skipping. That is a silent loss of coverage, not a pass — unless you added tests that skip, in which case say so and move the ceiling in the same commit. |
 | "writing pre-keys costs a constant number of round trips" fails | Known flaky against a local database, ~1 run in 4. Not in the baseline on purpose. Do not re-run until green — read the entry above and fix the yardstick. |
 
 (These numbers were stale before 2026-09-05: the table read 768/386 while the

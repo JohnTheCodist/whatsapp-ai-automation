@@ -34,7 +34,12 @@
 const { getSql, assertPharmacyId } = require('../db');
 const { recordEvent } = require('../customers/customerEvents');
 const { PATIENT_EVENTS } = require('../customers/patientEventTypes');
-const { topicLabel, linkKindLabel } = require('./messageInput');
+const { topicLabel, linkKindLabel, outreachState } = require('./messageInput');
+// Phase 4. The ONE send path, and the ONE consent vocabulary — not a second
+// of either. GOLDEN-007 pins that every send naming a conversation comes
+// through this function.
+const { sendAndRecordOutbound } = require('../whatsapp/outboundMessage');
+const { CATEGORIES } = require('../whatsapp/communicationPolicy');
 const { assertRecord, describeRecord } = require('../clinical/clinicalRefs');
 
 /**
@@ -226,6 +231,11 @@ async function listPatientConversations(pharmacyId, customerId, { filter = 'acti
       threads: Number(internal?.threads || 0),
       unread: Number(internal?.unread || 0),
     },
+    // §15, phase 4. Whether "+ New Message" may be offered for THIS patient
+    // right now, with the reason when it may not — read rather than guessed,
+    // because the answer changes by the hour and a button drawn on a stale
+    // assumption is a pharmacist typing a message that is then refused.
+    outreach: await patientOutreachState(pharmacyId, customerId, { sql: db }),
   };
 }
 
@@ -749,6 +759,174 @@ async function getInternalThread(pharmacyId, customerId, conversationId, { sql =
   };
 }
 
+
+/* ==========================================================================
+ * Phase 4 — starting a conversation inside the window the patient opened
+ * ======================================================================== */
+
+/**
+ * The patient's most recent WhatsApp thread, as `outreachState` needs it.
+ *
+ * Deliberately the LATEST by last_message_at rather than "any open one":
+ * whether outreach is allowed depends on the most recent contact, and an old
+ * thread left open by accident must not make a stale window look live.
+ */
+async function latestWhatsappThread(sql, pharmacyId, customerId) {
+  const [row] = await sql`
+    select id, status, window_expires_at, last_message_at
+    from conversations
+    where pharmacy_id = ${pharmacyId} and customer_id = ${customerId} and channel = 'whatsapp'
+    order by last_message_at desc nulls last, id desc
+    limit 1
+  `;
+  if (!row) return null;
+  return {
+    id: row.id,
+    status: row.status,
+    windowExpiresAt: row.window_expires_at,
+    lastMessageAt: row.last_message_at,
+  };
+}
+
+/**
+ * Whether this screen may offer "+ New Message" for THIS patient, right now.
+ *
+ * Read rather than guessed: the answer changes by the hour, and a button
+ * drawn on a stale assumption is a pharmacist typing a message that is then
+ * refused. The screen gets the reason too, so it can say WHY instead of
+ * going grey.
+ */
+async function patientOutreachState(pharmacyId, customerId, { sql = null, now = new Date() } = {}) {
+  assertPharmacyId(pharmacyId);
+  const db = sql || getSql();
+  const latest = await latestWhatsappThread(db, pharmacyId, customerId);
+  return outreachState({ latest, now });
+}
+
+/**
+ * §15 — start a conversation, inside the window the patient opened.
+ *
+ * NOT a second send path. The message goes through `sendAndRecordOutbound`
+ * like every other patient-facing message in this product, so the internal-
+ * thread guard, the consent check and the transport are all the ones that
+ * already exist. GOLDEN-007 holds unchanged: this send names a conversation,
+ * and it goes through the one path.
+ *
+ * THE WINDOW IS CARRIED OVER, NOT RESET. It belongs to the patient’s last
+ * inbound message. Minting a fresh 24 hours here because we sent something
+ * would be this product granting itself a permission the provider never
+ * gave, and the next send would be refused by WhatsApp while our own row
+ * said it was fine.
+ */
+async function startPatientConversation(pharmacyId, customerId, input, actor = {}) {
+  assertPharmacyId(pharmacyId);
+  const db = getSql();
+
+  // Checked OUTSIDE the transaction that writes, and again inside it. The
+  // outside check gives a usable error; the inside one is what actually
+  // holds, because the window can close between the two.
+  const gate = await patientOutreachState(pharmacyId, customerId, { sql: db });
+  if (!gate.allowed) {
+    const err = new Error(gate.message);
+    err.status = 409;
+    err.code = gate.reason === 'thread_open' ? 'THREAD_OPEN' : 'OUTSIDE_WINDOW';
+    err.conversationId = gate.conversationId || null;
+    throw err;
+  }
+
+  const [account] = await db`
+    select id from whatsapp_accounts
+    where pharmacy_id = ${pharmacyId} and provider = 'baileys' and status = 'connected'
+    limit 1
+  `;
+  if (!account) {
+    const err = new Error('WhatsApp is not connected.');
+    err.status = 409; err.code = 'NOT_CONNECTED';
+    throw err;
+  }
+
+  const [customer] = await db`
+    select id, wa_jid, wa_phone from customers
+    where id = ${customerId} and pharmacy_id = ${pharmacyId}
+  `;
+  if (!customer) {
+    const err = new Error('Patient not found.');
+    err.status = 404; err.code = 'NOT_FOUND';
+    throw err;
+  }
+  // §34: a patient with no reachable contact is said so plainly, before
+  // anything is written, rather than failing at the transport.
+  const to = customer.wa_jid || customer.wa_phone;
+  if (!to) {
+    const err = new Error('This patient has no WhatsApp contact on record.');
+    err.status = 409; err.code = 'NO_CONTACT';
+    throw err;
+  }
+
+  const conversationId = await db.begin(async (tx) => {
+    // Re-read under the row lock. The window may have closed, or a colleague
+    // may have opened a thread, since the check above.
+    const latest = await latestWhatsappThread(tx, pharmacyId, customerId);
+    const again = outreachState({ latest });
+    if (!again.allowed) {
+      const err = new Error(again.message);
+      err.status = 409;
+      err.code = again.reason === 'thread_open' ? 'THREAD_OPEN' : 'OUTSIDE_WINDOW';
+      throw err;
+    }
+
+    // `mode = human` because a pharmacist is writing, not the assistant. A
+    // thread left in 'bot' would hand the patient's reply to the model, which
+    // is not what somebody pressing Send on their own message asked for.
+    const [created] = await tx`
+      insert into conversations
+        (pharmacy_id, customer_id, channel, status, workflow_state, mode,
+         topic, topic_set_at, topic_set_by, last_message_at, window_expires_at)
+      values (${pharmacyId}, ${customerId}, 'whatsapp', 'open', 'open', 'human',
+              ${input.topic}, ${input.topic ? new Date() : null}, ${input.topic ? (actor.actorId || null) : null},
+              now(), ${latest.windowExpiresAt})
+      returning id
+    `;
+
+    await recordEvent(tx, {
+      pharmacyId,
+      customerId,
+      eventType: PATIENT_EVENTS.CONVERSATION_STARTED,
+      actorType: 'staff',
+      actorId: actor.actorId || null,
+      entityType: 'conversation',
+      entityId: created.id,
+      // The topic and the window, never the message body: the message is in
+      // `messages`, and a copy in the event log is a second place a patient
+      // communication lives.
+      metadata: { topic: input.topic || null, startedBy: 'staff', windowExpiresAt: latest.windowExpiresAt },
+      idempotencyKey: `CONVERSATION_STARTED:staff:${created.id}`,
+    });
+
+    return created.id;
+  });
+
+  // Outside the transaction, deliberately: the send talks to the provider,
+  // and holding a database transaction open across a network call to
+  // WhatsApp is how this product would learn about lock contention the hard
+  // way. If the send fails the conversation remains, empty and open, which is
+  // the honest record — somebody tried to write and it did not go.
+  const { message } = await sendAndRecordOutbound(db, {
+    pharmacyId,
+    customerId,
+    conversationId,
+    accountId: account.id,
+    to,
+    body: input.body,
+    author: 'staff',
+    delay: false,
+    // The same category the reply route declares, and for the same reason:
+    // the window is open, which means the PATIENT initiated this contact.
+    category: CATEGORIES.TRANSACTIONAL,
+  });
+
+  return { conversationId, message };
+}
 module.exports = {
   listPatientConversations,
   getPatientConversation,
@@ -760,5 +938,7 @@ module.exports = {
   createInternalThread,
   addInternalNote,
   getInternalThread,
+  patientOutreachState,
+  startPatientConversation,
   messagesSummary,
 };

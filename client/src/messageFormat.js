@@ -292,3 +292,32 @@ export const PATIENT_BANNER = 'With the patient';
 
 export const NO_INTERNAL_THREADS = 'No internal threads';
 export const NO_INTERNAL_HELP = 'Start one to discuss this patient with a colleague. Nothing here reaches the patient.';
+
+/* ==========================================================================
+ * Phase 4 — starting a conversation inside the window the patient opened
+ * ======================================================================== */
+
+/**
+ * What the composer says about the window it is writing inside.
+ *
+ * THE POINT OF THIS SENTENCE is that the pharmacist understands they are
+ * continuing something the PATIENT started, not writing out of the blue —
+ * because the next time this patient has not written, the button will be
+ * gone, and "the software is broken" is the wrong conclusion to reach.
+ *
+ * An unreadable or missing expiry says the plain version rather than a
+ * fabricated time. Inventing "expires in 3 hours" from a timestamp we could
+ * not parse is the same class of mistake as showing a delivery state the
+ * provider never reported (§8).
+ */
+export function OUTREACH_WINDOW_NOTE(windowExpiresAt) {
+  const base = 'This continues a conversation the patient started.';
+  if (!windowExpiresAt) return base;
+  const at = new Date(windowExpiresAt);
+  if (Number.isNaN(at.getTime())) return base;
+
+  const hours = Math.floor((at.getTime() - Date.now()) / 3600000);
+  if (hours < 1) return `${base} The 24-hour reply window closes within the hour.`;
+  if (hours === 1) return `${base} The 24-hour reply window closes in 1 hour.`;
+  return `${base} The 24-hour reply window closes in ${hours} hours.`;
+}

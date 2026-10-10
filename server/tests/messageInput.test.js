@@ -17,6 +17,7 @@ const {
   readListQuery, readTopicInput, readLinkInput,
   readInternalThreadInput, readInternalNoteInput,
   topicLabel, linkKindLabel, messageOptions,
+  readNewConversationInput, outreachState,
 } = require('../services/messaging/messageInput');
 
 // §12 of the brief lists the topics. They are a fixed vocabulary because a
@@ -133,7 +134,12 @@ test('the screen is told what this phase cannot do, rather than guessing', () =>
   // strictly reactive and does not message a patient first. Phase 3 built
   // internal threads (0066) and changed nothing about that, because an
   // internal thread never leaves the pharmacy and so is not outreach.
-  assert.equal(capabilities.canStartConversation, false);
+  // AMENDED 2026-10-04 with the product. Phase 4 lets a pharmacist continue a
+  // conversation the PATIENT started, inside the 24-hour window they opened.
+  // The rule this test exists for is the SECOND line, which is unchanged and
+  // is the one that matters: this product does not write to patients first.
+  assert.equal(capabilities.canStartConversation, true);
+  assert.equal(capabilities.canStartConversationUnprompted, false);
   assert.equal(capabilities.canSendAttachment, false);
   // Changed with the product in phase 3. Was false through phases 1 and 2.
   assert.equal(capabilities.internalThreads, true);
@@ -275,4 +281,88 @@ test('a note cannot be empty, and carries no route to a patient', () => {
   // note has no recipient outside this pharmacy, and no shape here implies one.
   const parsed = readInternalNoteInput({ note: 'hello', to: '2348000000001', channel: 'whatsapp', send: true });
   assert.deepEqual(Object.keys(parsed), ['note']);
+});
+
+/* ==========================================================================
+ * Phase 4 — starting a conversation inside the window the patient opened
+ * ======================================================================== */
+
+// THE MOST IMPORTANT TEST IN THIS FILE.
+test('this product still never writes to a patient who has not written to us', () => {
+  // §15 asks for a "+ New Message" that messages a patient. This product
+  // sends over BAILEYS, not the Meta Cloud API, so there is no approved-
+  // template path and no compliant way to write to somebody outside the
+  // window they opened. Doing it anyway is the fastest way to get a
+  // pharmacy's number flagged, and five real pharmacies are on this system.
+  const now = new Date('2026-10-04T12:00:00Z');
+
+  // Never messaged: refused. This is the case §15 literally asks for, and
+  // the one that must stay shut.
+  const never = outreachState({ latest: null, now });
+  assert.equal(never.allowed, false);
+  assert.equal(never.reason, 'never_messaged');
+  assert.match(never.message, /approved template/i);
+
+  // Window closed: refused, and the message says the patient has to write
+  // again rather than blaming the pharmacist.
+  const stale = outreachState({ latest: { status: 'closed', windowExpiresAt: '2026-10-03T20:00:00Z' }, now });
+  assert.equal(stale.allowed, false);
+  assert.equal(stale.reason, 'window_closed');
+
+  // A window we cannot read fails CLOSED. "We could not tell" is never
+  // "it is safe to send" — GOLDEN-002c's lesson, applied here.
+  for (const bad of [null, undefined, '', 'not-a-date']) {
+    const u = outreachState({ latest: { status: 'closed', windowExpiresAt: bad }, now });
+    assert.equal(u.allowed, false, `an unreadable window (${JSON.stringify(bad)}) was treated as open`);
+    assert.equal(u.reason, 'window_closed');
+  }
+
+  // Exactly at expiry is CLOSED, not open. A boundary that rounds the wrong
+  // way is a send the provider refuses while our own row says it was fine.
+  const exact = outreachState({ latest: { status: 'closed', windowExpiresAt: now.toISOString() }, now });
+  assert.equal(exact.allowed, false);
+
+  // THE ONE CASE THAT IS ALLOWED: the patient wrote within 24 hours and the
+  // thread they opened has since been archived. That is not a business-
+  // initiated message — it is continuing a conversation the PATIENT started.
+  const ok = outreachState({ latest: { status: 'closed', windowExpiresAt: '2026-10-04T20:00:00Z' }, now });
+  assert.equal(ok.allowed, true);
+  assert.equal(ok.reason, null);
+});
+
+test('an open thread is replied to, not started again', () => {
+  // The one-open index would refuse a second open WhatsApp thread anyway.
+  // Saying so here means the pharmacist is told to reply instead of being
+  // shown a database constraint.
+  const r = outreachState({ latest: { id: 'c1', status: 'open', windowExpiresAt: '2099-01-01T00:00:00Z' } });
+  assert.equal(r.allowed, false);
+  assert.equal(r.reason, 'thread_open');
+  assert.equal(r.conversationId, 'c1', 'the screen is told WHICH thread to reply in');
+  assert.match(r.message, /reply/i);
+});
+
+test('a new conversation needs words, and invents no topic', () => {
+  assert.deepEqual(readNewConversationInput({ body: '  Your refill is ready.  ' }),
+    { body: 'Your refill is ready.', topic: null, channel: 'whatsapp' });
+
+  // 0063 refused a default topic and so does this: a topic nobody chose is
+  // the product inventing what a conversation was about.
+  assert.equal(readNewConversationInput({ body: 'x' }).topic, null);
+  assert.equal(readNewConversationInput({ body: 'x', topic: '' }).topic, null);
+  assert.equal(readNewConversationInput({ body: 'x', topic: 'medication' }).topic, 'medication');
+
+  for (const bad of [undefined, null, '', '   ']) {
+    assert.throws(() => readNewConversationInput({ body: bad }),
+      (e) => { assert.equal(e.field, 'body'); return true; },
+      `accepted ${JSON.stringify(bad)} as a message`);
+  }
+  assert.throws(() => readNewConversationInput({ body: 'x', topic: 'nonsense' }),
+    (e) => e.field === 'topic');
+
+  // §15 says offer only channels actually available. WhatsApp is the only
+  // one this product sends patient-facing messages on, so anything else is
+  // refused rather than silently accepted and dropped.
+  assert.throws(() => readNewConversationInput({ body: 'x', channel: 'sms' }),
+    (e) => e.field === 'channel');
+  assert.equal(readNewConversationInput({ body: 'x', channel: 'whatsapp' }).channel, 'whatsapp');
 });

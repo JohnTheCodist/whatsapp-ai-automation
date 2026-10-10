@@ -1141,3 +1141,340 @@ test('amending creates no clinical record anywhere, and deletes nothing', { skip
   `;
   assert.equal(count, 1);
 });
+
+/* ==========================================================================
+ * The redesign — the patient banner (§12)
+ * ======================================================================== */
+
+test('the banner carries a name, a derived age and NOTHING else', { skip: SKIP && skipReason }, async () => {
+  // §12. This sits above a clinical note all day, in a shop, read by whoever
+  // walks past the counter. A phone number or an address on it is contact
+  // data on display for no clinical purpose.
+  const pt = await patient(ctx.a.id, 'Banner Tester');
+  await db`
+    insert into patient_profiles (pharmacy_id, customer_id, date_of_birth, sex)
+    values (${ctx.a.id}, ${pt}, '1994-03-01', 'female')
+    on conflict (pharmacy_id, customer_id) do update
+      set date_of_birth = excluded.date_of_birth, sex = excluded.sex
+  `;
+
+  const banner = await consultations.consultationPatient(ctx.a.id, pt);
+  assert.deepEqual(Object.keys(banner).sort(), ['age', 'name', 'sex'],
+    'the banner must carry nothing but a name, an age and a sex');
+  assert.equal(banner.name, 'Banner Tester');
+  assert.equal(banner.sex, 'female');
+
+  // DERIVED from the date of birth, so it cannot go stale in the row.
+  const expected = new Date().getUTCFullYear() - 1994
+    - ((new Date().getUTCMonth() < 2 || (new Date().getUTCMonth() === 2 && new Date().getUTCDate() < 1)) ? 1 : 0);
+  assert.equal(banner.age, expected);
+});
+
+test('a patient whose age nobody recorded shows no age, never zero', { skip: SKIP && skipReason }, async () => {
+  // A 0 on a banner reads as a newborn. The honest answer is nothing, which
+  // is the same rule the rest of this module follows for what was never
+  // entered.
+  const pt = await patient(ctx.a.id);
+  const noProfile = await consultations.consultationPatient(ctx.a.id, pt);
+  assert.equal(noProfile.age, null);
+  assert.equal(noProfile.sex, null);
+  assert.ok(noProfile.name, 'the name is still there');
+
+  // A profile with no date of birth and no age is the same answer.
+  await db`
+    insert into patient_profiles (pharmacy_id, customer_id)
+    values (${ctx.a.id}, ${pt})
+    on conflict (pharmacy_id, customer_id) do nothing
+  `;
+  assert.equal((await consultations.consultationPatient(ctx.a.id, pt)).age, null);
+});
+
+test('the banner is this pharmacy\u2019s patient, and nobody else\u2019s', { skip: SKIP && skipReason }, async () => {
+  // GOLDEN-001 on a new read. A patient's name and age are exactly the sort
+  // of thing a cross-tenant read leaks without looking like a leak.
+  const pt = await patient(ctx.a.id);
+  assert.ok(await consultations.consultationPatient(ctx.a.id, pt));
+  assert.equal(await consultations.consultationPatient(ctx.b.id, pt), null,
+    'pharmacy B read pharmacy A\u2019s patient');
+});
+
+/* ==========================================================================
+ * The AI scribe’s consent gate (0071, SCRIBE_PLAN.md §7)
+ *
+ * The gate is the whole safety story of this feature at the database level:
+ * a microphone must not open against a patient nobody asked. Every test here
+ * asserts a REFUSAL plus the fact that nothing was written, because a gate
+ * that refuses and leaves a row behind has not refused.
+ * ======================================================================== */
+
+test('no microphone opens until somebody records that the patient was asked', { skip: SKIP && skipReason }, async () => {
+  // THE MOST IMPORTANT TEST FOR THIS FEATURE. Recording a patient’s voice
+  // in a pharmacy is processing health data about an identified person, and
+  // the lawful basis has to exist BEFORE the audio does — not be inferred
+  // afterwards from the fact that a recording happened.
+  const p = await patient(ctx.a.id);
+  const c = await consultations.startConsultation(ctx.a.id, p,
+    start({ consultationType: 'minor_ailment' }), PHARMACIST(ctx.userA));
+
+  // A fresh note has never been asked, and the gate says so by NAME rather
+  // than with a bare false — the screen has to tell the pharmacist to go and
+  // ask, which is different from every other reason it might refuse.
+  assert.equal(c.scribeConsentAt, null);
+  const closed = await consultations.scribeGate(ctx.a.id, p, c.id);
+  assert.equal(closed.allowed, false);
+  assert.equal(closed.reason, 'no_consent');
+  assert.equal(closed.consentAt, null);
+
+  // Asked, and now it opens.
+  const asked = await consultations.recordScribeConsent(ctx.a.id, p, c.id, PHARMACIST(ctx.userA));
+  assert.ok(asked.scribeConsentAt, 'the moment the patient was asked is stored');
+  assert.equal(asked.scribeConsentBy, ctx.userA, 'and who asked them');
+
+  const open = await consultations.scribeGate(ctx.a.id, p, c.id);
+  assert.equal(open.allowed, true);
+  assert.equal(open.reason, null);
+});
+
+test('the gate fails CLOSED on a note it cannot find, in this pharmacy or any other', { skip: SKIP && skipReason }, async () => {
+  // GOLDEN-001 and GOLDEN-002c in one place. A consultation id is not a
+  // capability, and "we could not tell whose note that is" is never "go
+  // ahead and record".
+  const p = await patient(ctx.a.id);
+  const c = await consultations.startConsultation(ctx.a.id, p,
+    start({ consultationType: 'minor_ailment' }), PHARMACIST(ctx.userA));
+  await consultations.recordScribeConsent(ctx.a.id, p, c.id, PHARMACIST(ctx.userA));
+
+  // Pharmacy B naming pharmacy A’s consented note gets nothing.
+  const other = await consultations.scribeGate(ctx.b.id, p, c.id);
+  assert.equal(other.allowed, false);
+  assert.equal(other.reason, 'not_found');
+  assert.equal(other.consentAt, null, 'and learns nothing about whether consent exists');
+
+  // Another patient in the SAME pharmacy, too — the note is scoped to both.
+  const p2 = await patient(ctx.a.id);
+  const wrongPatient = await consultations.scribeGate(ctx.a.id, p2, c.id);
+  assert.equal(wrongPatient.allowed, false);
+  assert.equal(wrongPatient.reason, 'not_found');
+
+  // And an id that is nobody’s.
+  const nothing = await consultations.scribeGate(ctx.a.id, p, crypto.randomUUID());
+  assert.equal(nothing.allowed, false);
+  assert.equal(nothing.reason, 'not_found');
+
+  // Pharmacy B cannot record consent against it either, and the refusal
+  // leaves pharmacy A’s row exactly as it was.
+  await assert.rejects(
+    () => consultations.recordScribeConsent(ctx.b.id, p, c.id, PHARMACIST(ctx.userB)),
+    (e) => { assert.equal(e.status, 404); assert.equal(e.code, 'NOT_FOUND'); return true; },
+  );
+  const [row] = await db`
+    select scribe_consent_by from pharmacist_consultations where id = ${c.id}
+  `;
+  assert.equal(row.scribe_consent_by, ctx.userA, 'pharmacy B overwrote who asked');
+});
+
+test('a finalised note has nothing left to transcribe', { skip: SKIP && skipReason }, async () => {
+  // A microphone opened against a closed record could only produce a draft
+  // with nowhere to go — the note refuses edits. Worse, a consent recorded
+  // afterwards claims a conversation happened that the note cannot show.
+  const p = await patient(ctx.a.id);
+  const c = await consultations.startConsultation(ctx.a.id, p,
+    start({ consultationType: 'minor_ailment' }), PHARMACIST(ctx.userA));
+  await consultations.updateConsultation(ctx.a.id, p, c.id, readConsultationPatch({
+    reasonCode: 'cough', assessmentText: 'Uncomplicated acute cough', planText: 'Hydration',
+  }), PHARMACIST(ctx.userA));
+  await consultations.recordScribeConsent(ctx.a.id, p, c.id, PHARMACIST(ctx.userA));
+  await consultations.completeConsultation(ctx.a.id, p, c.id, PHARMACIST(ctx.userA));
+
+  // Consented EARLIER and still refused, which is the point: the gate reads
+  // the status too, so consent is necessary and never sufficient.
+  const gate = await consultations.scribeGate(ctx.a.id, p, c.id);
+  assert.equal(gate.allowed, false);
+  assert.equal(gate.reason, 'finalised');
+  assert.ok(gate.consentAt, 'the consent that was given is still true and still reported');
+
+  await assert.rejects(
+    () => consultations.recordScribeConsent(ctx.a.id, p, c.id, PHARMACIST(ctx.userA)),
+    (e) => { assert.equal(e.status, 409); assert.equal(e.code, 'FINALISED'); return true; },
+  );
+});
+
+test('the first confirmation is the one kept, because that is when the patient was asked', { skip: SKIP && skipReason }, async () => {
+  // A pharmacist who records twice — a second attempt after a noisy first
+  // one is normal — must not move the moment the patient actually agreed.
+  // That timestamp is the only evidence this record holds that anybody
+  // asked, and the SECOND press is not when they did.
+  const p = await patient(ctx.a.id);
+  const c = await consultations.startConsultation(ctx.a.id, p,
+    start({ consultationType: 'minor_ailment' }), PHARMACIST(ctx.userA));
+
+  const first = await consultations.recordScribeConsent(ctx.a.id, p, c.id, PHARMACIST(ctx.userA));
+  const again = await consultations.recordScribeConsent(ctx.a.id, p, c.id, STAFF(ctx.staffA));
+
+  assert.deepEqual(new Date(again.scribeConsentAt), new Date(first.scribeConsentAt));
+  assert.equal(again.scribeConsentBy, ctx.userA, 'the second caller overwrote who asked');
+});
+
+test('anyone in the pharmacy may ask the patient; only a pharmacist may finalise', { skip: SKIP && skipReason }, async () => {
+  // Deliberately NO role gate on consent. The person who asks the patient is
+  // the person standing in front of them, and in a Nigerian community
+  // pharmacy that is often a technician or an intern. Requiring a pharmacist
+  // would mean either waiting for one or — far more likely — the nearest
+  // person clicking it on their behalf, which is a WORSE record than the
+  // true one.
+  const p = await patient(ctx.a.id);
+  const c = await consultations.startConsultation(ctx.a.id, p,
+    start({ consultationType: 'minor_ailment' }), STAFF(ctx.staffA));
+
+  const asked = await consultations.recordScribeConsent(ctx.a.id, p, c.id, STAFF(ctx.staffA));
+  assert.equal(asked.scribeConsentBy, ctx.staffA);
+  assert.equal((await consultations.scribeGate(ctx.a.id, p, c.id)).allowed, true);
+
+  // And the gate that MATTERS is untouched by any of this: a staff member
+  // still cannot close the record.
+  await consultations.updateConsultation(ctx.a.id, p, c.id, readConsultationPatch({
+    reasonCode: 'cough', assessmentText: 'Uncomplicated acute cough', planText: 'Hydration',
+  }), STAFF(ctx.staffA));
+  await assert.rejects(
+    () => consultations.completeConsultation(ctx.a.id, p, c.id, STAFF(ctx.staffA)),
+    (e) => { assert.equal(e.code, 'ROLE_REQUIRED'); return true; },
+  );
+});
+
+test('a recording is on the record even when the draft is thrown away', { skip: SKIP && skipReason }, async () => {
+  // "Was this patient recorded?" has to be answerable whatever came of it. A
+  // log that only shows the recordings somebody KEPT understates how often
+  // the microphone was on, which is the opposite of what an audit trail is
+  // for.
+  const p = await patient(ctx.a.id);
+  const c = await consultations.startConsultation(ctx.a.id, p,
+    start({ consultationType: 'minor_ailment' }), PHARMACIST(ctx.userA));
+  await consultations.recordScribeConsent(ctx.a.id, p, c.id, PHARMACIST(ctx.userA));
+
+  await consultations.recordScribeUse(ctx.a.id, p, c.id, {
+    speakers: 2, diarised: true, turns: 14, drafted: false, refused: null,
+  }, PHARMACIST(ctx.userA));
+
+  const [ev] = await db`
+    select event_type, actor_id, visibility, metadata, entity_type
+    from customer_events
+    where pharmacy_id = ${ctx.a.id} and customer_id = ${p}
+      and event_type = 'CONSULTATION_SCRIBE_USED'
+  `;
+  assert.ok(ev, 'nothing recorded that the microphone was opened');
+  assert.equal(ev.entity_type, 'pharmacist_consultation');
+  assert.equal(ev.actor_id, ctx.userA);
+  assert.equal(ev.visibility, 'internal');
+
+  // It carries HOW, never WHAT. Audio is stored nowhere and the transcript
+  // is not stored either, so an event holding one would become the single
+  // copy of the thing this feature promises not to keep.
+  assert.equal(ev.metadata.speakers, 2);
+  assert.equal(ev.metadata.diarised, true);
+  assert.equal(ev.metadata.turns, 14);
+  assert.equal(ev.metadata.drafted, false);
+  const serialised = JSON.stringify(ev.metadata);
+  for (const key of [
+    'transcript', 'draft', 'text', 'subjective', 'audio', 'turnsText', 'utterances',
+  ]) {
+    assert.ok(!Object.prototype.hasOwnProperty.call(ev.metadata, key),
+      `the scribe event carries a ${key}`);
+  }
+  assert.doesNotMatch(serialised, /cough|patient reports|dry/i,
+    'clinical words reached the event log');
+});
+
+test('two recordings in one consultation are two events, not one', { skip: SKIP && skipReason }, async () => {
+  // A noisy first attempt followed by a second is normal. `recordEvent`’s
+  // DEFAULT idempotency key is eventType:entityType:entityId, which would
+  // silently discard the second — the same bug that lost a conversation’s
+  // second topic change in Messages phase 1.
+  const p = await patient(ctx.a.id);
+  const c = await consultations.startConsultation(ctx.a.id, p,
+    start({ consultationType: 'minor_ailment' }), PHARMACIST(ctx.userA));
+  await consultations.recordScribeConsent(ctx.a.id, p, c.id, PHARMACIST(ctx.userA));
+
+  await consultations.recordScribeUse(ctx.a.id, p, c.id,
+    { speakers: 1, diarised: false, turns: 2, drafted: false }, PHARMACIST(ctx.userA));
+  await consultations.recordScribeUse(ctx.a.id, p, c.id,
+    { speakers: 2, diarised: true, turns: 11, drafted: true }, PHARMACIST(ctx.userA));
+
+  const rows = await db`
+    select metadata from customer_events
+    where pharmacy_id = ${ctx.a.id} and customer_id = ${p}
+      and event_type = 'CONSULTATION_SCRIBE_USED'
+    order by created_at
+  `;
+  assert.equal(rows.length, 2, 'the second recording was discarded as a duplicate');
+  assert.equal(rows[0].metadata.diarised, false);
+  assert.equal(rows[1].metadata.diarised, true);
+});
+
+test('the scribe creates no clinical record and writes nothing to the note', { skip: SKIP && skipReason }, async () => {
+  // §36 for this feature. The draft is RETURNED to the screen and accepted
+  // through the ordinary PATCH, so the note has exactly one writer — and a
+  // draft nobody accepted leaves no trace anywhere.
+  const p = await patient(ctx.a.id);
+  const c = await consultations.startConsultation(ctx.a.id, p,
+    start({ consultationType: 'minor_ailment' }), PHARMACIST(ctx.userA));
+
+  await consultations.recordScribeConsent(ctx.a.id, p, c.id, PHARMACIST(ctx.userA));
+  await consultations.recordScribeUse(ctx.a.id, p, c.id,
+    { speakers: 2, diarised: true, turns: 9, drafted: true }, PHARMACIST(ctx.userA));
+
+  const after = await consultations.getConsultation(ctx.a.id, p, c.id);
+  assert.equal(after.subjective, null, 'the scribe wrote into the note');
+  assert.equal(after.status, 'draft', 'consent alone moved the note on');
+  assert.deepEqual(after.problems, []);
+
+  // And nowhere else either.
+  const [{ count: conditions }] = await db`
+    select count(*)::int as count from patient_problems
+    where pharmacy_id = ${ctx.a.id} and customer_id = ${p}
+  `;
+  const [{ count: vitals }] = await db`
+    select count(*)::int as count from patient_vitals
+    where pharmacy_id = ${ctx.a.id} and customer_id = ${p}
+  `;
+  assert.equal(conditions, 0);
+  assert.equal(vitals, 0);
+});
+
+test('nothing in this feature has anywhere to store a recording or a transcript', { skip: SKIP && skipReason }, async () => {
+  // The STRUCTURAL invariant, which is what AGENTS.md asks for over a
+  // reproduction: "we do not keep the audio" is a promise somebody has to
+  // maintain, unless there is nowhere to put it. Then it is just true.
+  const cols = await db`
+    select column_name from information_schema.columns
+    where table_schema = 'public' and table_name = 'pharmacist_consultations'
+  `;
+  assert.ok(cols.length > 0, 'the table was not found, so this proved nothing');
+
+  const names = cols.map((r) => r.column_name);
+  for (const forbidden of [
+    'audio', 'audio_url', 'recording', 'recording_url', 'transcript',
+    'transcript_text', 'scribe_transcript', 'scribe_draft', 'media_url',
+  ]) {
+    assert.ok(!names.includes(forbidden),
+      `pharmacist_consultations.${forbidden} exists — the scribe now has somewhere to keep what it promised not to`);
+  }
+  // What 0071 DID add, and all it added.
+  assert.ok(names.includes('scribe_consent_at'));
+  assert.ok(names.includes('scribe_consent_by'));
+
+  // And no table anywhere grew one either.
+  const anywhere = await db`
+    select table_name, column_name from information_schema.columns
+    where table_schema = 'public'
+      and (column_name like '%transcript%' or column_name like '%audio%'
+           or column_name like '%recording%')
+  `;
+  // `.length`, not deepEqual against []: postgres.js answers with a Result
+  // object, which deepEqual rejects on its prototype even when it holds no
+  // rows. The rule is unchanged and still exact — ZERO such columns anywhere
+  // in the schema — and the message names every offender, so a failure says
+  // which table grew one.
+  const offenders = anywhere.map((r) => `${r.table_name}.${r.column_name}`).join(', ');
+  assert.equal(anywhere.length, 0,
+    `a column that could hold a recording exists: ${offenders}`);
+});

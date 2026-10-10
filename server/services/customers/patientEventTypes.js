@@ -64,6 +64,20 @@ const PATIENT_EVENTS = Object.freeze({
   // — never the snapshot itself, which belongs in the amendments table and
   // would put a clinical record into the event log twice.
   CONSULTATION_AMENDED: 'CONSULTATION_AMENDED',
+  // The AI scribe drafted the Subjective section from a recording
+  // (SCRIBE_PLAN.md). Carries {speakers, diarised, turns, drafted, refused}
+  // — HOW the draft was produced, never the transcript and never the draft.
+  // Note that `drafted` says a draft came back, NOT that a pharmacist kept
+  // it: accepting happens through the note's own PATCH, where it is
+  // indistinguishable from typing, which is the point. Audio
+  // is not stored anywhere and the transcript is not either, so an event
+  // carrying either would be the one copy of something this feature
+  // promises not to keep.
+  //
+  // It is recorded even when the pharmacist throws the draft away, because
+  // "was this patient recorded?" is a question the record has to answer
+  // whatever came of it.
+  CONSULTATION_SCRIBE_USED: 'CONSULTATION_SCRIBE_USED',
   // A record was attached to, or detached from, a conversation (0064).
   // Carries {action, kind, refId} — a POINTER, never a copy of what the
   // record says. Detaching is kept as an event because "this thread was

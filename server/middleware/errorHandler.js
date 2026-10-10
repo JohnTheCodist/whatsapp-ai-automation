@@ -41,7 +41,24 @@ function errorHandler(err, req, res, next) {
 
   // Client errors we raised deliberately carry a safe message. Anything
   // else is assumed to be an internal detail and is replaced.
-  const safe = status < 500;
+  //
+  // `expose` is the exception, added 2026-10-10 for the AI scribe. The real
+  // distinguishing property was never the status code — it is whether WE
+  // wrote the sentence. A 503 raised deliberately because a provider is down
+  // ("type the note instead") is as safe to show as any 400, and masking it
+  // leaves a pharmacist with "Something went wrong" and no idea that the fix
+  // is to type.
+  //
+  // It is OPT-IN and nothing else sets it, so no existing response changes.
+  // A plain 500 still says nothing about itself, which is the rule
+  // `errorHandler.test.js` exists to hold and which is unchanged.
+  //
+  // Worth recording: `routes/pharmacies.js` and `routes/website.js` both
+  // raise HttpError(503, ...) with written sentences that are ALSO being
+  // masked today. That is a real defect in those two features, found while
+  // tracing this one, and it is deliberately NOT fixed here — it belongs in
+  // a change about them, not a footnote in this one.
+  const safe = status < 500 || err.expose === true;
   res.status(status).json({
     error: safe ? err.message : 'Something went wrong',
     code: err.code || (safe ? 'BAD_REQUEST' : 'INTERNAL_ERROR'),

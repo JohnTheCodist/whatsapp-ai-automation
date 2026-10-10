@@ -23,11 +23,13 @@ const { requireAuth } = require('../middleware/auth');
 const {
   listPatientConversations, getPatientConversation, setConversationTopic,
   addConversationLink, removeConversationLink, markConversationRead,
-  createInternalThread, addInternalNote, getInternalThread,
+  createInternalThread,
+  startPatientConversation, addInternalNote, getInternalThread,
 } = require('../services/messaging/patientMessages');
 const {
   readListQuery, readTopicInput, readLinkInput,
-  readInternalThreadInput, readInternalNoteInput, messageOptions,
+  readInternalThreadInput, readInternalNoteInput,
+  readNewConversationInput, messageOptions,
 } = require('../services/messaging/messageInput');
 
 const router = express.Router();
@@ -197,6 +199,26 @@ router.post('/:id/messages/internal/:conversationId/notes', requireAuth, async (
     res.status(201).json(await addInternalNote(
       req.pharmacyId, customerId(req), req.params.conversationId, input, actor(req),
     ));
+  } catch (err) { next(err); }
+});
+
+// ---- §15 start a conversation, inside the window the patient opened -------
+//
+// NOT unprompted outreach. This product sends over Baileys and has no
+// approved-template path, so writing to somebody who has not written to us
+// is both non-compliant and the fastest way to get a pharmacy’s number
+// flagged. `outreachState` allows exactly one case: the patient messaged
+// within the last 24 hours and the thread they opened has since been closed.
+//
+// The message goes through `sendAndRecordOutbound` like every other
+// patient-facing message, so this is not a second send path.
+router.post('/:id/messages', requireAuth, async (req, res, next) => {
+  try {
+    const input = readNewConversationInput(req.body);
+    const result = await startPatientConversation(
+      req.pharmacyId, customerId(req), input, actor(req),
+    );
+    res.status(201).json(result);
   } catch (err) { next(err); }
 });
 

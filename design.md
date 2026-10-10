@@ -102,7 +102,24 @@ At rest the sidebar is the desk's **56px icon strip**: the R tile alone,
 36px icon tiles, groups separated by a hairline rule, the active item on a
 white tile, counts riding each icon's corner (9+ past nine), the WhatsApp
 state as a dot on its icon. **Point at it and the full 214px panel opens;
-move away and it closes.** There is no toggle.
+move away and it closes.**
+
+**AMENDED 2026-10-04: it can also be PINNED.** This section said "there is
+no toggle", and hover-only is right for a cursor passing through and wrong
+for somebody who wants to see where they are while they work — which is what
+the owner asked for. A `»` control in the workspace row holds the panel open;
+`«` lets it go back to closing itself. The preference is remembered.
+
+Two rules keep this from becoming a second sidebar:
+
+- **Pinning sets no styles of its own.** `[data-pinned='true']` sets exactly
+  the variables hover and focus set, so there is ONE open look with three
+  ways into it.
+- **Pinned PUSHES, hovered COVERS.** The strip's 56px footprint grows to
+  214px when pinned, so a panel that is not going to close itself does not
+  sit on top of the first 214px of every screen. Hover still opens over the
+  page, because content that jumped sideways as the cursor crossed would be
+  worse than no sidebar.
 
 - **It opens OVER the page.** The strip is the only thing in the page's
   flow, so content never moves; a table that jumped sideways every time the
