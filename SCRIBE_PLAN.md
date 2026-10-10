@@ -635,3 +635,77 @@ red.**
   mode `ready`, and `ready` is reachable only via a consented note or the
   server's own acceptance of consent. That is a sharper claim than the
   ordering check it replaced.
+
+---
+
+## 16. "The recording still not picking" — 2026-10-10
+
+The owner's report. **Diagnosed before changing anything**, because the
+obvious suspect was wrong.
+
+### What was NOT broken
+
+| | |
+|---|---|
+| The Deepgram key | **valid** — `GET /v1/projects` → 200 |
+| Transcription | **works** — 18MB sample, 38.5s, 24 turns |
+| MediaRecorder | **works** — 27KB blob, `audio/webm;codecs=opus` |
+| The upload, multer, the mime filter | **work** — 200, Deepgram reached |
+
+An earlier note in this file guessed the free key had expired. **It had not.**
+That failure was a transient network error, and the guess is corrected here
+rather than left standing.
+
+### What WAS broken
+
+A recording with no speech in it comes back with **zero turns** — which is
+correct. The screen then called the draft step with an empty transcript, the
+server refused it as a bad request, and the pharmacist got the raw 400:
+
+> There is no transcript to draft from.
+
+**That blames the request when the truth is about the room**, and it arrives
+after somebody has already talked for five minutes. There was also no way to
+tell, at any point, whether the microphone was live.
+
+### The fix, in four parts
+
+- **A level meter**, five bars, driven by the SAME `MediaStream` the recorder
+  has so it cannot disagree with what is being captured. It answers "is it
+  picking me up?" in the first second. A momentary pause is deliberately
+  distinguished from a microphone that has never received anything — a bar
+  that reads the same for both is one a pharmacist learns to ignore.
+- **Real audio constraints.** `{ audio: true }` takes defaults that assume a
+  quiet room; a pharmacy counter has a fan, a till, a queue and a radio.
+  `autoGainControl` matters most of the three: a patient leaning away from the
+  phone is the common case, and without it they drop out.
+- **The container is chosen**, opus first, with mp4 in the list. `new
+  MediaRecorder(stream)` with no type is fine on Chrome and **throws on
+  Safari**, where mp4 is the only supported container.
+- **"Heard nothing" became a state**, with a sentence that says what to check,
+  and a minimum duration so a misclick is refused before it is paid for.
+
+Plus a `1000ms` timeslice, so a consultation interrupted by a closed laptop
+still has most of itself — measured at 3 chunks over 2.6s instead of 1.
+
+### Verified in a real browser
+
+Driven with a synthetic `MediaStream` (the pane blocks the microphone), so
+every step below is the component's own code path:
+
+```
+chosen mimeType      audio/webm;codecs=opus
+chunks from slice    3          (was 1)
+blob                 42697 bytes
+meter during         5 of 5 bars
+upload               200
+turns                0          — correct, a 220Hz tone has no speech
+```
+
+10 client tests. **8 mutations run, all caught.**
+
+### Still unverified
+
+A real microphone, and two live voices through Deepgram. The pane cannot open
+a microphone, so the permission prompt, the device label and genuine speech
+remain untested by me — they are the first thing to check in a real browser.

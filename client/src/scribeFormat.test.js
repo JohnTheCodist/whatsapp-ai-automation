@@ -21,6 +21,8 @@ import {
   START_HEADING, START_VOICE, START_VOICE_NOTE, START_TYPE, START_TYPE_NOTE,
   SOAP_SECTIONS, elapsedLabel, SECTION_REFUSALS, sectionRefusalNote,
   anyDrafted, NOTHING_DRAFTED, ACCEPT_NOTE, REVIEW_NOTE,
+  levelBars, LEVEL_BARS, levelNote, LEVEL_SILENT, LEVEL_OK,
+  NO_SPEECH, MIN_RECORDING_SECONDS, TOO_SHORT, deviceNote,
 } from './scribeFormat.js';
 
 // THE MOST IMPORTANT TEST IN THIS FILE.
@@ -355,4 +357,85 @@ test('the accept control names the note, and says nothing is saved yet', () => {
   // happened yet.
   expect(REVIEW_NOTE).toMatch(/read it/i);
   expect(REVIEW_NOTE).toMatch(/nothing is saved/i);
+});
+
+/* ==========================================================================
+ * Hearing the room (2026-10-10)
+ *
+ * The owner: "the recording still not picking". The whole path was proven
+ * working end to end first — MediaRecorder, the upload, multer and Deepgram
+ * all fine — and a recording with no speech in it came back with zero turns,
+ * which the screen then reported as the server's raw 400.
+ * ======================================================================== */
+
+test('the level meter answers "is it picking me up" at a glance', () => {
+  // Bars, not a number: a pharmacist glancing down mid-sentence needs "it is
+  // moving" in one look, and 0.42 is not that.
+  expect(levelBars(0)).toBe(0);
+  expect(levelBars(1)).toBe(LEVEL_BARS);
+  expect(levelBars(0.5)).toBeGreaterThan(0);
+  expect(levelBars(0.5)).toBeLessThan(LEVEL_BARS);
+
+  // Never more bars than exist, and never a negative one, whatever arrives
+  // from the analyser.
+  for (const junk of [null, undefined, NaN, -3, 99, 'loud', {}]) {
+    const n = levelBars(junk);
+    expect(n, `${JSON.stringify(junk)} produced ${n} bars`).toBeGreaterThanOrEqual(0);
+    expect(n).toBeLessThanOrEqual(LEVEL_BARS);
+  }
+});
+
+test('a pause is not the same as a dead microphone', () => {
+  // THE DISTINCTION THAT MAKES THE METER USEFUL. A bar that is momentarily
+  // flat while somebody draws breath must not read the same as a microphone
+  // that has never received anything — otherwise the pharmacist learns to
+  // ignore it, which is worse than not having it.
+  expect(levelNote(0, { seenSound: false })).toBe(LEVEL_SILENT);
+  expect(levelNote(0, { seenSound: true })).toBe(LEVEL_OK);
+  expect(levelNote(0.8, { seenSound: false })).toBe(LEVEL_OK);
+
+  expect(LEVEL_SILENT).toMatch(/no sound/i);
+  expect(LEVEL_SILENT).toMatch(/yet/i);   // it has not failed, it has not started
+  expect(LEVEL_OK).not.toBe(LEVEL_SILENT);
+});
+
+// THE MOST IMPORTANT TEST IN THIS BLOCK.
+test('a recording with no speech says what to CHECK, and claims nothing about the patient', () => {
+  // This replaced the server's raw 400 — "There is no transcript to draft
+  // from" — which blamed the request when the truth is about the room, and
+  // arrived after somebody had already talked for five minutes.
+  expect(NO_SPEECH).toMatch(/microphone/i);
+  expect(NO_SPEECH).toMatch(/muted|right one/i);
+  expect(NO_SPEECH).toMatch(/try again/i);
+
+  // It is about the RECORDING. Phrased as a finding it would be a clinical
+  // claim this software invented — the same rule the draft refusals follow.
+  for (const clinical of [/no symptoms/i, /patient (?:said|reported) nothing/i, /nothing wrong/i]) {
+    expect(NO_SPEECH, `the no-speech notice makes a claim about the patient: ${clinical}`)
+      .not.toMatch(clinical);
+  }
+  // And it does not read as a crash.
+  expect(NO_SPEECH).not.toMatch(/error|failed|invalid|unable/i);
+});
+
+test('a misclick is refused before it is paid for', () => {
+  // Two seconds of nothing still costs a transcription, and then tells the
+  // pharmacist their recording had no speech in it — true, and useless.
+  expect(MIN_RECORDING_SECONDS).toBeGreaterThan(0);
+  expect(TOO_SHORT).toMatch(/too short/i);
+  // It says what to do differently rather than only what went wrong.
+  expect(TOO_SHORT).toMatch(/stop when you are done|through the consultation/i);
+});
+
+test('the microphone in use is named, so a wrong default is visible', () => {
+  // A laptop that picked its lid microphone while a headset sits unused is
+  // the commonest cause of a recording nobody can hear, and naming it is the
+  // only way a pharmacist can tell.
+  expect(deviceNote('Headset (Realtek Audio)')).toMatch(/Headset/);
+  // Nothing to name is NOTHING, not "Unknown device" — a label the browser
+  // withholds until permission is granted must not render as a fault.
+  expect(deviceNote('')).toBe(null);
+  expect(deviceNote(null)).toBe(null);
+  expect(deviceNote(undefined)).toBe(null);
+  expect(deviceNote('   ')).toBe(null);
 });

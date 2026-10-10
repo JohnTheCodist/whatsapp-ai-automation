@@ -299,3 +299,78 @@ test('the scribe is only offered where the server says it exists', () => {
   expect(JSX.slice(Math.max(0, at - 200), at), 'the scribe renders on a finalised note')
     .toMatch(/\{open && \(/);
 });
+
+/* ==========================================================================
+ * The recording path (2026-10-10)
+ * ======================================================================== */
+
+test('the microphone is asked for a pharmacy counter, not a quiet room', () => {
+  // `{ audio: true }` takes the browser's defaults, which assume a quiet
+  // room. A pharmacy counter has a fan, a till, a queue and a radio, and
+  // these three are the difference between a usable recording and one the
+  // provider returns nothing from.
+  expect(SCRIBE).toMatch(/echoCancellation: true/);
+  expect(SCRIBE).toMatch(/noiseSuppression: true/);
+  // autoGainControl matters most: a patient leaning away from the phone is
+  // the common case, and without it they simply drop out.
+  expect(SCRIBE).toMatch(/autoGainControl: true/);
+  expect(SCRIBE).toMatch(/getUserMedia\(AUDIO_CONSTRAINTS\)/);
+  expect(SCRIBE, 'the microphone is still asked for with bare defaults')
+    .not.toMatch(/getUserMedia\(\{ audio: true \}\)/);
+});
+
+test('the container is chosen, not left to the browser', () => {
+  // `new MediaRecorder(stream)` with no type is fine on Chrome and is NOT on
+  // Safari, where mp4 is the only supported container and an unsupported
+  // type throws rather than falling back.
+  expect(SCRIBE).toMatch(/isTypeSupported/);
+  expect(SCRIBE).toMatch(/audio\/mp4/);
+  // Opus first: a fraction of the size for speech, which matters on a
+  // Nigerian pharmacy's connection.
+  const list = SCRIBE.match(/const PREFERRED_TYPES = \[([\s\S]*?)\]/);
+  expect(list, 'the preferred-type list is gone').toBeTruthy();
+  expect(list[1].indexOf('opus')).toBeLessThan(list[1].indexOf('audio/mp4'));
+});
+
+test('audio accrues while recording rather than arriving all at once', () => {
+  // A timeslice, so a consultation interrupted by a closed laptop or a
+  // crashed tab still has most of itself. Verified in a real browser: 3
+  // chunks over 2.6 seconds instead of 1.
+  expect(SCRIBE).toMatch(/rec\.start\(1000\)/);
+  expect(SCRIBE, 'the recorder starts with no timeslice').not.toMatch(/rec\.start\(\)/);
+});
+
+// THE ONE THE OWNER ASKED FOR.
+test('a recording that heard nothing is a state, not a server error', () => {
+  // The bug: with zero turns the draft step was called with an empty
+  // transcript, the server refused it as a bad request, and the pharmacist
+  // got the raw 400 — "There is no transcript to draft from" — after talking
+  // for five minutes. That blames the request when the truth is about the
+  // room.
+  expect(SCRIBE).toMatch(/if \(\(heard\.turns \|\| \[\]\)\.length === 0\) \{/);
+  expect(SCRIBE).toMatch(/setError\(NO_SPEECH\)/);
+
+  // It returns BEFORE the draft call, so the empty transcript never reaches
+  // the server to be refused.
+  const guard = SCRIBE.indexOf('setError(NO_SPEECH)');
+  const draft = SCRIBE.indexOf('await writeUp(heard.turns');
+  expect(guard).toBeGreaterThan(-1);
+  expect(draft).toBeGreaterThan(guard);
+});
+
+test('the meter reads the same stream the recorder does', () => {
+  // A meter fed from a second getUserMedia call could show sound while the
+  // recording captured silence — which is the exact failure it exists to
+  // reveal, with a reassuring bar on top.
+  expect(SCRIBE).toMatch(/function watchLevel\(stream\)/);
+  expect(SCRIBE).toMatch(/createMediaStreamSource\(stream\)/);
+  expect(SCRIBE).toMatch(/watchLevel\(stream\)/);
+
+  // And it is NEVER routed to the speakers — that howls across a counter.
+  expect(SCRIBE, 'the microphone is connected to the output').not.toMatch(/connect\(ctx\.destination\)/);
+
+  // The AudioContext is closed on release, or the browser's recording
+  // indicator stays lit after the pharmacist has stopped.
+  expect(SCRIBE).toMatch(/audioCtxRef\.current\?\.close\(\)/);
+  expect(SCRIBE).toMatch(/cancelAnimationFrame\(meterRef\.current\)/);
+});

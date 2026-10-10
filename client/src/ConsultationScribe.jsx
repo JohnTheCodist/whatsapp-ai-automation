@@ -38,6 +38,8 @@ import {
   SOAP_SECTIONS, elapsedLabel, RECORDING_NOW, RECORDING_NOTE, STOP_AND_WRITE,
   WRITING_UP, sectionRefusalNote, anyDrafted, NOTHING_DRAFTED, ACCEPT_NOTE,
   REVIEW_NOTE, DISCARD_LABEL,
+  levelBars, LEVEL_BARS, levelNote, NO_SPEECH, MIN_RECORDING_SECONDS,
+  TOO_SHORT, deviceNote,
 } from './scribeFormat.js';
 
 /**
@@ -56,6 +58,47 @@ function micAvailable() {
   );
 }
 
+/**
+ * What to record as, in the order we would rather have it.
+ *
+ * `new MediaRecorder(stream)` with no type lets the browser choose, which
+ * is fine on Chrome and is NOT on Safari — where the only supported
+ * container is mp4, and an unsupported type throws rather than falling
+ * back. Opus first because it is a fraction of the size for speech, which
+ * matters on a Nigerian pharmacy’s connection.
+ */
+const PREFERRED_TYPES = [
+  'audio/webm;codecs=opus',
+  'audio/ogg;codecs=opus',
+  'audio/mp4',
+  'audio/webm',
+];
+
+function bestMimeType() {
+  const MR = typeof window !== 'undefined' ? window.MediaRecorder : null;
+  if (!MR || typeof MR.isTypeSupported !== 'function') return '';
+  return PREFERRED_TYPES.find((t) => MR.isTypeSupported(t)) || '';
+}
+
+/**
+ * What to ask the microphone for.
+ *
+ * `{ audio: true }` takes the browser’s defaults, which assume a quiet
+ * room. A pharmacy counter is not one: there is a fan, a till, a queue and
+ * a radio. These three are the difference between a usable recording and
+ * one Deepgram returns nothing from.
+ *
+ * `autoGainControl` matters most of the three here — a patient leaning away
+ * from the phone is the common case, and without it they simply drop out.
+ */
+const AUDIO_CONSTRAINTS = {
+  audio: {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  },
+};
+
 export default function ConsultationScribe({
   customerId, consultationId, note, available, existing, onAccept, whenLabel,
 }) {
@@ -64,6 +107,13 @@ export default function ConsultationScribe({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [elapsed, setElapsed] = useState(0);
+  // The live input level, and whether any sound has EVER arrived. The
+  // second is what turns a meter into an answer: a bar that is momentarily
+  // flat during a pause must not read the same as a microphone that has
+  // been dead since the start.
+  const [level, setLevel] = useState(0);
+  const [heardSound, setHeardSound] = useState(false);
+  const [deviceLabel, setDeviceLabel] = useState('');
 
   const [turns, setTurns] = useState(null);
   const [speakers, setSpeakers] = useState([]);
@@ -77,6 +127,8 @@ export default function ConsultationScribe({
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
   const tickRef = useRef(null);
+  const meterRef = useRef(null);
+  const audioCtxRef = useRef(null);
 
   const consentAt = note?.scribeConsentAt || null;
 
@@ -85,6 +137,12 @@ export default function ConsultationScribe({
     try { streamRef.current?.getTracks?.().forEach((t) => t.stop()); } catch { /* gone */ }
     try { recorderRef.current?.stream?.getTracks?.().forEach((t) => t.stop()); } catch { /* gone */ }
     if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
+    if (meterRef.current) { cancelAnimationFrame(meterRef.current); meterRef.current = null; }
+    // The AudioContext holds the microphone open just as the stream does.
+    // Leaving one running keeps the browser’s recording indicator lit after
+    // the pharmacist has stopped, which is its own kind of lie.
+    try { audioCtxRef.current?.close(); } catch { /* already closed */ }
+    audioCtxRef.current = null;
     recorderRef.current = null;
     streamRef.current = null;
     // The chunks ARE the audio. Dropping the reference is what makes "we do
@@ -133,16 +191,79 @@ export default function ConsultationScribe({
     }
   }
 
+  /**
+   * Watch the input level while recording.
+   *
+   * THE ANSWER TO "IS IT PICKING ME UP?", and the reason it exists: the
+   * whole path was proven working end to end, and a recording with no
+   * speech in it still came back empty — which the screen reported as a
+   * server error AFTER the consultation was over. A meter moves in the
+   * first second, so a muted or wrong-device microphone is obvious before
+   * anybody has said anything worth keeping.
+   *
+   * Reads the SAME MediaStream the recorder has, so it cannot disagree with
+   * what is being captured.
+   */
+  function watchLevel(stream) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    let ctx;
+    try { ctx = new Ctx(); } catch { return; }
+    audioCtxRef.current = ctx;
+    const source = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    source.connect(analyser);
+    // NOT connected to ctx.destination: routing the microphone to the
+    // speakers would howl across a counter.
+    const buf = new Uint8Array(analyser.frequencyBinCount);
+
+    const tick = () => {
+      analyser.getByteTimeDomainData(buf);
+      // Peak deviation from silence (128), normalised. Peak rather than RMS
+      // because the question is "did anything arrive", and a quiet room with
+      // one voice in it has a low RMS and an obvious peak.
+      let peak = 0;
+      for (let i = 0; i < buf.length; i += 1) {
+        const d = Math.abs(buf[i] - 128);
+        if (d > peak) peak = d;
+      }
+      const next = Math.min(1, peak / 40);
+      setLevel(next);
+      // A real voice, not the noise floor of a cheap microphone.
+      if (next > 0.18) setHeardSound(true);
+      meterRef.current = requestAnimationFrame(tick);
+    };
+    meterRef.current = requestAnimationFrame(tick);
+  }
+
   async function start() {
     setError(null);
+    setLevel(0);
+    setHeardSound(false);
+    setDeviceLabel('');
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia(AUDIO_CONSTRAINTS);
       streamRef.current = stream;
-      const rec = new window.MediaRecorder(stream);
+
+      // Which microphone actually answered. A laptop that picked its lid
+      // camera mic while a headset sits unused is the commonest cause of a
+      // recording nobody can hear, and naming it is the only way the
+      // pharmacist can tell.
+      const track = stream.getAudioTracks?.()[0];
+      if (track?.label) setDeviceLabel(track.label);
+
+      const mimeType = bestMimeType();
+      const rec = new window.MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       chunksRef.current = [];
       rec.ondataavailable = (e) => { if (e.data?.size) chunksRef.current.push(e.data); };
       recorderRef.current = rec;
-      rec.start();
+      // A TIMESLICE, so audio accrues every second instead of arriving as
+      // one blob at the end. A consultation interrupted by a closed laptop
+      // or a crashed tab then still has most of itself.
+      rec.start(1000);
+
+      watchLevel(stream);
       setElapsed(0);
       tickRef.current = setInterval(() => setElapsed((n) => n + 1), 1000);
       setMode('recording');
@@ -158,6 +279,8 @@ export default function ConsultationScribe({
   async function stop() {
     const rec = recorderRef.current;
     if (!rec) return;
+    // Read before the timer is cleared, and before release() resets it.
+    const seconds = elapsed;
     if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
     setMode('working');
     setError(null);
@@ -174,6 +297,16 @@ export default function ConsultationScribe({
       return;
     }
 
+    // A misclick, not a consultation. Refused HERE rather than paid for:
+    // transcribing two seconds of nothing costs money and then tells the
+    // pharmacist their recording had no speech in it, which is true and
+    // useless.
+    if (seconds < MIN_RECORDING_SECONDS) {
+      setMode('ready');
+      setError(TOO_SHORT);
+      return;
+    }
+
     try {
       const form = new FormData();
       form.append('audio', audio, 'consultation.webm');
@@ -182,6 +315,18 @@ export default function ConsultationScribe({
       setSpeakers(heard.speakers || []);
       setDiarised(Boolean(heard.diarised));
       setPatientSpeaker(null);
+
+      // NOTHING WAS HEARD. This is a state, not an error, and it used to be
+      // neither: the draft step was called with an empty transcript, the
+      // server refused it as a bad request, and the pharmacist got the raw
+      // 400 — "There is no transcript to draft from" — after talking for
+      // five minutes. That blames the request when the truth is about the
+      // room, so it now says what to check.
+      if ((heard.turns || []).length === 0) {
+        setMode('ready');
+        setError(NO_SPEECH);
+        return;
+      }
 
       // ONE VOICE, OR NONE WE COULD SEPARATE: there is no question to ask, so
       // the write-up runs straight away rather than stopping to ask something
@@ -314,7 +459,27 @@ export default function ConsultationScribe({
             <button type="button" className="ui-scribe-go" onClick={stop}>{STOP_AND_WRITE}</button>
           </div>
         )}
-        {mode === 'recording' && <p className="ui-allergy-help">{RECORDING_NOTE}</p>}
+        {mode === 'recording' && (
+          <>
+            {/* THE METER. Five bars driven by the same MediaStream the
+                recorder has, so it cannot disagree with what is being
+                captured. It answers the question the owner actually asked —
+                is it picking up? — in the first second rather than after the
+                consultation is over. */}
+            <div className="ui-scribe-meter" role="status" aria-live="polite">
+              <span className="ui-scribe-bars" aria-hidden="true">
+                {Array.from({ length: LEVEL_BARS }, (unused, i) => (
+                  <i key={i} data-on={i < levelBars(level) ? "true" : "false"} />
+                ))}
+              </span>
+              <span className="ui-cprog-quiet">{levelNote(level, { seenSound: heardSound })}</span>
+            </div>
+            {deviceNote(deviceLabel) && (
+              <p className="ui-allergy-help">{deviceNote(deviceLabel)}</p>
+            )}
+            <p className="ui-allergy-help">{RECORDING_NOTE}</p>
+          </>
+        )}
 
         {mode === 'working' && (
           <div className="ui-scribe-live" data-working="true">

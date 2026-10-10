@@ -3911,6 +3911,31 @@ tr:focus-within .ui-row-actions,
   vertical-align: baseline;
 }
 
+/* The input meter. Five bars, ink rather than green: this is not a health
+   reading, and design.md keeps the accent off anything that is not one. The
+   bars are the only thing on this screen that moves continuously, which is
+   what makes a dead microphone obvious at a glance. */
+.ui-scribe-meter { display: flex; align-items: center; gap: 9px; margin-top: 8px; }
+.ui-scribe-bars { display: inline-flex; align-items: flex-end; gap: 3px; height: 16px; }
+.ui-scribe-bars > i {
+  width: 3px;
+  border-radius: 2px;
+  background: var(--ui-line-strong);
+  transition: background 90ms linear, height 90ms linear;
+}
+/* Rising heights, so the row reads as a level even frozen in a screenshot. */
+.ui-scribe-bars > i:nth-child(1) { height: 6px; }
+.ui-scribe-bars > i:nth-child(2) { height: 9px; }
+.ui-scribe-bars > i:nth-child(3) { height: 12px; }
+.ui-scribe-bars > i:nth-child(4) { height: 14px; }
+.ui-scribe-bars > i:nth-child(5) { height: 16px; }
+.ui-scribe-bars > i[data-on="true"] { background: var(--ui-ink); }
+
+/* Reduced motion keeps the bars — they are the information, not decoration.
+   Only the easing goes, so they step rather than slide. */
+@media (prefers-reduced-motion: reduce) {
+  .ui-scribe-bars > i { transition: none; }
+}
 /* The transcript. One turn per line, the voice label in front of it, so
    "who said this" is readable down the left edge rather than needing to be
    parsed out of a paragraph. */

@@ -286,3 +286,67 @@ export {
   SECTION_REFUSALS, sectionRefusalNote, anyDrafted,
   NOTHING_DRAFTED, ACCEPT_NOTE, REVIEW_NOTE,
 };
+
+/* ==========================================================================
+ * Hearing the room (2026-10-10)
+ *
+ * The owner: "the recording still not picking". Diagnosed by driving the
+ * whole path with a synthetic stream — MediaRecorder, the upload, multer and
+ * Deepgram all worked, and a recording with no speech in it came back with
+ * zero turns, which the screen then reported as the server's raw 400:
+ * "There is no transcript to draft from."
+ *
+ * That is the wrong answer twice over. It blames the request when the truth
+ * is about the ROOM, and it arrives after somebody has already talked for
+ * five minutes. Both halves are fixed here: a level meter so a dead
+ * microphone is obvious in the first second, and a sentence that says what
+ * to check.
+ * ======================================================================== */
+
+/**
+ * The live input level, as something a person can read at a glance.
+ *
+ * Bars rather than a number: a pharmacist glancing down mid-sentence needs
+ * "it is moving" in one look, and 0.42 is not that.
+ */
+const LEVEL_BARS = 5;
+
+function levelBars(level) {
+  const n = Number(level);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.max(0, Math.min(LEVEL_BARS, Math.round(n * LEVEL_BARS)));
+}
+
+/** Said under the meter while nothing is reaching the microphone. */
+const LEVEL_SILENT = 'No sound reaching the microphone yet.';
+const LEVEL_OK = 'Picking you up.';
+
+function levelNote(level, { seenSound = false } = {}) {
+  if (seenSound) return LEVEL_OK;
+  return levelBars(level) > 0 ? LEVEL_OK : LEVEL_SILENT;
+}
+
+/**
+ * The recording caught no speech.
+ *
+ * NOT an error, and not a claim about the patient. The microphone may have
+ * been muted, picking up the wrong device, or too far away — all of which the
+ * pharmacist can check and none of which the software can tell apart. So it
+ * says what to look at rather than what went wrong.
+ */
+const NO_SPEECH = 'No speech was picked up in that recording. Check the microphone is the right one and is not muted, then try again.';
+
+/** Under about this long, a recording is a misclick rather than a consultation. */
+const MIN_RECORDING_SECONDS = 2;
+const TOO_SHORT = 'That recording was too short to write anything up. Hold the button through the consultation and stop when you are done.';
+
+/** Which microphone is actually in use, so a wrong default is visible. */
+function deviceNote(label) {
+  const name = String(label || '').trim();
+  return name ? `Using ${name}` : null;
+}
+
+export {
+  LEVEL_BARS, levelBars, LEVEL_SILENT, LEVEL_OK, levelNote,
+  NO_SPEECH, MIN_RECORDING_SECONDS, TOO_SHORT, deviceNote,
+};
