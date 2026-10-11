@@ -378,3 +378,69 @@ test('the meter reads the same stream the recorder does', () => {
   expect(SCRIBE).toMatch(/audioCtxRef\.current\?\.close\(\)/);
   expect(SCRIBE).toMatch(/cancelAnimationFrame\(meterRef\.current\)/);
 });
+
+/* ==========================================================================
+ * Choosing to type (2026-10-11)
+ *
+ * The owner: "when user click type option, nothing happens". It did not —
+ * the branch read `mode === 'choose' || mode === 'typing'`, so pressing the
+ * button set a state that rendered THE SAME TWO CARDS. Shipped because I
+ * never pressed it.
+ * ======================================================================== */
+
+// THE TEST THAT WOULD HAVE CAUGHT IT.
+test('choosing to type renders something different from the chooser', () => {
+  // The bug exactly: one branch serving both states means the control
+  // changes something nothing can see. Pressing a button and getting the
+  // button back is indistinguishable from a broken page.
+  expect(SCRIBE, 'choose and typing share a branch again')
+    .not.toMatch(/mode === 'choose' \|\| mode === 'typing'/);
+
+  // Each is its own branch, and typing comes first so it cannot be swallowed
+  // by the chooser's.
+  expect(SCRIBE).toMatch(/if \(mode === 'typing'\) \{/);
+  expect(SCRIBE).toMatch(/if \(mode === 'choose'\) \{/);
+  expect(SCRIBE.indexOf("if (mode === 'typing')"))
+    .toBeLessThan(SCRIBE.indexOf("if (mode === 'choose')"));
+
+  // And it renders its own thing, marked so a browser check can see it.
+  expect(SCRIBE).toMatch(/data-step="typing"/);
+});
+
+test('choosing to type opens every section, not the budget', () => {
+  // The owner's second half: "it should automatically show all what the
+  // pharmacist is to type". The budget (§31) exists so a routine minor
+  // ailment does not present fourteen boxes to somebody who wants to be done
+  // in a minute — but a pharmacist who has just SAID they are typing is
+  // asking to see what there is to type, and hiding half of it behind "More
+  // sections" answers a different question.
+  //
+  // Measured on the running screen: 7 sections before, 13 after.
+  expect(SCRIBE).toMatch(/onTyping\?\.\(\)/);
+  expect(JSX).toMatch(/onTyping=\{\(\) => setShowAll\(true\)\}/);
+});
+
+test('the choice is never one-way', () => {
+  // A pharmacist who picks typing and then changes their mind must not have
+  // to leave the note and come back. The way to voice stays on screen, and
+  // it goes through consent exactly as the chooser does rather than skipping
+  // it — the microphone is never reachable without that.
+  expect(SCRIBE).toMatch(/BACK_TO_VOICE/);
+
+  // SCOPED TO THE TYPING BRANCH, and the scoping is the point. The first
+  // version matched `setMode(consentAt ? 'ready' : 'consent')` anywhere in
+  // the file — but the CHOOSER contains the same line, so a mutation that
+  // made only this route skip consent left the test green. Found by running
+  // that mutation.
+  const typingBranch = SCRIBE.slice(
+    SCRIBE.indexOf("if (mode === 'typing')"),
+    SCRIBE.indexOf("if (mode === 'choose')"),
+  );
+  expect(typingBranch.length, 'the typing branch is gone').toBeGreaterThan(0);
+  expect(typingBranch, 'going back to voice skips consent')
+    .toMatch(/setMode\(consentAt \? 'ready' : 'consent'\)/);
+
+  // Offered only where a microphone exists. A browser that cannot record
+  // must not show a way to start recording.
+  expect(SCRIBE).toMatch(/\{canRecord && \([\s\S]{0,400}BACK_TO_VOICE/);
+});

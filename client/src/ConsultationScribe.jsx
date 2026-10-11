@@ -38,6 +38,7 @@ import {
   SOAP_SECTIONS, elapsedLabel, RECORDING_NOW, RECORDING_NOTE, STOP_AND_WRITE,
   WRITING_UP, sectionRefusalNote, anyDrafted, NOTHING_DRAFTED, ACCEPT_NOTE,
   REVIEW_NOTE, DISCARD_LABEL,
+  TYPING_NOTE, BACK_TO_VOICE,
   levelBars, LEVEL_BARS, levelNote, NO_SPEECH, MIN_RECORDING_SECONDS,
   TOO_SHORT, deviceNote,
 } from './scribeFormat.js';
@@ -101,6 +102,7 @@ const AUDIO_CONSTRAINTS = {
 
 export default function ConsultationScribe({
   customerId, consultationId, note, available, existing, onAccept, whenLabel,
+  onTyping,
 }) {
   // 'choose' | 'typing' | 'ready' | 'recording' | 'working' | 'turns' | 'review'
   const [mode, setMode] = useState('choose');
@@ -369,7 +371,35 @@ export default function ConsultationScribe({
   const canRecord = micAvailable();
 
   /* ---- 1. how do you want to work? -------------------------------------- */
-  if (mode === 'choose' || mode === 'typing') {
+  /* ---- the pharmacist chose to type ----------------------------------- */
+  //
+  // THIS BRANCH USED TO BE FOLDED INTO THE CHOOSER, which is why pressing
+  // "Type it" appeared to do nothing: `mode` became 'typing' and the same
+  // two cards re-rendered. A control that changes state nothing can see is
+  // a control that is broken.
+  //
+  // It collapses to one line rather than disappearing, so the choice is
+  // visibly remembered and the way back to voice is still there. The
+  // sections below are what the pharmacist is now looking at, and the
+  // parent opens all of them.
+  if (mode === 'typing') {
+    return (
+      <div className="ui-scribe ui-scribe-typing" data-step="typing">
+        <span className="ui-cprog-quiet">{TYPING_NOTE}</span>
+        {canRecord && (
+          <button
+            type="button"
+            className="ui-psection-link"
+            onClick={() => setMode(consentAt ? 'ready' : 'consent')}
+          >
+            {BACK_TO_VOICE}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (mode === 'choose') {
     return (
       <div className="ui-scribe" data-step={mode}>
         <p className="ui-scribe-ask">{START_HEADING}</p>
@@ -396,7 +426,13 @@ export default function ConsultationScribe({
           <button
             type="button"
             className="ui-scribe-choice"
-            onClick={() => setMode('typing')}
+            onClick={() => {
+              setMode('typing');
+              // Open every section. A pharmacist who has said they are
+              // typing should SEE what there is to type, not a
+              // seven-of-fourteen budget they have to go looking behind.
+              onTyping?.();
+            }}
           >
             <span className="ui-scribe-choice-icon" aria-hidden="true">
               <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">

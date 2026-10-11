@@ -3911,6 +3911,17 @@ tr:focus-within .ui-row-actions,
   vertical-align: baseline;
 }
 
+/* The scribe once the pharmacist has chosen to type. One line, so the
+   choice is visibly remembered and the way back to voice stays reachable,
+   while the sections below get the room. */
+.ui-scribe-typing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.ui-scribe-typing .ui-psection-link { margin-top: 0; }
 /* ---- creating a patient at the counter -------------------------------
    The control sits beside the search, because that is the moment the gap
    is felt: you look for somebody and they are not there. */

@@ -350,3 +350,25 @@ export {
   LEVEL_BARS, levelBars, LEVEL_SILENT, LEVEL_OK, levelNote,
   NO_SPEECH, MIN_RECORDING_SECONDS, TOO_SHORT, deviceNote,
 };
+
+/* ==========================================================================
+ * Choosing to type (2026-10-11)
+ *
+ * The owner: "when user click type option, nothing happens". It did not —
+ * `mode` became 'typing' and the SAME chooser re-rendered, because the branch
+ * handled 'choose' and 'typing' together. A control that changes state
+ * nothing can see is a control that is broken.
+ *
+ * Choosing to type now does two things: the panel gets out of the way, and
+ * every section opens. A pharmacist who has said they are typing should see
+ * what there is to type, not a seven-of-fourteen budget they have to go
+ * looking behind.
+ * ======================================================================== */
+
+/** Said where the chooser was, so the choice is visibly remembered. */
+const TYPING_NOTE = 'Typing this one.';
+
+/** The way back. The choice is never one-way. */
+const BACK_TO_VOICE = 'Use voice instead';
+
+export { TYPING_NOTE, BACK_TO_VOICE };

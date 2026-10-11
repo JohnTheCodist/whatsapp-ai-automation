@@ -1176,6 +1176,13 @@ export default function Consultation({
           available={Boolean(options?.scribe?.available)}
           existing={note.subjective}
           whenLabel={whenLabel}
+          // Choosing to type opens EVERY section. The budget (§31) exists
+          // so a routine minor ailment does not present fourteen boxes to
+          // somebody who wants to be done in a minute — but a pharmacist
+          // who has just said they are typing is asking to see what there
+          // is to type, and hiding half of it behind "More sections" is
+          // answering a different question.
+          onTyping={() => setShowAll(true)}
           onAccept={({ sections, consented }) => {
             // Consent is a SERVER fact and comes back as the whole note, so
             // it replaces rather than dirties — nothing becomes unsaved
