@@ -320,6 +320,105 @@ plainly that it had not been seen, and it had not.
 
 **Nine mutations, nine of the right tests red.**
 
-Phase 5 remains as written, and is now worth opening before being planned —
-phase 4 is the case for looking at a screen before deciding what is wrong
-with it.
+---
+
+## 11. Phase 5 shipped, 2026-10-11
+
+**Opened before being planned, which phase 4 argued for.** Every screen in
+this phase was measured first. The plan again said "mechanical and wide —
+tables and forms taking the new surface and spacing"; again that was not
+what was wrong.
+
+### What the sweep found
+
+Thirteen screens, read for what their chrome and their empty states claim:
+
+```
+screen        page title      first card heading        verdict
+-------------------------------------------------------------------
+Orders        Orders          Orders                    says its name twice
+Inbox         Inbox           Inbox                     says its name twice
+Stock sync    Stock sync      Stock sync                says its name twice
+Catalogue     Catalogue       Your catalogue            NO EMPTY STATE
+Requests      Requests        Customers waiting on you  fine
+Overview      Overview        At a glance               fine
+Billing       Billing         Pilot — monthly           fine
+Setup         (its own)       Assistant identity        excluded already
+```
+
+**Two things the sweep ruled OUT, which is half its value.**
+
+- **The Inbox has no phase-4 defect.** It is a two-pane layout: opening a
+  conversation leaves the list on screen, so the chrome never has a second
+  subject to name. Applying phase 4’s fix there would have been a change
+  with no defect behind it.
+- **Stock sync must KEEP its repeated heading.** `CatalogueSync.jsx` has two
+  importers — the Stock sync tab AND `Settings.jsx`, where the page is
+  titled something else entirely and that heading is the only thing naming
+  the panel. Removing it would have fixed one screen and orphaned another.
+
+### The defect that was worth the change
+
+**The Catalogue had no empty state at all.** The product list rendered
+behind `products?.products?.length > 0` with no `else`, so a pharmacy with
+nothing in its catalogue opened the screen and found a price switch in an
+empty box: no sentence, no next step.
+
+That is **every pharmacy on its first day**, on the one screen this product
+cannot work without — the assistant sells out of the catalogue and out of
+nowhere else. The dev pharmacy used to measure this is `status:
+"onboarding"` with 0 products, which is exactly the state being described.
+
+**Its three siblings all do it correctly**, which is what made the Catalogue
+an outlier rather than a house style: Orders says *"No orders yet"* AND
+*"Nothing waiting"* and means different things by them; the Inbox says *"No
+conversations yet"* AND *"Nothing in this view"*; Requests says *"Nothing
+waiting"*.
+
+**THE TWO BLANK SCREENS WERE NOT THE SAME BLANK SCREEN**, and that is why
+this is a module rather than a ternary:
+
+```
+products: []     nobody has uploaded anything     -> say so, and how
+the read FAILED  we do not know what is in there  -> never say "none"
+```
+
+Both rendered as nothing. Telling a pharmacy owner "no products" when the
+request actually failed sends them to upload a catalogue that is already
+there. It is the allergy card’s distinction (0058) and the care-programme
+card’s, applied to stock instead of a patient — and `catalogueState` checks
+`listStale` BEFORE emptiness so it fails closed, which is GOLDEN-002c’s rule
+that "we could not tell" is never "there is nothing there".
+
+**Loading is a third state and says nothing.** A screen that flashes "No
+products yet" on its way to showing four hundred of them has told the reader
+something false — briefly is still false, and it is the moment somebody
+reaches for the Upload button.
+
+**`onNavigate` was not invented for this.** `App.jsx` already passes
+`onNavigate={setTab}` to five components; the Catalogue became the sixth. The
+empty state offers a button rather than the sentence "see Upload in the
+sidebar", because the next step is a screen in this app.
+
+### Verified on the running screen
+
+All four states, live, not inferred:
+
+- **empty** — "No products yet" with a working **Upload a catalogue** button
+  that lands on the Upload tab and moves the URL with it;
+- **failed** — forced by making `/products` reject: "The catalogue could not
+  be loaded / That is this page failing to read it, not the catalogue being
+  empty", and the counts line correctly disappears with it;
+- **Try again** — recovers to the empty state;
+- **no leak** — the panel does not appear on the Upload tab, where
+  `showProducts` is false and it would otherwise sit under a file picker
+  telling somebody mid-upload that they have no products.
+
+7 client tests, **8 mutations, 8 of the right tests red.**
+
+### Still to come
+
+The Website panel and the deeper Billing/Setup screens were not examined in
+detail — the sweep covered their chrome, not their internals. The three
+"says its name twice" screens are real but are a separate behaviour and so a
+separate change; Orders and Inbox are the two that can safely take it.

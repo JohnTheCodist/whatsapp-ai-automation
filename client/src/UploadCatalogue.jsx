@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { catalogueState, catalogueEmptyText } from './catalogueState.js';
 
 const TIER_STYLE = {
   auto:    'bg-emerald-50 text-emerald-700 ring-emerald-200',
@@ -37,7 +38,7 @@ async function api(path, options = {}) {
  *   product list (and its inline editing) into a second file that would then
  *   have to be kept in step with this one.
  */
-export default function UploadCatalogue({ view = 'all' }) {
+export default function UploadCatalogue({ view = 'all', onNavigate }) {
   const showUpload = view === 'all' || view === 'upload';
   const showProducts = view === 'all' || view === 'products';
   const [meta, setMeta] = useState(null);        // field labels + warnings
@@ -528,6 +529,42 @@ export default function UploadCatalogue({ view = 'all' }) {
       {error && (
         <p className="mt-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p>
       )}
+
+      {/* ---- nothing to show, and WHICH nothing ----
+
+          This block is the whole of SHELL_PLAN.md phase 5. The list below
+          renders behind `length > 0` and had no `else`, so a pharmacy with
+          an empty catalogue — every new one — opened this screen and found
+          a price switch in an empty box. Orders, Requests and the Inbox all
+          say what it means when they are empty; this was the one screen in
+          the module that did not.
+
+          `catalogueState` keeps the two blank cases APART. A catalogue that
+          is empty and one that could not be read look identical on screen
+          and are completely different facts, and telling somebody "no
+          products" about a read that failed sends them to upload a
+          catalogue they already have. */}
+      {showProducts && !analysis && (() => {
+        const state = catalogueState({ products, listStale });
+        const text = catalogueEmptyText(state);
+        if (!text) return null;
+        return (
+          <div className="mt-6 border-t border-slate-100 pt-6 text-center">
+            <p className="text-sm font-medium text-slate-700">{text.title}</p>
+            <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">{text.body}</p>
+            <button
+              type="button"
+              className="mt-4 rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
+              onClick={() => {
+                if (text.action.retry) loadProducts();
+                else onNavigate?.(text.action.tab);
+              }}
+            >
+              {text.action.label}
+            </button>
+          </div>
+        );
+      })()}
 
       {/* ---- what the assistant will see ---- */}
       {showProducts && products?.products?.length > 0 && !analysis && (

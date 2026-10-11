@@ -974,7 +974,7 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
             {/* Inventory — the same component either side, told which half to
                 show. See UploadCatalogue's `view` prop for why it is one
                 component and not two. */}
-            {tab === 'inventory' && <UploadCatalogue view="products" />}
+            {tab === 'inventory' && <UploadCatalogue view="products" onNavigate={setTab} />}
             {tab === 'inventory-upload' && <UploadCatalogue view="upload" />}
 
             {/* Screens that already existed, nested elsewhere, given a place
