@@ -515,6 +515,76 @@ nav[aria-label="Sections"] {
    Removing the block rather than leaving it pointing at variables nothing
    reads is the honest record. */
 
+/* ── home: the command surface (SHELL_PLAN.md phase 2) ──
+   A greeting, the one thing that needs a person, and one place to type.
+   Generous air, because this screen has three things on it and crowding
+   them would waste the only chance the app gets to feel calm. */
+.ui-home { max-width: 60ch; margin: 0 auto; padding: 8vh 0 0; }
+
+/* Large, and the one place in the app that is. design.md caps a page title
+   at 20px because a dense desk screen has a table under it; this screen
+   has air under it, and a 20px greeting in the middle of that reads as a
+   mistake rather than as calm. */
+.ui-home-greeting {
+  margin: 0;
+  color: var(--ui-ink);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* The second line carries the only thing allowed to be urgent here. */
+.ui-home-headline {
+  margin: 4px 0 0;
+  color: var(--ui-ink-soft);
+  font-size: 17px;
+  line-height: 1.5;
+}
+/* Somebody is waiting for a pharmacist. design.md reserves red for exactly
+   this and nothing else, which is why no other state on this screen takes
+   it. */
+.ui-home-alert { color: oklch(52% 0.19 27); font-weight: 500; }
+
+.ui-home-command { margin-top: 22px; }
+.ui-home-command input {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 12px;
+  font-size: 15px;
+}
+
+.ui-home-results { display: grid; gap: 2px; margin-top: 10px; }
+.ui-home-results > p { margin: 10px 0 2px; }
+.ui-home-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.ui-home-result:hover { background: var(--ui-sunk); }
+.ui-home-result:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: -2px; }
+.ui-home-result strong { font-size: 14px; font-weight: 500; color: var(--ui-ink); }
+.ui-home-result small { font-size: 12px; color: var(--ui-ink-faint); }
+
+/* Everything the five tiles used to say, in one line. Quiet, because none
+   of it needs a person right now — the line that does is above the input. */
+.ui-home-standing {
+  margin-top: 26px;
+  color: var(--ui-ink-faint);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+@media (max-width: 560px) {
+  .ui-home { padding-top: 5vh; }
+  .ui-home-greeting { font-size: 25px; }
+}
 /* ── home: the module launcher's tiles ──
    The desk's app grid, made to feel like a product rather than a list: a
    60px squircle-ish tile in a two-stop emerald gradient, a hairline of light

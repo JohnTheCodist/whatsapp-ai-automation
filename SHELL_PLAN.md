@@ -184,3 +184,47 @@ genre's SHAPE — density, surface, radius, type scale and the entry model.
 **That makes phase 1 smaller and safer than §5 feared.** No clinical screen
 changes meaning; the tones a pharmacist has learned keep their colours. The
 risk concentrates in layout, which is reviewable on screen.
+
+---
+
+## 8. Phase 2 shipped, 2026-10-11
+
+Home is a greeting, the one line that needs a person, and one input.
+
+**What typing does, which is the decision that matters.** It searches this
+pharmacy's **patients** and this app's **screens**, and nothing else. It is
+not an assistant prompt. A large box on a clinical product invites a clinical
+question, and one that implies it will answer and then does not is worse than
+one that never implied it — so the placeholder says what it searches, and a
+test pins it against `ask` / `anything` / `assistant` / `chat`.
+
+**No microphone on Home**, though the reference has one. A recording needs a
+consultation to belong to and a consent recorded against it (0071), neither
+of which exists until a patient is chosen — so a mic here could only ask for
+a patient first, which is what the input already does. It would be a second
+route to the same place dressed as a shortcut.
+
+**Removing the tiles did not remove the figures.** Every live line they
+carried is in one quiet row under the input, except the clinic one, which is
+the headline above it. The tiles gave all five equal weight, so "no orders
+waiting" sat at the same size as somebody waiting for a pharmacist; now the
+second line is reserved for the thing with a cost.
+
+`launcher.test.jsx` (10 tests) became `homeCommand.test.jsx` (8), keeping the
+two rules worth keeping: no figure claimed before it is known, and a waiting
+patient is the only red line. `Launcher.jsx` was deleted rather than left as
+a file that renders what it replaced.
+
+**A correction worth recording.** Earlier in this work it was stated that
+this project has no React render-testing infrastructure. **It does** —
+`launcher.test.jsx` rendered components with `react-dom/server`'s
+`renderToStaticMarkup`, which needs no jsdom and runs in the node
+environment the config sets. The new tests use the same technique.
+
+### Still to come
+
+| | |
+|---|---|
+| phase 3 | the Consultation screen — the scribe entry becomes one input |
+| phase 4 | Patients, Medications, Conditions, Tests, Care programmes, Follow-ups, Messages |
+| phase 5 | Orders, Inbox, Inventory, Requests, Billing, Setup, Website |

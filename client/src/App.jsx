@@ -38,7 +38,7 @@ import { playOrderChime, playConsultationAlarm, unlockChime, isUnlocked } from '
 import {
   IconSetup, IconSearch, IconVolumeOn, IconVolumeOff, IconLink, IconBilling, IconAlertTriangle, IconHome,
 } from './Icons.jsx';
-import Launcher from './Launcher.jsx';
+import HomeCommand from './HomeCommand.jsx';
 import CatalogueSync from './CatalogueSync.jsx';
 import TradeQrCode from './TradeQrCode.jsx';
 import { TemplatesPanel } from './MetaReviewTest.jsx';
@@ -79,7 +79,7 @@ const SETUP = { id: 'setup', label: 'Setup', Icon: IconSetup, title: 'Setup' };
 const BILLING = { id: 'billing', label: 'Billing', Icon: IconBilling, title: 'Billing' };
 
 /**
- * Home — the module launcher (Launcher.jsx), and where a pharmacy lands after
+ * Home — the command surface (HomeCommand.jsx), and where a pharmacy lands after
  * signing in. No sidebar is drawn on it: it is where modules are chosen from,
  * not a place inside one.
  */
@@ -899,7 +899,19 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
                 sections (needs-you, WhatsApp disconnected) moved into the
                 header's NotificationBell, which owns navigating from them
                 now. AiPerformance's cards still link out on their own. */}
-            {isHome && <Launcher onOpen={setTab} websiteEnabled={websiteEnabled} summary={summary} />}
+            {/* Home is a command surface, not a grid of tiles
+                (SHELL_PLAN.md phase 2). openPatient is the SAME function
+                the header search uses, so a patient opened from Home lands
+                exactly where one opened from the search does — two routes
+                to one screen, never two screens. */}
+            {isHome && (
+              <HomeCommand
+                onOpen={setTab}
+                onOpenPatient={openPatient}
+                websiteEnabled={websiteEnabled}
+                summary={summary}
+              />
+            )}
             {tab === 'overview' && <Overview />}
             {tab === 'ai' && <AiPerformance onNavigate={setTab} />}
             {tab === 'consultations' && (
