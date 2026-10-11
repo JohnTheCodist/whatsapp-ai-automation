@@ -458,8 +458,18 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
     try { row.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch { /* older browser */ }
   }, [tab]);
 
-  const pageTitle = titleFor(tab);
-  const crumbTitle = crumbFor(tab);
+  /**
+   * Whose record is open, when one is.
+   *
+   * THE CHROME USED TO LIE. Standing in Ngozi Okafor’s medication record,
+   * the breadcrumb said "Patients / All patients" and the page heading
+   * said "Patients — View all your customers’ details". Both describe the
+   * screen you left, and on a clinical record the name at the top is the
+   * thing a pharmacist checks before acting.
+   */
+  const [openPatientName, setOpenPatientName] = useState(null);
+  const pageTitle = openPatientName || titleFor(tab);
+  const crumbTitle = openPatientName || crumbFor(tab);
   const openPatient = (id) => { setPatientToOpen(id); setTab('customers'); };
 
   function submitSearch(e) {
@@ -934,6 +944,7 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
                 initialQuery={patientQuery}
                 openPatientId={patientToOpen}
                 onPatientOpened={clearPatientToOpen}
+                onPatientName={setOpenPatientName}
                 onOpenConversation={(id) => { setOpenConversationId(id); setTab('inbox'); }}
                 onNavigate={setTab}
               />

@@ -138,6 +138,7 @@ export function ChronicRegister({ onOpen, standalone = false }) {
 
 export default function Customers({
   onOpenConversation, onNavigate, initialQuery = '', openPatientId = null, onPatientOpened,
+  onPatientName,
 }) {
   const [selectedId, setSelectedId] = useState(openPatientId);
 
@@ -151,6 +152,23 @@ export default function Customers({
     onPatientOpened?.();
   }, [openPatientId, onPatientOpened]);
 
+  /**
+   * Tell the shell whose record is open, so the page can stop calling
+   * itself "All patients" while a patient is on screen.
+   *
+   * REPORTED, not lifted. `selectedId` stays here because this screen is
+   * the one that owns the list/record switch, and moving it up would make
+   * every other caller of Customers responsible for a thing they do not
+   * use. The shell only needs the NAME.
+   *
+   * Null on the way back is the half that matters: a heading that keeps a
+   * name after you have left the record is worse than one that never had
+   * it, because it is confidently wrong rather than merely vague.
+   */
+  useEffect(() => {
+    if (!selectedId) { onPatientName?.(null); }
+  }, [selectedId, onPatientName]);
+
   if (selectedId) {
     // Choosing a patient opens their RECORD — the twelve sections and the
     // navigation between them — not the profile on its own. The profile is
@@ -162,7 +180,7 @@ export default function Customers({
         // keep one patient's data on screen while another's loads.
         key={selectedId}
         customerId={selectedId}
-        onBack={() => setSelectedId(null)}
+        onBack={() => { onPatientName?.(null); setSelectedId(null); }}
         onOpenConversation={onOpenConversation}
         onNavigate={onNavigate}
       />
@@ -171,5 +189,16 @@ export default function Customers({
 
   // Search state lives in PatientSearch; the header search's term arrives
   // as initialQuery and is followed there.
-  return <PatientSearch initialQuery={initialQuery} onOpen={setSelectedId} />;
+  // The name comes from the row that was CLICKED, not from a second
+  // request: PatientSearch already hands the patient over with the id, and
+  // asking the server again for something just shown is how two answers to
+  // one question appear. A patient opened by deep link (Refills,
+  // Conditions) arrives with no name, and the heading then stays "Patients"
+  // — vague, which is honest, rather than wrong.
+  return (
+    <PatientSearch
+      initialQuery={initialQuery}
+      onOpen={(id, p) => { onPatientName?.(p?.name || null); setSelectedId(id); }}
+    />
+  );
 }
