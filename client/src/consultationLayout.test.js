@@ -24,9 +24,13 @@ const APP = fs.readFileSync(path.join(SRC, 'App.jsx'), 'utf8');
 // from the one test that checks a class name was kept, which is exactly the
 // gap this file was written after.
 const SCRIBE = fs.readFileSync(path.join(SRC, 'ConsultationScribe.jsx'), 'utf8');
+// EXTENDED 2026-10-11 with the create-patient form, for the same reason the
+// scribe was added: it renders on this screen, and a class name is a promise
+// to the stylesheet that nothing else checks was kept.
+const NEWPATIENT = fs.readFileSync(path.join(SRC, 'NewPatient.jsx'), 'utf8');
 
 /** Every class name the workspace asks index.css for. */
-const usedClasses = [...`${JSX}\n${SCRIBE}`.matchAll(/className=(?:"([^"]+)"|\{`([^`]+)`\})/g)]
+const usedClasses = [...`${JSX}\n${SCRIBE}\n${NEWPATIENT}`.matchAll(/className=(?:"([^"]+)"|\{`([^`]+)`\})/g)]
   .flatMap((m) => (m[1] || m[2]).split(/\s+/))
   .map((c) => c.replace(/\$\{.*/, '').trim())
   .filter((c) => c.startsWith('ui-'));

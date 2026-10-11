@@ -3911,6 +3911,37 @@ tr:focus-within .ui-row-actions,
   vertical-align: baseline;
 }
 
+/* ---- creating a patient at the counter -------------------------------
+   The control sits beside the search, because that is the moment the gap
+   is felt: you look for somebody and they are not there. */
+.ui-newpatient-offer { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+
+.ui-newpatient {
+  display: grid;
+  gap: 10px;
+  max-width: 46ch;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-surface);
+}
+.ui-newpatient > p { margin: 0; }
+/* Sex and date of birth are both short and both optional, so they share a
+   row until there is no room for two. auto-fit asks how much space is
+   actually here rather than how wide the window is — the bug the scribe
+   choice cards had. */
+.ui-newpatient-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+/* A field the server named as wrong. design.md keeps red for a person
+   waiting on a human, so this is the ink-strong edge the focus ring uses,
+   not an alarm colour. */
+.ui-newpatient input[aria-invalid="true"] { outline: 2px solid var(--ui-focus); outline-offset: 1px; }
+
+.ui-newpatient-notice { margin: 0 0 10px; }
 /* The input meter. Five bars, ink rather than green: this is not a health
    reading, and design.md keeps the accent off anything that is not one. The
    bars are the only thing on this screen that moves continuously, which is

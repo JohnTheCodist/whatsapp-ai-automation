@@ -1900,6 +1900,62 @@ WhatsApp number field saved nothing for a month (2026-09-09).
 name the live function so they do not mislead, but removing them is its own
 change rather than a footnote in this one.
 
+
+**A patient could not be created, 2026-10-11 → 2192/1450/735/7 (no database);
+2192/2187/0/5 with one.** The owner: *"there is no where to create new
+patient"*. Correct — `customerIdentity.resolveCustomer`, called from the
+inbound WhatsApp ingest, was the **only** thing in this product that had ever
+inserted a customer. A pharmacist consulting with somebody standing at the
+counter had nowhere to put them.
+
+**The feature is an INSERT nobody wrote**, and that is the whole design. The
+route calls `resolveCustomer` — the existing upsert, atomic by constraint —
+rather than inserting into `customers` itself, because `identity_key` is
+unique per pharmacy and a hand-written INSERT would have worked today and
+produced a **duplicate the first time that person texted**.
+
+```
+0803 999 1122      typed at the counter   -> 201, created
++2348039991122     the same person again  -> 200, SAME id, created: false
+2348039991122      arriving over WhatsApp -> SAME id, one row for the identity
+```
+
+All three measured against a real database. The pharmacist's `full_name`
+survives the WhatsApp merge while `display_name` becomes what WhatsApp calls
+them — exactly the split 0020 documents.
+
+**A phone number is REQUIRED, and that is a schema fact rather than a
+preference.** `customers.wa_jid` is NOT NULL (0016) and `identity_key` is NOT
+NULL (0019); `resolveCustomer` says it in as many words — *"there is nothing
+to identify them by"*. The form says why rather than only refusing. **A
+walk-in with no phone at all is therefore NOT supported**, and supporting one
+means making `wa_jid` nullable, which is a change to the live identity path
+and belongs in its own commit.
+
+**`wa_jid` is synthesised from the normalised number** (`<number>@s.whatsapp.net`),
+which is the real address for anybody on WhatsApp — and `resolveCustomer`
+overwrites it with the genuine one the moment they message. Nothing can send
+to a synthesised address meanwhile: `messageInput`'s outreach gate refuses any
+patient who has not written first.
+
+7 server tests, **all database-free**, so the skipped ceiling did not move.
+**8 mutations run; the eighth was MISSED and taught something.** Deleting the
+required-phone check still *refuses* an empty box — it falls through to the
+parser and says *"that does not look like a phone number"*. Safe, and wrong
+for the person: an empty field is not a malformed one, and telling somebody
+their blank box is badly formatted sends them hunting a typo that is not
+there. The test now asserts the MESSAGE, not just the field, and the mutation
+then failed.
+
+**The class-is-defined invariant was extended** to `NewPatient.jsx`, for the
+reason it was extended to the scribe: it renders on this screen, and a class
+name is a promise to the stylesheet that nothing else checks was kept.
+
+**Already-exists is not an error.** 200 rather than 409, with `created:
+false`, and the screen says the patient was already there before opening
+them — somebody typing a number that turns out to belong to a known patient
+has **found** them, and a 409 is nothing a pharmacist at a counter can act on.
+
 ### Why 735 tests skip
 
 `TEST_DATABASE_URL` is **not yet configured**. Every database-backed suite
@@ -2047,10 +2103,10 @@ After `npm test`, compare:
 
 | Observation | Meaning |
 |---|---|
-| **No test database:** 1443 pass / 735 skip / 7 fail, categories A+B | No regression. Proceed. |
-| **Test database configured:** 2180 pass / 0 skip / 4-5 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. Measured, not derived: 2185/2180/0/5 on 2026-10-10 against a local PostgreSQL 17.10, plus a possible SIXTH between 23:00 and 00:00 UTC only — the websiteAnalytics timezone-window test described above, which is a test yardstick and not in this baseline (2182/2177/0/5 before SOAP routing; 2142/2137/0/4-5 before the AI scribe; 2139/2135/0/4 before the Consultation redesign; 2128/2123/0/5 before Messages phase 4; 2114/2109/0/5 before Consultation phase 3; 2087/2081/0/5 before Consultation phase 2; 2056/2051/0/5 before Consultation phase 1; 2039/2034/0/5 before Messages phase 3; 2022/2017/0/5 before Messages phase 2; 1999/1994/0/5 before Messages; 1997/1992/0/5 before follow-up phase 3; 1992/1987/0/5 before follow-up phase 2; 1964/1959/0/5 before follow-ups; 1961/1956/0/5 before care-programme phase 3; 1950/1946/0/4 before phase 2; 1909/1905/0/4 before care programmes; 1878/1874/0/4 before tests; 1842/1838/0/4 before conditions; 1812/1807/0/5 before allergies; 1791/1786/0/5 on 2026-09-21 before the review; 1686/1681/0/5 on 2026-09-19 before the patients module). The fifth failure is "writing pre-keys costs a constant number of round trips", the known-flaky one (see below) — it appears in some runs and not others, and is not a regression either way. |
+| **No test database:** 1450 pass / 735 skip / 7 fail, categories A+B | No regression. Proceed. |
+| **Test database configured:** 2187 pass / 0 skip / 4-5 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. Measured, not derived: 2192/2187/0/5 on 2026-10-11 against a local PostgreSQL 17.10, plus a possible SIXTH between 23:00 and 00:00 UTC only — the websiteAnalytics timezone-window test described above, which is a test yardstick and not in this baseline (2185/2180/0/5 before counter patient creation; 2182/2177/0/5 before SOAP routing; 2142/2137/0/4-5 before the AI scribe; 2139/2135/0/4 before the Consultation redesign; 2128/2123/0/5 before Messages phase 4; 2114/2109/0/5 before Consultation phase 3; 2087/2081/0/5 before Consultation phase 2; 2056/2051/0/5 before Consultation phase 1; 2039/2034/0/5 before Messages phase 3; 2022/2017/0/5 before Messages phase 2; 1999/1994/0/5 before Messages; 1997/1992/0/5 before follow-up phase 3; 1992/1987/0/5 before follow-up phase 2; 1964/1959/0/5 before follow-ups; 1961/1956/0/5 before care-programme phase 3; 1950/1946/0/4 before phase 2; 1909/1905/0/4 before care programmes; 1878/1874/0/4 before tests; 1842/1838/0/4 before conditions; 1812/1807/0/5 before allergies; 1791/1786/0/5 on 2026-09-21 before the review; 1686/1681/0/5 on 2026-09-19 before the patients module). The fifth failure is "writing pre-keys costs a constant number of round trips", the known-flaky one (see below) — it appears in some runs and not others, and is not a regression either way. |
 | Any failure NOT among the 9 | **You broke something.** Fix the code, not the test. |
-| Fewer than 1443 passing | Something stopped running. Find out what. |
+| Fewer than 1450 passing | Something stopped running. Find out what. |
 | More than 735 skipped | A suite started skipping. That is a silent loss of coverage, not a pass — unless you added tests that skip, in which case say so and move the ceiling in the same commit. |
 | "writing pre-keys costs a constant number of round trips" fails | Known flaky against a local database, ~1 run in 4. Not in the baseline on purpose. Do not re-run until green — read the entry above and fix the yardstick. |
 

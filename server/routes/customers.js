@@ -19,8 +19,37 @@ const { classifyActivity } = require('../services/customers/customerActivity');
 const { getCustomerProfile } = require('../services/customers/customerProfile');
 const { listTimeline } = require('../services/customers/customerTimeline');
 const crm = require('../services/customers/customerCrm');
+const { readNewPatientInput } = require('../services/customers/newPatientInput');
+const { createPatient } = require('../services/customers/createPatient');
 
 const router = express.Router();
+
+/**
+ * Create a patient from the counter.
+ *
+ * Until this existed a patient could only come into being by messaging the
+ * pharmacy on WhatsApp, so a pharmacist consulting with somebody standing
+ * in front of them had nowhere to put them.
+ *
+ * 200 AND NOT 201 WHEN THEY ALREADY EXIST. The reply says which happened,
+ * because somebody typing a number that turns out to belong to a known
+ * patient has FOUND them rather than made a mistake, and a 409 is something
+ * a pharmacist at a counter cannot act on.
+ */
+router.post('/', requireAuth, async (req, res, next) => {
+  try {
+    assertPharmacyId(req.pharmacyId);
+    const input = readNewPatientInput(req.body);
+    const result = await createPatient(req.pharmacyId, input, {
+      actorId: req.user?.id && req.user.id !== '00000000-0000-0000-0000-000000000000' ? req.user.id : null,
+      actorRole: req.pharmacyRole || null,
+    });
+    res.status(result.created ? 201 : 200).json({
+      customerId: result.customerId,
+      created: result.created,
+    });
+  } catch (err) { next(err); }
+});
 
 router.get('/', requireAuth, async (req, res, next) => {
   try {
