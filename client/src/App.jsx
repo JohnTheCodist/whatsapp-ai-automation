@@ -269,10 +269,14 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
   const prevPending = useRef(null);
   const searchRef = useRef(null);
 
-  // Ctrl+K (Cmd+K on a Mac) focuses the header search, as it does on the
-  // ERPNext desk this layout follows. The hint is printed inside the field,
-  // so the shortcut has to exist — a hint for a key that does nothing is
-  // worse than no hint.
+  // Ctrl+K (Cmd+K on a Mac) focuses THE SEARCH FIELD ON THIS SCREEN, as it
+  // does on the ERPNext desk this layout follows. The hint is printed
+  // inside the field, so the shortcut has to exist — a hint for a key that
+  // does nothing is worse than no hint.
+  //
+  // One ref, two possible fields. On Home it is the command box in the
+  // body; everywhere else it is the header pill. That is what makes the
+  // shortcut keep working on a screen whose header has no search.
   useEffect(() => {
     function onKey(e) {
       if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') {
@@ -746,7 +750,14 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
           {/* The desk's "Search  Ctrl+K" pill. Submitting jumps to Patients
               with the term applied. Fill and focus come from the global
               field rule in index.css. */}
-          <form onSubmit={submitSearch} className={isHome ? 'w-full max-w-md' : 'w-40 shrink-0 md:w-56 lg:w-72'}>
+          {/* NOT ON HOME. Home’s body is a command box that searches
+              patients AND jumps to screens and shows what it found; this
+              pill only carries a term over to Patients. Two fields a few
+              inches apart, one strictly weaker, is a choice nobody should
+              have to make — so Home keeps the better one and this keeps
+              every other screen. Ctrl+K reaches whichever is present. */}
+          {!isHome && (
+          <form onSubmit={submitSearch} className="w-40 shrink-0 md:w-56 lg:w-72">
             <label className="relative block">
               <span className="sr-only">Search patients by name or phone</span>
               <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--ui-ink-faint)]">
@@ -764,6 +775,7 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
               </span>
             </label>
           </form>
+          )}
 
           <div className={`flex items-center gap-1.5 ${isHome ? 'flex-1 justify-end' : ''}`}>
             {/* Browsers refuse to play audio until the user clicks something,
@@ -954,6 +966,7 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
                 to one screen, never two screens. */}
             {isHome && (
               <HomeCommand
+                inputRef={searchRef}
                 onOpen={setTab}
                 onOpenPatient={openPatient}
                 websiteEnabled={websiteEnabled}

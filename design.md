@@ -191,10 +191,17 @@ keyboard, touch, reduced-motion, clip-path and screen-reader rules.
 **Added 2026-09-19 at the owner's request as a module launcher; rewritten
 twice since.** Signing in lands on Home.
 
-**What it is now.** The sidebar, the search centred in the header, and a
-single input in the body — "Search a patient, or jump to a screen". No
-module tiles. `client/src/HomeCommand.jsx` and the pure
+**What it is now.** The sidebar, and ONE input in the body — "Search a
+patient, or jump to a screen". No module tiles, and no search pill in the
+header: Home is the one screen whose header has none, because its body
+already is one. `client/src/HomeCommand.jsx` and the pure
 `client/src/homeCommand.js`, pinned by `homeCommand.test.jsx`.
+
+**Ctrl+K focuses the search field on THIS screen** — the body box on Home,
+the header pill everywhere else. One `searchRef`, handed to whichever field
+is rendered. The shortcut hint is printed inside the field, and a hint for a
+key that does nothing is worse than no hint, so the ref follows the field
+rather than the header.
 
 **Two corrections are folded into that sentence**, and both are recorded
 rather than quietly applied:

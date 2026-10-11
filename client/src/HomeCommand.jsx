@@ -28,7 +28,9 @@ import {
   PATIENTS_HEADING, SCREENS_HEADING, NO_MATCH,
 } from './homeCommand.js';
 
-export default function HomeCommand({ onOpen, onOpenPatient, websiteEnabled, summary = null }) {
+export default function HomeCommand({
+  onOpen, onOpenPatient, websiteEnabled, summary = null, inputRef = null,
+}) {
   const [query, setQuery] = useState('');
   const [patients, setPatients] = useState([]);
   const [refillsDue, setRefillsDue] = useState(null);
@@ -95,8 +97,22 @@ export default function HomeCommand({ onOpen, onOpenPatient, websiteEnabled, sum
     else onOpen?.(target.tab);
   }, [onOpen, onOpenPatient]);
 
-  const inputRef = useRef(null);
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  /**
+   * THE SEARCH FIELD ON THIS SCREEN, which on Home is this one.
+   *
+   * The shell owns a `searchRef` meaning "whatever a person types into
+   * here" and points Ctrl+K at it. Home used to carry TWO fields — the
+   * header pill and this box — doing overlapping jobs a few inches
+   * apart, so the shell hands its ref down and the header keeps its
+   * field only on screens that still have one.
+   *
+   * The local fallback is not decoration: this component is rendered
+   * without a ref by `homeCommand.test.jsx`, and autofocus has to keep
+   * working there.
+   */
+  const localRef = useRef(null);
+  const boxRef = inputRef || localRef;
+  useEffect(() => { boxRef.current?.focus(); }, [boxRef]);
 
   const typed = query.trim().length > 0;
   const nothing = typed && screens.length === 0 && patients.length === 0
@@ -119,7 +135,7 @@ export default function HomeCommand({ onOpen, onOpenPatient, websiteEnabled, sum
         onSubmit={(e) => { e.preventDefault(); go(first); }}
       >
         <input
-          ref={inputRef}
+          ref={boxRef}
           type="text"
           value={query}
           placeholder={PLACEHOLDER}

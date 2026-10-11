@@ -171,3 +171,53 @@ test('the sidebar is still a way back to Home, not just a way out of it', () => 
   // at the top of the sidebar is the way back, and it says so to a reader.
   expect(APP).toMatch(/aria-label="RxNaija home"/);
 });
+
+/**
+ * One search field per screen (owner, 2026-10-11: "merge the two search
+ * boxes").
+ *
+ * Giving Home the sidebar left it with TWO: the header's "Search patients"
+ * pill and the body's command box, a few inches apart, doing overlapping
+ * jobs. The pill is strictly weaker — it carries a term over to Patients —
+ * while the box searches patients AND jumps to screens AND shows what it
+ * found. A choice between two fields where one is worse is not a choice
+ * worth offering, so Home keeps the box and the pill keeps every other
+ * screen.
+ */
+
+const HOMECMD = fs.readFileSync(path.join(SRC, 'HomeCommand.jsx'), 'utf8');
+
+test('Home has no header search, because its body already is one', () => {
+  expect(APP).toMatch(/\{!isHome && \(/);
+  // The width ternary went with it: the pill now renders at one size,
+  // because it no longer has a Home case to be wide for.
+  expect(APP, 'the header field still has a Home-sized variant')
+    .not.toMatch(/isHome \? 'w-full max-w-md'/);
+});
+
+test('every other screen keeps the header field', () => {
+  // The merge is Home-only. Removing the pill everywhere would take the
+  // desk's Ctrl+K search off eleven screens to fix a duplicate on one.
+  expect(APP).toMatch(/className="w-40 shrink-0 md:w-56 lg:w-72"/);
+  expect(APP).toMatch(/onSubmit=\{submitSearch\}/);
+});
+
+test('Ctrl+K reaches whichever field is on screen', () => {
+  // THE ONE THAT MATTERS. The shortcut's hint is printed inside the field,
+  // and App.jsx's own comment says a hint for a key that does nothing is
+  // worse than no hint. One ref, handed to whichever field exists — so
+  // removing the header pill from Home could not leave Ctrl+K pointing at
+  // something that is not rendered.
+  expect(APP).toMatch(/searchRef\.current\?\.focus\(\)/);
+  expect(APP).toMatch(/inputRef=\{searchRef\}/);
+  expect(HOMECMD).toMatch(/const boxRef = inputRef \|\| localRef;/);
+  expect(HOMECMD).toMatch(/ref=\{boxRef\}/);
+});
+
+test('the command box still focuses itself when nothing hands it a ref', () => {
+  // homeCommand.test.jsx renders this component with no inputRef, and the
+  // box autofocusing on load is the reason Home is typeable the moment it
+  // opens. The fallback is load-bearing, not defensive decoration.
+  expect(HOMECMD).toMatch(/const localRef = useRef\(null\);/);
+  expect(HOMECMD).toMatch(/boxRef\.current\?\.focus\(\)/);
+});
