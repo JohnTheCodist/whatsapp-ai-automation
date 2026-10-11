@@ -407,7 +407,15 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
   }, [consultationsWaiting, alarmSilenced, soundOn]);
 
   const connected = health?.status === 'ok';
-  // Home is the desk's launcher: no sidebar, logo left, search centred.
+  // Home is the desk’s command surface: the sidebar is there, search is
+  // centred, and the body is one input rather than a page of tiles.
+  //
+  // IT USED TO HAVE NO SIDEBAR (the comment here said "no sidebar, logo
+  // left"), which made Home the one screen you could not navigate FROM.
+  // Every route out of it went through the command input or the search,
+  // so "where else can I go?" had no answer in view. The owner asked for
+  // the nav here, pointing at the reference, where the destinations sit
+  // beside the command surface rather than instead of it.
   const isHome = tab === HOME.id;
   /**
    * Patients is the second screen with no sidebar, at the owner's request
@@ -415,7 +423,11 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
    * record grows its OWN navigation of twelve sections (PatientRecord.jsx),
    * which beside the module rail would be two vertical menus for one screen.
    */
-  const isBare = isHome || tab === 'customers';
+  //
+  // Patients is now the ONLY bare screen. Home joined the rest on
+  // 2026-10-11; the reasoning above for Patients is unchanged and is the
+  // owner’s, so it keeps its exemption.
+  const isBare = tab === 'customers';
   // The module this screen belongs to, or null on Setup and Billing — where
   // the sidebar lists the modules instead, so there is always a way back in.
   const currentModule = moduleOfTab(tab);
@@ -678,16 +690,20 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
               takes you there; the last is where you already are. The
               pharmacy's name is in the sidebar's workspace row and the
               account chip, so it is not repeated here. */}
+          {/* On Home the left slot is EMPTY, and deliberately so.
+
+              It used to hold an R tile, which was the only identity on a
+              screen that had no sidebar. The sidebar carries that tile and
+              the pharmacy’s name now, so a second one two inches away is
+              the logo twice.
+
+              A breadcrumb is not the answer either: Home’s would read
+              "home-icon / Home" — a screen saying its own name twice, with
+              the icon linking to the page you are already on. The spacer
+              stays so the search keeps the centred position that makes this
+              screen a command surface. */}
           {isHome ? (
-            <div className="flex flex-1 items-center">
-              <span
-                role="img"
-                aria-label="RxNaija"
-                className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--ui-focus)] text-[15px] font-semibold leading-none text-white"
-              >
-                R
-              </span>
-            </div>
+            <div className="flex-1" />
           ) : (
           <nav aria-label="Breadcrumb" className="min-w-0 flex-1 overflow-hidden">
             <ol className="flex min-w-0 items-center gap-1.5 text-[15px] whitespace-nowrap">

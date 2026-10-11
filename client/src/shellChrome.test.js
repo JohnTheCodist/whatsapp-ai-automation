@@ -115,3 +115,59 @@ test('the shell is told the name and nothing else about the patient', () => {
   expect(APP, 'the shell has taken ownership of which patient is selected')
     .not.toMatch(/setSelectedPatientId|selectedPatientId/);
 });
+
+/**
+ * Home keeps the nav (owner, 2026-10-11, pointing at the Rhazes reference:
+ * "for the home screen can u just add nav like this").
+ *
+ * Home used to be the one screen in the app you could not navigate FROM.
+ * `isBare` hid the sidebar, so every route out went through the command
+ * input or the header search — "where else can I go?" had no answer in view.
+ * The reference puts the destinations BESIDE the command surface rather than
+ * instead of it, which is what these pin.
+ */
+
+test('Home renders the sidebar, because it is the screen you start from', () => {
+  // The whole fix is that Home is no longer bare.
+  expect(APP, 'Home is hiding the sidebar again').not.toMatch(/const isBare = isHome \|\|/);
+  expect(APP).toMatch(/const isBare = tab === 'customers';/);
+  // And the sidebar is still gated on `isBare`, so the rule above is the one
+  // that decides it rather than a second condition somewhere else.
+  expect(APP).toMatch(/\{!isBare && \(<>/);
+});
+
+test('Patients keeps its exemption, which is the owner’s and not incidental', () => {
+  // GUARD. The patient record grows its OWN twelve-section navigation, and
+  // beside the module rail that is two vertical menus for one screen. That
+  // exemption was asked for (2026-09-20) and must not be swept up by a later
+  // tidy of `isBare`.
+  expect(APP).toMatch(/const isBare = tab === 'customers';/);
+  // Asserted as TWO separate claims, not `/twelve sections|PatientRecord/`.
+  // An alternation here passes as soon as either half survives, which is how
+  // the same mistake slipped past in screenHeadings.test.js — a mutation
+  // deleting one half stayed green on the other.
+  expect(APP, 'the count of record sections has gone from the reasoning')
+    .toMatch(/twelve sections/);
+  expect(APP, 'the screen that owns that navigation is no longer named')
+    .toMatch(/PatientRecord\.jsx/);
+});
+
+test('Home does not show the logo twice now that the sidebar carries it', () => {
+  // The header's R tile existed because Home had no sidebar. With one, a
+  // second tile two inches from the first is the logo twice — the same
+  // defect as Orders and the Inbox saying their own name twice.
+  const home = APP.slice(APP.indexOf('{isHome ? ('), APP.indexOf('aria-label="Breadcrumb"'));
+  expect(home.length, 'the Home header branch has moved').toBeGreaterThan(0);
+  expect(home, 'the duplicate R tile is back').not.toMatch(/aria-label="RxNaija"/);
+
+  // Nor a breadcrumb, which on Home would read "home-icon / Home" — a screen
+  // naming itself, with the icon linking to the page you are already on.
+  expect(home, 'Home grew a breadcrumb that names Home').not.toMatch(/crumbTitle/);
+});
+
+test('the sidebar is still a way back to Home, not just a way out of it', () => {
+  // If Home is reachable only by the command input, giving it a sidebar has
+  // made the app harder to leave AND harder to return to. The workspace tile
+  // at the top of the sidebar is the way back, and it says so to a reader.
+  expect(APP).toMatch(/aria-label="RxNaija home"/);
+});

@@ -186,15 +186,45 @@ keyboard, touch, reduced-motion, clip-path and screen-reader rules.
 
 </details>
 
-## Home: the module launcher
+## Home: the command surface
 
-**Added 2026-09-19, at the owner's request.** Signing in lands on Home, the
-desk's app launcher in this product's terms: no sidebar, the R logo at the
-left of the header, the search centred, and a grid of five module tiles —
-**Stock, Clinics, Patients, Marketing, Branding**, in that order. One click
-opens a module; the sidebar returns inside it, and the breadcrumb's house
-(or the R logo) comes back here. `client/src/Launcher.jsx`; the routing is
-the pure `moduleTarget`, pinned by `launcher.test.js`.
+**Added 2026-09-19 at the owner's request as a module launcher; rewritten
+twice since.** Signing in lands on Home.
+
+**What it is now.** The sidebar, the search centred in the header, and a
+single input in the body — "Search a patient, or jump to a screen". No
+module tiles. `client/src/HomeCommand.jsx` and the pure
+`client/src/homeCommand.js`, pinned by `homeCommand.test.jsx`.
+
+**Two corrections are folded into that sentence**, and both are recorded
+rather than quietly applied:
+
+1. **The five module tiles are gone** (SHELL_PLAN.md phase 2, 2026-10-11).
+   `Launcher.jsx` and `launcher.test.js` were DELETED, and this section
+   went on naming both for a day. The reference the owner chose reads as
+   intuitive because it asks nothing: a tile grid makes somebody choose a
+   module before they can do anything, and an input does not.
+2. **Home is no longer the one screen with no sidebar** (owner, 2026-10-11,
+   pointing at the reference: *"for the home screen can u just add nav like
+   this"*). It had none, which made it the only screen you could not
+   navigate FROM — every route out went through the command input or the
+   search, so "where else can I go?" had no answer in view. The
+   destinations now sit BESIDE the command surface rather than instead of
+   it, which is what the reference does.
+
+   The header’s R tile went with that change: the sidebar carries the tile
+   and the pharmacy’s name, so a second one is the logo twice. Home shows
+   no breadcrumb either — it would read "house / Home", a screen naming
+   itself with the icon linking to the page you are already on. The
+   workspace tile at the top of the sidebar is the way back.
+
+> **The tile specification below is SUPERSEDED and kept deliberately.**
+> Nothing renders the five module tiles any more, so the table, the 60px
+> emerald tile, its motion and its layout describe a screen that no longer
+> exists. They are left rather than deleted because the `IconModule*` set
+> they specify is still used — `modules.js` gives each module one — and
+> because removing a design the owner asked for is their call, not a
+> footnote in a navigation change. It needs its own pass.
 
 | Tile | Opens |
 |---|---|
@@ -432,8 +462,9 @@ Three things follow from the length, and none is optional:
   screen is gated until the website builder is on, and a heading that names
   a part of the app then offers no way into it is a dead end.
 
-Module rows no longer appear on Home. Home is still the launcher, and the R
-tile is still the way back to it.
+Module rows no longer appear on Home. Home is the command surface now
+rather than a launcher, and the R tile at the top of the SIDEBAR — not the
+header, which no longer has one — is the way back to it.
 Tab ids (`inbox` / `orders` / `requests`) are unchanged underneath, so every
 existing `onNavigate('orders')` deep-link keeps working.
 
