@@ -76,7 +76,20 @@
    returns the app to stock Tailwind rather than breaking it.
    ───────────────────────────────────────────────────────────────────────── */
 :root {
-  --ui-paper:        oklch(100% 0 0);     /* the work surface: white        */
+  /* WARM OFF-WHITE, 2026-10-11 (SHELL_PLAN.md phase 1). The desk ramp was
+     pure neutral — zero chroma — and the Rhazes reference the owner chose
+     is warm. The chroma is deliberately TINY (0.003): enough that the page
+     reads as paper rather than as a screen, not enough to become a colour.
+
+     The hue is 85 (a warm yellow-grey), NOT the emerald hue. Tinting the
+     neutrals toward the accent is what the system before this one did, and
+     design.md records why it was abandoned: greys tinted toward the accent
+     read as a different product. */
+  --ui-paper:        oklch(98.6% 0.003 85);  /* the page: warm off-white   */
+  /* Cards stay WHITE on the warm page, which is where the reference gets
+     its depth: the surface a thing sits on is warm, the thing itself is
+     not. A card the same colour as the page needs a heavier border to be
+     seen at all. */
   --ui-surface:      oklch(100% 0 0);
   --ui-sunk:         oklch(96.4% 0 0);    /* #F3F3F3: fields, grey buttons  */
   --ui-sunk-hover:   oklch(94.6% 0 0);    /* #EDEDED                        */
@@ -102,7 +115,7 @@
   /* The sidebar: ERPNext's light grey column, not the old dark rail. The
      active item is a white tile with an inset hairline (.ui-rail-pill); hover
      is one step darker grey. */
-  --ui-sidebar:        oklch(97.9% 0 0);  /* #F8F8F8 */
+  --ui-sidebar:        oklch(97.6% 0.004 85);  /* warm, a step under the page */
   --ui-sidebar-hover:  oklch(94.6% 0 0);  /* #EDEDED */
   --ui-sidebar-active: oklch(100% 0 0);
 
@@ -371,188 +384,49 @@ nav[aria-label="Sections"] {
   --ui-sunk:    var(--ui-sidebar-hover);
 }
 
-/* ── the sidebar: an icon strip that opens on hover ──
-   At rest the sidebar is the desk's 56px icon strip. Point at it and the
-   full 214px panel opens OVER the page (it never pushes the content — a
-   table that jumps sideways every time the cursor passes would be worse
-   than no sidebar); move away and it closes. Keyboard focus inside opens it
-   too, so tabbing through the navigation shows the labels it is reading.
+/* ── the sidebar: always open ──
 
-   HOW IT MOVES, AND WHY THIS WAY
-   The panel is always laid out at full width and revealed with clip-path,
-   so nothing reflows while it animates — the browser composites a mask,
-   it does not re-measure a column every frame. Width would have been the
-   obvious property and is the wrong one.
+   REPLACED 2026-10-11 (SHELL_PLAN.md phase 1, owner). It used to be a 56px
+   icon strip that opened on hover and could be pinned — four states
+   (closed, hover-open, pinned, focus-open) revealed with a clip-path mask
+   so nothing reflowed while it animated, with labels cascading in 16ms
+   apart.
 
-     opening   the mask sweeps open over 320ms on --ui-ease-out, after a
-               70ms hover-intent pause so a cursor crossing to the page
-               does not flash it open; the shadow grows with it; labels
-               fade and slide in 6px, cascading 16ms apart top to bottom;
-               the active item's white tile stretches into a full-width
-               pill; count badges move from the icon's corner to the end
-               of the row.
-     closing   a 140ms grace period (slipping off by a few pixels does not
-               snap it shut), then the mask closes over 220ms on
-               --ui-ease-in-out, labels out together in 110ms.
+   All of that is gone, and it is worth saying what it cost and bought.
+   COST: ~250px of width on every screen, permanently. BOUGHT: where you
+   are is readable without moving the pointer, and the nav has ONE state
+   instead of four that each had to be styled, animated and tested.
 
-   Every timing lives in the --rail-* variables below. The closed state
-   sets them on .ui-rail; the open state only swaps the values. Transition
-   parameters are read from the state being entered, which is what gives
-   opening and closing their different speeds and delays. */
+   The clip-path, the label fade, the collapsed-only marks and the pin
+   control were all machinery for a state that no longer exists. Keeping
+   any of it "just in case" would leave a second sidebar nobody can
+   reach. */
 .ui-rail {
-  --rail-inset: calc(100% - 56px);
-  --rail-shadow: 0 0 0 0 oklch(20.5% 0 0 / 0);
-  --rail-dur: 220ms;
-  --rail-ease: var(--ui-ease-in-out);
-  --rail-delay: 140ms;
-  --rail-label-opacity: 0;
-  --rail-label-shift: -6px;
-  --rail-label-dur: 110ms;
-  --rail-label-delay: 0ms;
-  --rail-label-stagger: 0ms;
-  --rail-closed-only: 1;
-  --rail-closed-delay: 150ms;
-  --rail-pill-inset: 0 calc(100% - 38px) 0 2px;
-  /* THE RESTING TILE, and it is restoring the spec rather than adding to
-     it. design.md describes the collapsed strip as "36px icon TILES", but
-     `.ui-rail-pill` was transparent until hover — so at rest every icon was
-     a bare glyph floating in a 56px column. Measured on a real screen: four
-     36px rows in a 610px rail, 466px of it empty. That is what "sparse"
-     was.
-
-     Three levels, kept apart: this faint wash at rest, --ui-sunk on hover,
-     and a WHITE tile with inset rings for "you are here". The active one
-     goes lighter while the others go darker, so it stays the odd one out
-     for anyone who cannot separate two greys. */
-  --rail-rest-tile: transparent;
-  --rail-rest-ring: inset 0 0 0 1px oklch(20.5% 0 0 / 0.07);
-
-  /* The right edge of the mask sits 24px PAST the panel when open, so the
-     shadow is not clipped along with everything else. */
-  clip-path: inset(0 var(--rail-inset) 0 0);
-  box-shadow: var(--rail-shadow);
-  transition:
-    clip-path var(--rail-dur) var(--rail-ease) var(--rail-delay),
-    box-shadow var(--rail-dur) var(--rail-ease) var(--rail-delay);
+  /* The row rhythm the groups use. Kept as a variable because the group
+     spacing below is derived from it. */
+  --rail-row-gap: 4px;
 }
 
-/* Open. Hover only for a real pointer: on a touch screen a tap would leave
-   :hover stuck on and the panel open over the page with no way to shut it. */
-@media (hover: hover) and (pointer: fine) {
-  .ui-rail:hover {
-    --rail-inset: -24px;
-    --rail-rest-tile: transparent;
-    --rail-rest-ring: none;
-    --rail-shadow: 14px 0 34px -10px oklch(20.5% 0 0 / 0.30), 1px 0 0 0 oklch(20.5% 0 0 / 0.08);
-    --rail-dur: 320ms;
-    --rail-ease: var(--ui-ease-out);
-    --rail-delay: 70ms;
-    --rail-label-opacity: 1;
-    --rail-label-shift: 0px;
-    --rail-label-dur: 240ms;
-    --rail-label-delay: 140ms;
-    --rail-label-stagger: 16ms;
-    --rail-closed-only: 0;
-    --rail-closed-delay: 60ms;
-    --rail-pill-inset: 0 0 0 0;
-  }
-}
-/* PINNED. The rail opens on hover and closes when the pointer leaves,
-   which is right for a cursor passing through and wrong for somebody who
-   wants to see where they are while they work. design.md said "there is no
-   toggle"; the owner asked for one on 2026-10-04 and the doc is amended
-   rather than contradicted.
-
-   It sets NO styles of its own — exactly the variables hover and focus set,
-   so there is one open look with three ways into it. The difference is only
-   that this one does not close itself, and that the strip behind it widens
-   so the panel PUSHES the page instead of covering it. */
-.ui-rail[data-pinned='true'] {
-  --rail-inset: -24px;
-  --rail-rest-tile: transparent;
-  --rail-rest-ring: none;
-  --rail-shadow: none;
-  --rail-dur: 200ms;
-  --rail-ease: var(--ui-ease-out);
-  --rail-delay: 0ms;
-  --rail-label-opacity: 1;
-  --rail-label-shift: 0px;
-  --rail-label-dur: 200ms;
-  --rail-label-delay: 0ms;
-  --rail-label-stagger: 0ms;
-  --rail-closed-only: 0;
-  --rail-closed-delay: 0ms;
-  --rail-pill-inset: 0 0 0 0;
-}
-
-/* The pin itself. Quiet until pointed at: it is a preference, not an
-   action, and it must not compete with the navigation it sits above. */
-.ui-rail-pin {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  color: var(--ui-ink-faint);
-  font-size: 13px;
-  line-height: 1;
-  transition: background-color 140ms ease, color 140ms ease;
-}
-.ui-rail-pin:hover { background: var(--ui-sunk); color: var(--ui-ink); }
-/* Keyboard: :focus-visible, not :focus — a mouse click leaves focus on the
-   button it clicked, and plain :focus-within would then hold the panel open
-   after the pointer had left. */
-.ui-rail:has(:focus-visible) {
-  --rail-inset: -24px;
-  --rail-rest-tile: transparent;
-  --rail-rest-ring: none;
-  --rail-shadow: 14px 0 34px -10px oklch(20.5% 0 0 / 0.30), 1px 0 0 0 oklch(20.5% 0 0 / 0.08);
-  --rail-dur: 320ms;
-  --rail-ease: var(--ui-ease-out);
-  --rail-delay: 0ms;
-  --rail-label-opacity: 1;
-  --rail-label-shift: 0px;
-  --rail-label-dur: 240ms;
-  --rail-label-delay: 80ms;
-  --rail-label-stagger: 12ms;
-  --rail-closed-only: 0;
-  --rail-closed-delay: 0ms;
-  --rail-pill-inset: 0 0 0 0;
-}
-
-/* Labels, the name row, the count pills at the end of a row. Still in the
-   accessibility tree when invisible — opacity hides them from eyes only, so
-   a screen reader hears "Consult, 2" in either state. `--i` is each row's
-   position, set inline, for the cascade. */
-.ui-rail-fade {
-  opacity: var(--rail-label-opacity);
-  transform: translateX(var(--rail-label-shift));
-  transition:
-    opacity var(--rail-label-dur) var(--ui-ease-out)
-      calc(var(--rail-label-delay) + var(--i, 0) * var(--rail-label-stagger)),
-    transform var(--rail-label-dur) var(--ui-ease-out)
-      calc(var(--rail-label-delay) + var(--i, 0) * var(--rail-label-stagger));
-}
-/* The collapsed strip's own marks: count badges on the icon corner, the
-   WhatsApp status dot, the hairline between groups. They hand over to the
-   full labels as the panel opens, and come back once it has closed. */
-.ui-rail-closed-only {
-  opacity: var(--rail-closed-only);
-  transition: opacity 140ms var(--ui-ease-out) var(--rail-closed-delay);
-}
-
+/* The rail is its own scroll region, so a long module list never takes
+   the workspace row or the connection status with it. See .ui-rail-scroll
+   below — min-h-0 on that element is load-bearing. */
 /* One highlight per row, shared by hover and "you are here". Collapsed it is
    a 36px tile behind the icon — the desk's white square; open, the same
    element stretches into the full-width pill, on the panel's own timing, so
    the two move as one. Clipped rather than resized, for the same reason as
    the panel. Its lift is drawn INSIDE (inset rings): an outer shadow would
    be cut by the clip. */
+/* One highlight per row, shared by hover and "you are here". It used to
+   be clipped into a 36px tile when the strip was closed and stretched to
+   a full-width pill as the panel opened; with one state it is simply the
+   row. The active lift stays drawn INSIDE as inset rings, which is now a
+   choice rather than a necessity — it was forced before, because an outer
+   shadow would have been cut off by the clip-path. */
 .ui-rail-pill {
   position: absolute;
   inset: 0;
   border-radius: 8px;
-  background-color: var(--rail-rest-tile);
+  background-color: transparent;
   /* A SHAPE, not a tint, and that is the whole reason it works. A resting
      FILL had to sit between the sidebar (97.9% lightness) and the hover
      state (94.6%), which left about one and a half per cent to play with —
@@ -562,11 +436,15 @@ nav[aria-label="Sections"] {
      leaves hover's fill change fully available as feedback. Same reasoning
      design.md gives for the active state being a shape rather than only a
      tint. */
-  box-shadow: var(--rail-rest-ring, none);
-  clip-path: inset(var(--rail-pill-inset) round 8px);
-  transition:
-    clip-path var(--rail-dur) var(--rail-ease) var(--rail-delay),
-    background-color 140ms ease;
+  /* NO RESTING MARK, 2026-10-11. A hairline ring was added on 2026-10-10
+     because the COLLAPSED STRIP looked sparse — four bare glyphs floating
+     in a 56px column, 466px of it empty. That strip no longer exists, and
+     at full width the same ring turns the nav into a column of buttons:
+     eleven boxes competing with the one that says where you are.
+
+     The fix outlived its problem. Hover and "you are here" still mark a
+     row; nothing else does. */
+  transition: background-color 140ms ease;
 }
 .ui-rail-row:hover .ui-rail-pill {
   background-color: var(--ui-sunk);
@@ -629,23 +507,13 @@ nav[aria-label="Sections"] {
    panel is open. */
 .ui-rail-group + .ui-rail-group { margin-top: 12px; }
 
-/* Reduced motion: nothing slides or sweeps. The panel switches instantly
-   and the labels cross-fade in 120ms, so the change is still perceptible
-   without any spatial movement. Same selectors as the states above, later
-   in the file, so these values win. */
-@media (prefers-reduced-motion: reduce) {
-  .ui-rail,
-  .ui-rail:hover,
-  .ui-rail:has(:focus-visible) {
-    --rail-dur: 0ms;
-    --rail-delay: 0ms;
-    --rail-label-shift: 0px;
-    --rail-label-dur: 120ms;
-    --rail-label-delay: 0ms;
-    --rail-label-stagger: 0ms;
-    --rail-closed-delay: 0ms;
-  }
-}
+/* The reduced-motion block that lived here is GONE with the panel it was
+   written for. It flattened the open/close animation — the clip-path
+   sweep and the label cascade — and an always-open sidebar performs
+   neither. The only movement left in the rail is a 140ms background
+   change on hover, which is a colour transition and not spatial motion.
+   Removing the block rather than leaving it pointing at variables nothing
+   reads is the honest record. */
 
 /* ── home: the module launcher's tiles ──
    The desk's app grid, made to feel like a product rather than a list: a

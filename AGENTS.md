@@ -1776,7 +1776,7 @@ unused `written` binding in `consultations.js`'s `amendConsultation` and it
 
 **The scribe writes the whole note, routed by who spoke, 2026-10-10 →
 2185/1443/735/7 (no database); 2185/2180/0/5 with one.** SCRIBE_PLAN.md §15,
-on the owner's decision. Client 368.
+on the owner's decision. Client 362.
 
 **The collapsed rail, same day** — the owner: *"the collapsed strip look
 sparse and the icons too thin"*. Both measured rather than guessed at.

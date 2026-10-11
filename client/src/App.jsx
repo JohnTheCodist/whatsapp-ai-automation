@@ -185,30 +185,23 @@ function RailButton({
         ${active ? 'text-[var(--ui-ink)]' : 'text-[var(--ui-ink-soft)] hover:text-[var(--ui-ink)]'} ${className}`}
     >
       <span aria-hidden="true" className="ui-rail-pill" />
+      {/* The count used to ride the icon’s corner as well, because a 56px
+          strip had nowhere else to put it. The panel is always open now and
+          the row carries the count below, so drawing it here too would show
+          the same number twice. */}
       <span className="relative shrink-0">
         <Icon />
-        {count > 0 && (
-          <span
-            aria-hidden="true"
-            className={`ui-rail-closed-only absolute -right-1.5 -top-1.5 min-w-[16px] rounded-full px-1 text-center text-[9px] font-semibold leading-[16px] text-white ring-2 ring-[var(--ui-sidebar)] ${toneBg}`}
-          >
-            {count > 9 ? '9+' : count}
-          </span>
-        )}
-        {dot && (
-          <span aria-hidden="true" className={`ui-rail-closed-only absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full ${dotBg}`} />
-        )}
       </span>
-      <span className="ui-rail-fade relative min-w-0 flex-1 truncate text-[14px] font-medium">{label}</span>
+      <span className="relative min-w-0 flex-1 truncate text-[14px] font-medium">{label}</span>
       {count > 0 && (
         <span
-          className={`ui-rail-fade relative ml-auto min-w-[19px] shrink-0 rounded-full px-1.5 text-center text-[10px] font-semibold leading-[18px] text-white ${toneBg}`}
+          className={`relative ml-auto min-w-[19px] shrink-0 rounded-full px-1.5 text-center text-[10px] font-semibold leading-[18px] text-white ${toneBg}`}
         >
           {count > 99 ? '99+' : count}
         </span>
       )}
       {dot && (
-        <span aria-hidden="true" className={`ui-rail-fade relative ml-auto h-1.5 w-1.5 shrink-0 rounded-full ${dotBg}`} />
+        <span aria-hidden="true" className={`relative ml-auto h-1.5 w-1.5 shrink-0 rounded-full ${dotBg}`} />
       )}
     </button>
   );
@@ -428,19 +421,33 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
   const currentModule = moduleOfTab(tab);
 
   /**
+   * The sidebar is ALWAYS OPEN (SHELL_PLAN.md phase 1, owner 2026-10-11).
+   *
+   * It used to open on hover and could be pinned, both built to the
+   * owner's own request on 2026-10-04. The owner has now chosen the
+   * always-open shell from the Rhazes reference, so the hover state, the
+   * pin, the clip-path reveal and the label fade are all gone.
+   *
+   * THAT IS A PRODUCT CHANGE, NOT A SIMPLIFICATION FOR ITS OWN SAKE, and
+   * it costs ~250px of width on every screen permanently. What it buys is
+   * that where you are is always readable without moving the pointer, and
+   * that the nav has ONE state rather than four (closed, hover-open,
+   * pinned, focus-open) that each had to be styled and tested.
+   */
+
+  /**
    * Scroll the current screen into the rail, not the page.
    *
-   * A DEFECT THE ALL-MODULES LIST CREATED. The strip used to show only the
-   * module you were in, so "you are here" was always visible. Listing all
-   * sixteen screens means the highlighted row is often below the fold — on
-   * Consultations it sits under Stock’s seven rows — so the sidebar
-   * opens showing a part of the app you are not in, with no sign of where
-   * you are.
+   * The strip used to show only the module you were in, so "you are here"
+   * was always visible. Listing all sixteen screens means the highlighted
+   * row is often below the fold — on Consultations it sits under Stock’s
+   * seven — so the sidebar would open showing a part of the app you are
+   * not in, with no sign of where you are.
    *
-   * `block: nearest` is deliberate twice over: it moves the row the SHORTEST
-   * distance, so an already-visible row does not jump, and it will not
-   * scroll an ancestor that does not need it — which on this page would mean
-   * scrolling the work surface because the nav moved.
+   * `block: nearest` is deliberate twice over: it moves the row the
+   * SHORTEST distance, so an already-visible row does not jump, and it
+   * will not scroll an ancestor that does not need it — which on this page
+   * would mean scrolling the work surface because the nav moved.
    */
   const activeRowRef = useRef(null);
   useEffect(() => {
@@ -450,29 +457,6 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
     // that slides every time you change screen is motion nobody asked for.
     try { row.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch { /* older browser */ }
   }, [tab]);
-  // Whether the sidebar is held open. design.md's rail opens on hover and
-  // closes when the pointer leaves, which is right for a cursor passing
-  // through and wrong for somebody who wants to SEE where they are while
-  // they work. Pinning is a third way into the SAME open state — it sets no
-  // styles of its own — and it is remembered, because a navigation that
-  // forgets how you left it is a navigation you re-adjust every morning.
-  const [railPinned, setRailPinned] = useState(() => {
-    try {
-      return localStorage.getItem('rxnaija.rail.pinned') === '1';
-    } catch {
-      // Private windows and blocked site data: unpinned is the documented
-      // default, so falling back to it changes nothing.
-      return false;
-    }
-  });
-  const toggleRail = () => {
-    setRailPinned((v) => {
-      try {
-        localStorage.setItem('rxnaija.rail.pinned', v ? '0' : '1');
-      } catch { /* the preference is a convenience; losing it breaks nothing */ }
-      return !v;
-    });
-  };
 
   const pageTitle = titleFor(tab);
   const crumbTitle = crumbFor(tab);
@@ -494,12 +478,11 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
           page. Its right hairline is the strip's edge while the panel is
           closed. z-30 lifts the open panel above the sticky header. */}
       <div
-        className={`sticky top-0 z-30 h-screen shrink-0 border-r border-[var(--ui-line)] bg-[var(--ui-sidebar)] transition-[width] duration-200 ${railPinned ? 'w-[214px]' : 'w-14'}`}
+        className="sticky top-0 z-30 h-screen w-[250px] shrink-0 border-r border-[var(--ui-line)] bg-[var(--ui-sidebar)]"
       >
       <nav
         aria-label="Sections"
-        data-pinned={railPinned ? 'true' : 'false'}
-        className="ui-rail absolute inset-y-0 left-0 flex w-[214px] flex-col overflow-hidden border-r border-[var(--ui-line)] bg-[var(--ui-surface)] px-2 py-4"
+        className="ui-rail flex h-full w-full flex-col overflow-hidden bg-[var(--ui-surface)] px-3 py-4"
       >
         {/* The workspace row, in the shape of the desk's "Stock / ERPNext"
             header: the brand tile, then whose workspace this is and whose
@@ -516,30 +499,12 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
           >
             R
           </button>
-          <span className="ui-rail-fade min-w-0 flex-1 leading-tight" style={{ '--i': 0 }}>
+          <span className="min-w-0 flex-1 leading-tight" style={{ '--i': 0 }}>
             <span className="block truncate text-[14px] font-semibold text-[var(--ui-ink)]">
               {pharmacyName || 'Your pharmacy'}
             </span>
             <span className="block text-[12px] text-[var(--ui-ink-faint)]">RxNaija</span>
           </span>
-          {/* Hold the panel open, or let it go back to closing itself. It
-              lives in the fade, so it is only reachable once the panel is
-              open — a control for closing something you cannot see would be
-              its own puzzle. `aria-pressed` carries the state, so it reads
-              correctly without depending on the icon. */}
-          <button
-            type="button"
-            onClick={toggleRail}
-            aria-pressed={railPinned}
-            title={railPinned ? 'Unpin the sidebar' : 'Keep the sidebar open'}
-            className="ui-rail-fade ui-rail-pin shrink-0"
-            style={{ '--i': 0 }}
-          >
-            <span className="sr-only">
-              {railPinned ? 'Unpin the sidebar' : 'Keep the sidebar open'}
-            </span>
-            <span aria-hidden="true">{railPinned ? '«' : '»'}</span>
-          </button>
         </div>
 
                 {/* EVERY MODULE’S SCREENS, not just the one you are in (owner,
@@ -574,10 +539,9 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
                       these labels match "Connection" below rather than
                       rendering a size apart. */}
                   <div className="relative">
-                    <span className="ui-rail-fade block px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ui-ink-faint)]">
+                    <span className="block px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ui-ink-faint)]">
                       {m.label}
                     </span>
-                    <hr aria-hidden="true" className="ui-rail-closed-only absolute left-[2px] top-1.5 w-9 border-slate-300" />
                   </div>
                   {items.map(({ tab: itemTab, label, Icon, badge, tone }) => {
                     i += 1;
@@ -613,10 +577,9 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
               over as the panel opens: the desk's icon strip separates its
               groups with rules, the open panel with words. */}
           <div className="relative">
-            <span className="ui-rail-fade block px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ui-ink-faint)]">
+            <span className="block px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ui-ink-faint)]">
               Connection
             </span>
-            <hr aria-hidden="true" className="ui-rail-closed-only absolute left-[2px] top-1.5 w-9 border-slate-300" />
           </div>
 
           {/* Live socket state, in the rail rather than buried in Setup: if
@@ -628,23 +591,17 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
             style={{ '--i': 7 }}
             className="relative flex items-center gap-2.5 py-1.5 pl-[6px] pr-2.5"
           >
-            <span aria-hidden="true" className="ui-rail-fade pointer-events-none absolute inset-0 rounded-lg border border-[var(--ui-line)]" />
+            <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-lg border border-[var(--ui-line)]" />
             <span
               className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
                 connected ? 'bg-[var(--ui-accent-wash)] text-[var(--ui-accent-ink)]' : 'bg-red-50 text-red-600'
               }`}
             >
               <IconLink width={15} height={15} />
-              <span
-                aria-hidden="true"
-                className={`ui-rail-closed-only absolute -right-1 -top-1 h-2 w-2 rounded-full ring-2 ring-[var(--ui-sidebar)] ${
-                  connected ? 'bg-[var(--ui-accent)]' : 'bg-red-500'
-                }`}
-              />
             </span>
-            <span className="ui-rail-fade relative min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--ui-ink-soft)]">WhatsApp</span>
+            <span className="relative min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--ui-ink-soft)]">WhatsApp</span>
             <span
-              className={`ui-rail-fade relative shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+              className={`relative shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                 connected ? 'bg-[var(--ui-accent-wash)] text-[var(--ui-accent-ink)]' : 'bg-red-50 text-red-700'
               }`}
             >

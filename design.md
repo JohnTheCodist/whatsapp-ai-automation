@@ -96,7 +96,45 @@ The top of the sidebar is the workspace row, in the shape of the desk's
 "Stock / ERPNext" header: the emerald R tile, the pharmacy's name, and
 "RxNaija" beneath it.
 
-### The sidebar opens on hover
+### The sidebar is always open
+
+**REPLACED 2026-10-11** (SHELL_PLAN.md phase 1, owner). The owner shared a
+Rhazes.ai screenshot — *"I think this interface is more intuitive, the
+layout"* — and chose to take the shell from it.
+
+The sidebar is **250px and always open**. Hover-to-open, the pin, the
+clip-path reveal and the label cascade are all gone, and so is the 56px
+icon strip.
+
+**What that cost and bought**, because the section below argued the other
+way for months and the reversal should not look casual. COST: ~250px of
+width on every screen, permanently, and the hover behaviour the owner
+themselves asked for on 2026-09-?? plus the pin they asked for on
+2026-10-04. BOUGHT: where you are is readable without moving the pointer,
+and the navigation has ONE state rather than four — closed, hover-open,
+pinned, focus-open — each of which had to be styled, animated, made
+keyboard-reachable and tested. Every failure the ten removed tests defended
+against was a consequence of having four.
+
+**What did NOT change, and this is the important half.** The owner was
+asked directly whether to take Rhazes’ deep-green primary button, and chose
+*"layout yes, colour no"*. So:
+
+- the primary button is still the near-black fill,
+- **emerald still means healthy** and red still means a person is waiting
+  on a human,
+- the "Semantic colour is NOT the accent" section below stands untouched.
+
+The surface warmed — `--ui-paper` carries 0.003 chroma at hue 85 — which is
+the one concession to the reference’s palette. It is deliberately tiny, and
+deliberately NOT the emerald hue: tinting the neutrals toward the accent is
+what the system before this one did, and the Theme section records why that
+was abandoned.
+
+<details><summary>The hover-open sidebar this replaced (kept for the
+reasoning, which is still worth reading)</summary>
+
+### The sidebar opened on hover
 
 At rest the sidebar is the desk's **56px icon strip**: the R tile alone,
 36px icon tiles, groups separated by a hairline rule, the active item on a
@@ -146,7 +184,9 @@ icon does not move by a pixel as the panel opens. The motion itself is
 specified under Motion, below. `client/src/sidebarRail.test.js` pins the
 keyboard, touch, reduced-motion, clip-path and screen-reader rules.
 
-### Home: the module launcher
+</details>
+
+## Home: the module launcher
 
 **Added 2026-09-19, at the owner's request.** Signing in lands on Home, the
 desk's app launcher in this product's terms: no sidebar, the R logo at the

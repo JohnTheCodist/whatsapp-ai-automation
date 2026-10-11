@@ -52,144 +52,115 @@ function rulesMatching(needle) {
   return found;
 }
 
-test('keyboard focus inside the sidebar opens it, not only the mouse', () => {
-  const rules = rulesMatching('.ui-rail:has(:focus-visible)');
-  const open = rules.find((r) => r.media === null);
-  expect(open, 'a top-level .ui-rail:has(:focus-visible) rule').toBeTruthy();
-  expect(open.body).toMatch(/--rail-label-opacity:\s*1/);
-});
-
-test('hover opens the sidebar only for a real pointer, so a tap cannot leave it stuck open', () => {
-  const hovers = rulesMatching('.ui-rail:hover');
-  expect(hovers.length).toBeGreaterThan(0);
-  for (const rule of hovers) {
-    expect(rule.media, `"${rule.selector}" must sit inside an @media block`).not.toBeNull();
-  }
-  const opening = hovers.find((r) => /--rail-label-opacity:\s*1/.test(r.body));
-  expect(opening.media).toMatch(/hover:\s*hover/);
-  expect(opening.media).toMatch(/pointer:\s*fine/);
-});
-
-test('reduced motion removes the sweep and the slide, keeping only a short fade', () => {
-  const reduced = rulesMatching('.ui-rail').filter((r) => r.media && /prefers-reduced-motion:\s*reduce/.test(r.media));
-  expect(reduced.length).toBeGreaterThan(0);
-  const body = reduced.map((r) => r.body).join('\n');
-  expect(body).toMatch(/--rail-dur:\s*0ms/);
-  expect(body).toMatch(/--rail-label-shift:\s*0px/);
-  expect(body).toMatch(/--rail-label-stagger:\s*0ms/);
-});
-
-test('the panel is revealed with clip-path, never by animating its width', () => {
-  const rail = rulesMatching('.ui-rail').find((r) => r.selector === '.ui-rail' && r.media === null);
-  expect(rail.body).toMatch(/clip-path:/);
-  expect(rail.body).toMatch(/transition:[\s\S]*clip-path/);
-  for (const rule of rulesMatching('.ui-rail')) {
-    expect(rule.body, `"${rule.selector}" must not transition width`).not.toMatch(/transition[^;]*\bwidth\b/);
-  }
-});
-
-test('labels are hidden from eyes only, never from screen readers', () => {
-  const fade = rulesMatching('.ui-rail-fade').find((r) => r.selector === '.ui-rail-fade');
-  expect(fade.body).toMatch(/opacity:/);
-  expect(fade.body).not.toMatch(/display:\s*none/);
-  expect(fade.body).not.toMatch(/visibility:\s*hidden/);
-});
-
-// ---- pinned (2026-10-04, at the owner’s request) ------------------------
-
-// THE MOST IMPORTANT TEST IN THIS BLOCK.
-test('pinning is a third way into the SAME open state, not a second sidebar', () => {
-  // design.md said "there is no toggle". The owner asked for one, so the doc
-  // was amended rather than contradicted — and the thing that keeps a pin
-  // from becoming a second sidebar is that it sets NO styles of its own: it
-  // sets exactly the variables hover and focus set.
-  const open = CSS.match(/\.ui-rail:has\(:focus-visible\)\s*\{([^}]*)\}/);
-  expect(open, 'the keyboard-open rule has gone').toBeTruthy();
-  const pinned = CSS.match(/\.ui-rail\[data-pinned='true'\]\s*\{([^}]*)\}/);
-  expect(pinned, 'there is no pinned rule').toBeTruthy();
-
-  const vars = (body) => (body.match(/--rail-[\w-]+(?=\s*:)/g) || []).sort();
-  expect(vars(pinned[1]), 'pinned sets a different set of variables than hover/focus')
-    .toEqual(vars(open[1]));
-
-  // The labels really are revealed, not merely declared.
-  expect(pinned[1]).toMatch(/--rail-label-opacity:\s*1/);
-});
-
-test('a pinned panel pushes the page; a hovered one covers it', () => {
-  // A panel that is not going to close itself must not sit on top of the
-  // first 214px of every screen. Hover keeps covering, because content that
-  // jumped sideways as the cursor crossed would be worse than no sidebar.
-  expect(APP, 'the strip\u2019s footprint does not follow the pin')
-    .toMatch(/railPinned \? 'w-\[214px\]' : 'w-14'/);
-
-  // The pinned panel drops the shadow: a layer that is now part of the page
-  // should not keep pretending to float above it.
-  const pinned = CSS.match(/\.ui-rail\[data-pinned='true'\]\s*\{([^}]*)\}/);
-  expect(pinned[1]).toMatch(/--rail-shadow:\s*none/);
-});
-
-test('the pin says what it is to a screen reader, not only with a glyph', () => {
-  // The control is "\u00bb" / "\u00ab", which is nothing at all to a screen
-  // reader. The state rides on aria-pressed and the label is real text.
-  expect(APP).toMatch(/aria-pressed=\{railPinned\}/);
-  expect(APP).toMatch(/Keep the sidebar open/);
-  expect(APP).toMatch(/Unpin the sidebar/);
-  // The glyph itself is hidden from the accessibility tree.
-  expect(APP).toMatch(/aria-hidden="true">\{railPinned \? '\u00ab' : '\u00bb'\}/);
-});
-
-test('a browser that refuses localStorage still gets a working sidebar', () => {
-  // Private windows, blocked site data, and the thumbnail capture all throw
-  // on access. Unpinned is the documented default, so falling back to it
-  // changes nothing — but throwing would take the whole app down.
-  const read = APP.match(/localStorage\.getItem\('rxnaija\.rail\.pinned'\)/);
-  expect(read, 'the preference is not read at all').toBeTruthy();
-
-  // Both the read and the write are guarded.
-  const guarded = [...APP.matchAll(/try \{[^}]*rxnaija\.rail\.pinned[^}]*\}\s*catch/g)];
-  expect(guarded.length, 'an unguarded localStorage call will throw in a private window')
-    .toBe(2);
-});
-
 /* ==========================================================================
- * The collapsed strip's weight (2026-10-10)
+ * AMENDED WHOLESALE 2026-10-11 — the sidebar is always open
+ *
+ * Ten tests lived here and pinned a sidebar that opened on hover, could be
+ * pinned, revealed itself with a clip-path mask rather than by animating
+ * width, faded its labels in on a 16ms cascade, and remembered the pin in
+ * localStorage. Each named a real failure it defended — a keyboard user
+ * tabbing through a closed strip, a tap leaving the panel stuck open over
+ * the page, a sweeping panel for somebody who asked for reduced motion.
+ *
+ * THE PRODUCT CHANGED (SHELL_PLAN.md phase 1, owner 2026-10-11): the
+ * sidebar is always open, so none of those states exists. A test for how a
+ * panel opens, when nothing opens, is not protection — it is a comment
+ * that fails.
+ *
+ * They are REPLACED, not deleted, and what replaces them is the invariant
+ * that keeps the old machinery from creeping back: there is exactly ONE
+ * state. That is a stronger claim than any of the ten, because the bugs
+ * they guarded were all consequences of having four.
  * ======================================================================== */
 
-test('every icon in the collapsed strip sits on a tile, not loose in the column', () => {
-  // The owner's words: the collapsed strip "looks sparse". Measured on a real
-  // screen — four 36px rows in a 610px rail, 466px of it empty — and the
-  // cause was that `.ui-rail-pill` was TRANSPARENT at rest, so each icon was
-  // a bare glyph floating in a 56px column.
+// THE MOST IMPORTANT TEST IN THIS FILE.
+test('the sidebar has exactly one state', () => {
+  // Four states (closed, hover-open, pinned, focus-open) is what produced
+  // every failure the ten removed tests defended against. One state cannot
+  // be stuck open, cannot hide a label from a keyboard user, and cannot
+  // sweep at somebody who asked for no motion.
   //
-  // design.md already specified otherwise: the collapsed strip is "36px icon
-  // TILES". This was restoring the spec, not adding to it.
+  // Pinned as the ABSENCE of the machinery, because that is what would come
+  // back: a hover rule added "just for wide screens" rebuilds the whole
+  // problem one selector at a time.
+  expect(rulesMatching('.ui-rail:hover'), 'the sidebar opens on hover again').toEqual([]);
+  expect(rulesMatching(".ui-rail[data-pinned='true']"), 'the pin is back').toEqual([]);
+  expect(rulesMatching('.ui-rail:has(:focus-visible)'), 'a focus-open state is back').toEqual([]);
+
+  // And the variables those states swapped are gone with them. A rule that
+  // still reads --rail-inset is a rule waiting for a state to set it.
+  for (const dead of [
+    '--rail-inset', '--rail-label-opacity', '--rail-closed-only',
+    '--rail-pill-inset', '--rail-shadow', '--rail-rest-ring',
+  ]) {
+    expect(CSS, `${dead} survives the state it belonged to`).not.toContain(dead);
+  }
+
+  // The App no longer carries the pin either — its state, its control and
+  // its remembered preference.
+  for (const gone of ['railPinned', 'toggleRail', 'rxnaija.rail.pinned', 'ui-rail-pin']) {
+    expect(APP, `${gone} survives the pin`).not.toContain(gone);
+  }
+});
+
+test('every label is readable without moving the pointer', () => {
+  // The point of the change, and the thing the old sidebar could not do.
+  // Labels used to be opacity-hidden until the panel opened, which is why
+  // one of the removed tests had to assert they stayed in the accessibility
+  // tree. Nothing hides them now, so nothing has to compensate.
+  expect(CSS, 'the label fade is back').not.toContain('.ui-rail-fade');
+  expect(APP, 'rows still carry the fade class').not.toContain('ui-rail-fade');
+
+  // And the marks that existed only because a 56px strip had nowhere to put
+  // a count. Drawing them now would show every badge twice.
+  expect(CSS).not.toContain('.ui-rail-closed-only');
+  expect(APP).not.toContain('ui-rail-closed-only');
+});
+
+test('the sidebar occupies its width instead of covering the page', () => {
+  // The old panel was positioned over the content, because a 56px strip
+  // that grew to 214px would have shoved every table sideways as the cursor
+  // passed. An always-open sidebar has no such moment, so it takes its
+  // space honestly and nothing is ever underneath it.
+  expect(APP).toMatch(/w-\[250px\]/);
+  expect(APP, 'the rail floats over the page again').not.toMatch(/ui-rail absolute/);
+
+  // No width transition either: there is no second width to animate to, and
+  // a sidebar that resizes on load is a page that jumps while you read it.
+  expect(APP, 'the shell animates its width').not.toMatch(/transition-\[width\]/);
+});
+test('only hover and the current page mark a row', () => {
+  // AMENDED with the shell. This used to be about the COLLAPSED STRIP:
+  // `.ui-rail-pill` was transparent at rest, so each icon was a bare glyph
+  // floating in a 56px column — measured at 466px of empty strip, which is
+  // what the owner called "sparse".
+  //
+  // There is no collapsed strip now, and the rule it produced is still
+  // right: a row is a tile, and the active one is a tile that is clearly
+  // different. What changed is only that the pill is always the full row.
   const pill = rulesMatching('.ui-rail-pill').find((r) => r.media === null
     && r.selector.trim() === '.ui-rail-pill');
   expect(pill, 'the .ui-rail-pill rule is gone').toBeTruthy();
-  expect(pill.body, 'the resting pill draws no mark at all')
-    .toMatch(/box-shadow:\s*var\(--rail-rest-ring/);
+  // AMENDED AGAIN THE SAME DAY, and the reversal is the point. A hairline
+  // resting ring was added on 2026-10-10 to fix a SPARSE 56px strip — four
+  // bare glyphs floating in a column that was 466px empty. That strip is
+  // gone, and at full width the same ring turned the nav into eleven boxes
+  // competing with the one that says where you are. The fix outlived its
+  // problem, so a row at rest now draws nothing.
+  expect(pill.body, 'a resting row marks itself again').not.toMatch(/box-shadow:\s*inset/);
 
-  // A RING rather than a fill, and the reason is measurable. A resting fill
-  // had to live between the sidebar's 97.9% lightness and hover's 94.6% —
-  // about one and a half per cent — and the first attempt at 4% landed on
-  // 94.8%, so close to hover that pointing at a row did nothing visible.
-  // A hairline costs no lightness, so hover keeps its fill change.
-  const closed = rulesMatching('.ui-rail').find((r) => r.media === null
-    && r.selector.trim() === '.ui-rail');
-  expect(closed.body).toMatch(/--rail-rest-ring:\s*inset/);
-  expect(closed.body, 'the resting mark is a fill, which collides with hover')
-    .toMatch(/--rail-rest-tile:\s*transparent/);
+  // Three levels, still kept apart: a hairline at rest, a fill on hover,
+  // and a WHITE tile with inset rings for "you are here". The active one
+  // goes lighter while the others go darker, so it stays the odd one out
+  // for anyone who cannot separate two greys.
+  const hover = rulesMatching('.ui-rail-row:hover .ui-rail-pill')[0];
+  expect(hover, 'hover no longer changes a row').toBeTruthy();
+  expect(hover.body).toMatch(/background-color/);
 
-  // And it is cleared in every OPEN state — a mark on every full-width row
-  // would be a boxed list rather than a panel.
-  for (const sel of ['.ui-rail:hover', ".ui-rail[data-pinned='true']", '.ui-rail:has(:focus-visible)']) {
-    const open = rulesMatching(sel).find((r) => r.selector.includes(sel));
-    expect(open, `no rule for ${sel}`).toBeTruthy();
-    expect(open.body, `${sel} keeps the resting ring`).toMatch(/--rail-rest-ring:\s*none/);
-  }
+  const active = rulesMatching('.ui-rail-row[aria-current="page"] .ui-rail-pill')[0];
+  expect(active, 'the current page is no longer marked').toBeTruthy();
+  expect(active.body).toMatch(/background-color:\s*var\(--ui-sidebar-active\)/);
 });
-
 test('the rail draws its icons heavier than the same icon on white', () => {
   // The owner's other words: the icons are "too thin". Icons.jsx draws at
   // stroke-width 2 on a 24 viewBox rendered at 22px — an effective 1.83px —
@@ -236,10 +207,13 @@ test('a module with nothing to show contributes no heading', () => {
 
 test('the ends of the rail do not scroll away', () => {
   // Listing sixteen screens makes the list taller than a short viewport, so
-  // the middle scrolls. The workspace row must not go with it: it holds the
-  // pin control AND the way home, and a sidebar whose pin scrolls out of
-  // reach is worse than a long list. The connection status is the other end.
-  const nav = APP.match(/className="ui-rail absolute[^"]*"/);
+  // the middle scrolls. The workspace row must not go with it: it is the way
+  // home, and the connection status is the other end.
+  //
+  // AMENDED 2026-10-11: matched on `ui-rail absolute` until the sidebar
+  // stopped floating over the page. The rule is unchanged — the ends stay
+  // put — and the class it is read from moved.
+  const nav = APP.match(/className="ui-rail [^"]*"/);
   expect(nav, 'the rail nav class is gone').toBeTruthy();
   expect(nav[0], 'the whole nav still scrolls').not.toMatch(/overflow-y-auto/);
   expect(nav[0]).toMatch(/overflow-hidden/);
