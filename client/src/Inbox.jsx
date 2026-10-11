@@ -165,8 +165,12 @@ export default function Inbox({ openConversationId = null }) {
 
   return (
     <section className="rounded-lg border border-slate-200">
-      <header className="flex items-baseline justify-between gap-4 border-b border-slate-200 px-5 py-4">
-        <h2 className="font-medium">Inbox</h2>
+      {/* NO HEADING HERE — see Orders.jsx. The shell writes "Inbox" as the
+          page title directly above, and this said it again.
+
+          What remains on the right is the only thing in this band worth the
+          space: whether anybody is waiting for a person. */}
+      <header className="flex items-baseline justify-end gap-4 border-b border-slate-200 px-5 py-4">
         {counts.open_handoffs > 0 ? (
           <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
             {counts.open_handoffs} waiting for a person

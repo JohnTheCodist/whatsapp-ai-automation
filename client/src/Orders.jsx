@@ -153,8 +153,19 @@ export default function Orders() {
 
   return (
     <section className="rounded-lg border border-slate-200">
-      <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-slate-200 px-5 py-4">
-        <h2 className="font-medium">Orders</h2>
+      {/* NO HEADING HERE (SHELL_PLAN.md phase 5). The shell already writes
+          "Orders" as the page title about sixty pixels above this, so a
+          second one said the same word twice and pushed the first real
+          thing on the screen further down.
+
+          App.jsx makes this exact argument for the consultation screen —
+          a fixed title above forced the screen "to re-state where you were
+          underneath it, which is how one page ended up with five stacked
+          place markers".
+
+          The band stays, because what is on the RIGHT of it is live and is
+          not a title: how many orders are waiting on a decision. */}
+      <header className="flex flex-wrap items-baseline justify-end gap-x-4 gap-y-1 border-b border-slate-200 px-5 py-4">
         <div className="flex items-baseline gap-3">
           {counts.pending > 0 && (
             <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
