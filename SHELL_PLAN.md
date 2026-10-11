@@ -263,8 +263,63 @@ button dressed as one, and that Record still routes through consent.
 
 | | |
 |---|---|
-| phase 4 | Patients, Medications, Conditions, Tests, Care programmes, Follow-ups, Messages |
 | phase 5 | Orders, Inbox, Inventory, Requests, Billing, Setup, Website |
 
-Phases 4 and 5 are mechanical and wide: those screens are tables and forms,
-and they take the new surface and spacing without changing structure.
+---
+
+## 10. Phase 4 shipped, 2026-10-11
+
+**It was not the phase that was planned, and the plan was wrong rather than
+the work.**
+
+Section 4 said phase 4 would be *"mechanical and wide"* — seven screens
+taking the new surface and spacing without changing structure. Opened on the
+new shell and measured, they already had it: the warm page is a global token
+they inherited in phase 1, the record nav is already 12px, and the Meds
+section already has two rounded containers on it. Restyling seven screens
+against no named defect would have been a wide diff that fixed nothing.
+
+**What was actually wrong was the chrome, and it was wrong about the
+patient.** Standing in Ngozi Okafor’s medication record:
+
+```
+breadcrumb   Patients / All patients
+heading      Patients
+subtitle     View all your customers’ details
+```
+
+All three describe the screen you left. On a clinical record the name at the
+top is the thing a pharmacist checks before acting, and this named the wrong
+subject in three places at once.
+
+**Shipped in two parts, and the second one exists because the first was not
+finished.** `a932d33` fixed the heading and the breadcrumb and left the
+subtitle — the same lie, one line lower, on all nine sections of the record.
+It also shipped with **no test**, which AGENTS.md forbids, so the second
+commit carries the tests for both.
+
+**The subtitle is ABSENT on a record, not replaced.** Everything a subtitle
+could honestly say there is already on the screen and said better: the
+record nav highlights the section, the identity card carries age, sex and
+number, and the allergy banner carries the one fact worth reading before
+acting. A fourth copy would be noise. The element is not rendered rather
+than rendered empty, because an empty line reads as something that failed
+to load.
+
+**The guard that makes that safe is its own test.** `pageSubtitle` is
+nullable now, so a screen that lost its `SUBTITLE` entry would quietly
+render nothing and look deliberate. Every screen the sidebar can open is
+asserted to have one, against `modules.js` rather than a fixture — so the
+only thing the condition can suppress is the case it was written for.
+
+**Verified on the running screen**, both directions: the record shows
+"Ngozi Okafor" in the heading and the breadcrumb with no subtitle beneath
+it, across all nine sections; going back to the list restores "Patients" and
+"All patients" with its own subtitle, which is true. The first commit said
+plainly that it had not been seen, and it had not.
+
+**Nine mutations, nine of the right tests red.**
+
+Phase 5 remains as written, and is now worth opening before being planned —
+phase 4 is the case for looking at a screen before deciding what is wrong
+with it.

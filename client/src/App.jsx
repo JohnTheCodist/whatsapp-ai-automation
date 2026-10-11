@@ -470,6 +470,26 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
   const [openPatientName, setOpenPatientName] = useState(null);
   const pageTitle = openPatientName || titleFor(tab);
   const crumbTitle = openPatientName || crumbFor(tab);
+
+  /**
+   * The line under the heading, and the one case where there is nothing
+   * true to put on it.
+   *
+   * SUBTITLE describes a SCREEN — "View all your customers’ details" over
+   * the patient list. Standing in one patient’s record it is the same lie
+   * the heading used to tell, one line lower: the heading was fixed to say
+   * "Ngozi Okafor" while the sentence beneath it still described the list
+   * you had left, across all nine sections of the record.
+   *
+   * ABSENT rather than replaced, and the element is not rendered rather
+   * than rendered empty. Everything a subtitle could honestly say here is
+   * already on the screen and said better: the record nav highlights the
+   * section, the identity card carries age, sex and number, and the
+   * allergy banner carries the one fact worth reading before acting. A
+   * fourth copy would be noise, and an empty <p> leaves a gap that reads
+   * as something failing to load.
+   */
+  const pageSubtitle = openPatientName ? null : SUBTITLE[tab];
   const openPatient = (id) => { setPatientToOpen(id); setTab('customers'); };
 
   function submitSearch(e) {
@@ -891,7 +911,9 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
                       group: the h1 already says where you are, so repeating it
                       underneath wastes the one line that could tell you what
                       this particular list contains. */}
-                  <p className="mt-0.5 text-sm text-[var(--ui-ink-soft)]">{SUBTITLE[tab]}</p>
+                  {pageSubtitle && (
+                    <p className="mt-0.5 text-sm text-[var(--ui-ink-soft)]">{pageSubtitle}</p>
+                  )}
                 </div>
                 {badges[tab] > 0 && (
                   <span
