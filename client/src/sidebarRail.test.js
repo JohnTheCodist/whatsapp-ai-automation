@@ -256,7 +256,7 @@ test('the ends of the rail do not scroll away', () => {
 
 test('the current screen scrolls itself into the rail, and the page stays put', () => {
   // A defect the all-modules list CREATED. With sixteen rows the highlighted
-  // one is often below the fold — on Consultation notes it sits under Stock's
+  // one is often below the fold — on Consultations it sits under Stock's
   // seven — so the sidebar would open showing a part of the app you are not
   // in, with no sign of where you are.
   expect(APP).toMatch(/activeRowRef/);

@@ -50,7 +50,7 @@ export default function ConsultationNotes({ onOpenConversation, onOpenTab }) {
   return (
     <div className="ui-followup-main">
       <header className="ui-consult-page">
-        <h1>Consultation notes</h1>
+        <h1>Consultations</h1>
         <p>Choose the patient you are consulting with.</p>
       </header>
       <PatientSearch onOpen={(id, p) => setPatient({ id, name: p?.name || null })} />

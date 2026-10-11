@@ -30,7 +30,7 @@
 import {
   IconModuleStock, IconModuleClinics, IconModulePatients, IconModuleMarketing, IconModuleBranding,
   IconOverview, IconInventory, IconUpload, IconLink, IconOrders, IconRequests, IconDeals,
-  IconConsultations, IconCustomers, IconReply, IconHeart, IconInbox, IconStar, IconAi, IconWebsite,
+  IconConsultations, IconPulse, IconCustomers, IconReply, IconHeart, IconInbox, IconStar, IconAi, IconWebsite,
 } from './Icons.jsx';
 
 /**
@@ -79,12 +79,30 @@ export const MODULES = Object.freeze([
     Icon: IconModuleClinics,
     hint: 'Consultations and pharmacist triage',
     sidebar: [
-      { tab: 'consultations', label: 'Consultations', Icon: IconConsultations, badge: 'consultations', tone: 'red' },
+      // RENAMED 2026-10-10 (owner: "two tabs consultation and consultation
+      // notes, it does not make sense"). Both said "consultation" and the
+      // two do genuinely different jobs, which is why they are not merged:
+      //
+      //   Triage         who is waiting, what the engine found, is this
+      //                  safe and appropriate for a pharmacy consultation
+      //   Consultations  what the pharmacist assessed and did about it
+      //
+      // "Triage" is this screen's own word — its header calls the old
+      // version "a stack of triage cards", the engine behind it is
+      // redFlagEvaluator and safetyGate, and the owner's own brief called
+      // it the "Pharmacist Triage workflow".
+      //
+      // THE TAB IDS ARE UNCHANGED, so every onNavigate('consultations')
+      // deep link and the patient summary's card keep working — the same
+      // rule design.md records for inbox / orders / requests. It does mean
+      // the id `consultations` now renders as "Triage"; that is the cost of
+      // not breaking links, and it is why this comment exists.
+      { tab: 'consultations', label: 'Triage', Icon: IconPulse, badge: 'consultations', tone: 'red' },
       // The pharmacist's own note (0067), beside the desk rather than instead
       // of it: the desk answers "is this safe for a pharmacy consultation",
       // and this answers "what did the pharmacist assess and do". No badge —
       // nobody is waiting on a note.
-      { tab: 'consultation-notes', label: 'Consultation notes', Icon: IconConsultations },
+      { tab: 'consultation-notes', label: 'Consultations', Icon: IconConsultations },
       // Registered services that have a screen of their own. None do yet.
       ...CLINIC_SERVICES.filter((s) => s.tab).map((s) => ({ tab: s.tab, label: s.label, Icon: IconConsultations })),
     ],

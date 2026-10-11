@@ -96,6 +96,7 @@ const SUBTITLE = {
   requests: 'Asked for, not in the catalogue',
   wholesale: 'The QR code that signs businesses up for wholesale prices',
   consultations: 'People waiting to speak to a pharmacist',
+  'consultation-notes': 'Write up a consultation you have had',
   customers: "View all your customers' details",
   refills: 'Patients whose medicine is running out',
   conditions: 'Patients grouped by the conditions they buy for',
@@ -432,7 +433,7 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
    * A DEFECT THE ALL-MODULES LIST CREATED. The strip used to show only the
    * module you were in, so "you are here" was always visible. Listing all
    * sixteen screens means the highlighted row is often below the fold — on
-   * Consultation notes it sits under Stock’s seven rows — so the sidebar
+   * Consultations it sits under Stock’s seven rows — so the sidebar
    * opens showing a part of the app you are not in, with no sign of where
    * you are.
    *

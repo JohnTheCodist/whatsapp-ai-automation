@@ -109,7 +109,7 @@ test('a clinical service with no screen adds no sidebar item', () => {
   // They run inside the assistant today. A sidebar item for one would open a
   // page with nothing on it.
   //
-  // AMENDED 2026-09-27 with the product: Consultation notes joined the
+  // AMENDED 2026-09-27 with the product: the consultation note joined the
   // Clinical module (0067, CONSULTATION_PLAN.md phase 1) — the pharmacist
   // note, beside the triage desk rather than instead of it. It HAS a screen,
   // so the rule this pins is unchanged.
@@ -155,4 +155,66 @@ test('the Branding line reports the website\'s real state, and nothing while the
   expect(tileStatus('branding', { websiteEnabled: true, websiteStatus: 'published' }).text).toBe('Website live');
   expect(tileStatus('branding', { websiteEnabled: true, websiteStatus: 'none' }).text).toBe('No website yet');
   expect(tileStatus('branding', { websiteEnabled: false, websiteStatus: 'published' })).toBeNull();
+});
+
+/* ==========================================================================
+ * Two screens, two names (2026-10-10)
+ *
+ * The owner: "there two tabs consultation and consultation notes, it does not
+ * make sense". Both said "consultation" AND both drew the same icon, so in
+ * the collapsed strip they were indistinguishable.
+ *
+ * They are NOT merged, because they do different jobs and the boundary is the
+ * product:
+ *
+ *   Triage         who is waiting, what the engine found, is this safe and
+ *                  appropriate for a pharmacy consultation
+ *   Consultations  what the pharmacist assessed and did about it
+ * ======================================================================== */
+
+test('no two screens in a module share a name', () => {
+  // The rule the rename restores, checked across every module rather than
+  // only the two that collided — a third "Consultations" is the same bug.
+  for (const m of MODULES) {
+    const labels = m.sidebar.map((i) => i.label.toLowerCase());
+    const dupes = labels.filter((l, i) => labels.indexOf(l) !== i);
+    expect(dupes, `${m.label} has two screens called ${dupes[0]}`).toEqual([]);
+  }
+});
+
+test('no two screens in a module share an icon', () => {
+  // Half the confusion was visual: both Clinics screens drew
+  // IconConsultations, so the 56px strip showed the same mark twice. A name
+  // nobody can read at a glance is no use if the glyph is a duplicate.
+  for (const m of MODULES) {
+    const icons = m.sidebar.map((i) => i.Icon);
+    const seen = new Set();
+    for (const Icon of icons) {
+      expect(seen.has(Icon), `${m.label} draws one icon for two screens`).toBe(false);
+      seen.add(Icon);
+    }
+  }
+});
+
+test('the triage desk and the consultation note are named for what they do', () => {
+  const clinics = MODULES.find((m) => m.id === 'clinics');
+  const byTab = Object.fromEntries(clinics.sidebar.map((i) => [i.tab, i]));
+
+  // Triage is the queue: it is the one that carries a badge and the one
+  // allowed to go red, because red means a person is waiting on a human.
+  expect(byTab.consultations.label).toBe('Triage');
+  expect(byTab.consultations.badge).toBe('consultations');
+  expect(byTab.consultations.tone).toBe('red');
+
+  // The note is where a consultation is written up. No badge: nobody is
+  // waiting on a note.
+  expect(byTab['consultation-notes'].label).toBe('Consultations');
+  expect(byTab['consultation-notes'].badge).toBeUndefined();
+
+  // THE TAB IDS ARE UNCHANGED, which is the whole reason this was a rename
+  // and not a restructure: every onNavigate('consultations') deep link and
+  // the patient summary's card keep working. design.md records the same rule
+  // for inbox / orders / requests.
+  expect(byTab.consultations.tab).toBe('consultations');
+  expect(byTab['consultation-notes'].tab).toBe('consultation-notes');
 });

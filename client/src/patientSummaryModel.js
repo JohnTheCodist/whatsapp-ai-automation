@@ -308,7 +308,10 @@ export function summaryCards(profile, care, allergies = null, problems = null, t
       // but it opens the Consultations desk, because that is where they live.
       // A card names a record section (tab) or a module screen (module).
       id: 'encounters',
-      title: 'Consultations',
+      // RENAMED with the tab (2026-10-10). This card counts ENCOUNTERS —
+      // the triage episodes the WhatsApp engine recorded — and opens the
+      // desk, so it is the triage screen's card and not the note's.
+      title: 'Triage',
       tab: null,
       module: 'consultations',
       count: clinical.encounters || 0,
