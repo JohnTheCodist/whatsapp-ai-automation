@@ -416,9 +416,91 @@ All four states, live, not inferred:
 
 7 client tests, **8 mutations, 8 of the right tests red.**
 
-### Still to come
+---
 
-The Website panel and the deeper Billing/Setup screens were not examined in
-detail — the sweep covered their chrome, not their internals. The three
-"says its name twice" screens are real but are a separate behaviour and so a
-separate change; Orders and Inbox are the two that can safely take it.
+## 12. The Website panel, 2026-10-11
+
+**It could not be reviewed at all until the API was restarted.**
+`/api/website` is mounted behind `WEBSITE_BUILDER_ENABLED`, which is unset
+in local development, so every call fell through to the catch-all 404 and
+the panel showed a red **"Not found — Your website details could not be
+loaded"**. That looked exactly like the Catalogue defect and **was not one**:
+it was the feature switched off. Worth recording, because the first reading
+of that screen was wrong and only a restart settled it.
+
+With the builder mounted, `GET /api/website` answers `{site: null}` with a
+**200**, exactly as its own comment says it must — *"a 404 would make the
+ordinary path an error path and put a red line in the browser console for a
+pharmacy that has done nothing wrong."*
+
+### What is right, and is worth saying
+
+**The panel has the best empty state in the app.** A pharmacy with no
+website gets "Create your pharmacy website", a sentence saying their name,
+address, hours and WhatsApp number are filled in from details they already
+have and that the design can change later without losing them, and three
+template cards each listing the sections that template produces. It is the
+thing the Catalogue was missing, already built.
+
+### The defect
+
+**Nine call-to-action buttons were filled with the brand accent**, against
+design.md’s CTA voice and against the owner’s own recorded answer. Asked
+directly whether to take the Rhazes reference’s deep-green primary button,
+they chose **"layout yes, colour no"**, and design.md says why:
+
+> Primary: near-black fill (`bg-slate-900`)… **Deliberately not emerald:**
+> keeping the accent off buttons is what lets it keep meaning "healthy" in a
+> status pill two inches away.
+
+**The collision was not hypothetical.** `WebsiteHeader` renders a
+`bg-teal-50 text-teal-800` pill reading **"Live"** in the SAME header as a
+`bg-teal-700` **Publish** button — the accent meaning "this site is healthy
+and online" an inch from the accent meaning "press me".
+
+```
+MetaReviewTest.jsx        the Templates tab AND a Settings panel share one
+                          `primaryButton` constant
+Requests.jsx              "Send suggestion"
+website/BusinessInfo      "Save details"
+website/HomeContent       "Save"
+website/PageText          "Save"
+website/PublishBar        "Publish my website"
+website/TemplatePicker    "Use this design"  (x2)
+website/WebsiteHeader     "Publish my website"
+```
+
+Seven of the nine are in the website module, which was **the one part of
+the app that never took the desk’s CTA voice**. Two are not, and fixing
+seven while leaving two would have left the rule untestable — so all nine
+moved, which is one behaviour rather than a wider scope.
+
+**`teal-600` and lighter were deliberately left alone**, and that is the
+point rather than an exemption: the tick inside a chosen service, the
+open-state ring on an info toggle, the "Live" pill, the assistant’s message
+bubble and the sidebar’s emerald R tile (design.md specifies that tile
+explicitly) are identity and status, which is what the accent is FOR. Only
+the solid `teal-700` CTA weight is forbidden.
+
+**A test asserts BOTH directions**, because a fix that went too far would
+be the same mistake inverted: no CTA carries the accent, and the "Live"
+pill still does. Five mutations, five of the right tests red — including
+the two that take the colour OFF the status pill.
+
+**A ninth was nearly missed.** The first sweep searched for
+`hover:bg-teal-800`, which found eight. `Requests.jsx`’s "Send suggestion"
+has no hover class at all, so it only appeared when the search was widened
+to the resting fill.
+
+### Noted, not changed
+
+- The website module’s buttons are `text-sm font-semibold` (14px/600) where
+  design.md’s CTA voice says 13px/500. The radius already matches. Type is
+  a separate behaviour from colour.
+- "Saved." confirmations are `text-teal-700` TEXT. The rule is about keeping
+  the accent off button FILLS; a success word in the brand colour is the
+  accent meaning "healthy", which is allowed.
+- On the create screen the panel’s own `h2` ("Create your pharmacy website")
+  renders larger than the shell’s `h1` ("Website"), which inverts the
+  hierarchy. Cosmetic, and its own change.
+- Billing and Setup internals are still unexamined.

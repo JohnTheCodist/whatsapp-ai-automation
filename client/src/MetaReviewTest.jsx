@@ -31,8 +31,8 @@ const inputClass =
   + 'focus:border-teal-600 focus:outline-none focus:ring-1 focus:ring-teal-600';
 
 const primaryButton =
-  'rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white transition '
-  + 'hover:bg-teal-800 disabled:opacity-50';
+  'rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition '
+  + 'hover:bg-slate-800 disabled:opacity-50';
 
 function Field({ label, children }) {
   return (

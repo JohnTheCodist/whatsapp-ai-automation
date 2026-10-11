@@ -115,7 +115,7 @@ export default function WebsiteHeader({
           type="button"
           disabled={publishing.busy !== null || !site.subdomain}
           onClick={publishing.publish}
-          className="rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-40"
+          className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-40"
         >
           {publishing.busy === 'publish'
             ? 'Publishing…'

@@ -130,7 +130,7 @@ export default function PublishBar({ site, publicDomain = null, publishing }) {
           type="button"
           disabled={busy !== null || !site.subdomain}
           onClick={publish}
-          className="rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-40"
+          className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-40"
         >
           {busy === 'publish' ? 'Publishing…' : isPublished ? 'Publish changes' : 'Publish my website'}
         </button>

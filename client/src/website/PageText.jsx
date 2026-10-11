@@ -193,7 +193,7 @@ function PageRow({ page, initial, onSaved }) {
           type="button"
           onClick={save}
           disabled={!dirty || status === 'saving'}
-          className="rounded-lg bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-800 disabled:opacity-40"
+          className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-40"
         >
           {status === 'saving' ? 'Saving…' : 'Save'}
         </button>
