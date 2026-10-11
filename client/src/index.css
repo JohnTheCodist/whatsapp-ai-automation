@@ -3849,6 +3849,40 @@ tr:focus-within .ui-row-actions,
   vertical-align: baseline;
 }
 
+/* ---- the note box: Subjective with a microphone on it ----------------
+   SHELL_PLAN.md phase 3. The two-card chooser became one box, because the
+   reason the reference reads as intuitive is that it asks nothing — it
+   puts the thing you would use right there. */
+.ui-scribe-note { display: grid; gap: 8px; padding: 12px; }
+.ui-scribe-box {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 14.5px;
+  line-height: 1.55;
+  resize: vertical;
+}
+/* The microphone and the one sentence a pharmacist needs before pressing
+   a button that listens to a patient. They share a row so the promise sits
+   beside the control rather than under the whole panel. */
+.ui-scribe-boxbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.ui-scribe-boxbar .ui-cprog-quiet { flex: 1 1 14ch; }
+
+/* A finalised note reads its Subjective back as text: the box is gone with
+   the editing, and a disabled textarea would look like something you could
+   still type in. */
+.ui-consult-readback {
+  margin: 0;
+  color: var(--ui-ink);
+  font-size: 13.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
 /* The scribe once the pharmacist has chosen to type. One line, so the
    choice is visibly remembered and the way back to voice stays reachable,
    while the sections below get the room. */

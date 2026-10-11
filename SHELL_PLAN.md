@@ -228,3 +228,43 @@ environment the config sets. The new tests use the same technique.
 | phase 3 | the Consultation screen — the scribe entry becomes one input |
 | phase 4 | Patients, Medications, Conditions, Tests, Care programmes, Follow-ups, Messages |
 | phase 5 | Orders, Inbox, Inventory, Requests, Billing, Setup, Website |
+
+---
+
+## 9. Phase 3 shipped, 2026-10-11
+
+**The consultation entry is one box, not a choice.**
+
+Two cards asking *"how do you want to write this up?"* became a textarea with
+**Record** on it. The reason the reference reads as intuitive is that it asks
+nothing — it puts the thing you would use right there, with the microphone on
+it.
+
+**The box IS the Subjective field**, promoted to the top of the note, and the
+editable Subjective section below it is gone. Two boxes for one value is how
+a pharmacist loses a sentence: both read `note.subjective`, both agree, and
+somebody still has to work out which one to type in.
+
+A **finalised** note keeps a Subjective section as a read-back. The box only
+renders while the note is open, and a disabled textarea looks like something
+you could still type in.
+
+Verified on the running screen: typing writes `note.subjective`, focus opens
+all twelve sections, and there is no Subjective heading in the list.
+
+**Two tests from that same morning were amended.** They pinned that choosing
+to type rendered something different from the chooser — written after the
+owner reported that pressing "Type it" did nothing, which it did. There is no
+chooser now, so that bug cannot recur. What is pinned instead is that the
+chooser never comes back, that the box is a real textarea rather than a
+button dressed as one, and that Record still routes through consent.
+
+### Still to come
+
+| | |
+|---|---|
+| phase 4 | Patients, Medications, Conditions, Tests, Care programmes, Follow-ups, Messages |
+| phase 5 | Orders, Inbox, Inventory, Requests, Billing, Setup, Website |
+
+Phases 4 and 5 are mechanical and wide: those screens are tables and forms,
+and they take the new surface and spacing without changing structure.

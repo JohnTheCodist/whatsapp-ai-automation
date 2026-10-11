@@ -34,11 +34,10 @@ import {
   CONSENT_SCRIPT, CONSENT_CONFIRM, CONSENT_HEADING, NOT_ASKED, consentedNote,
   speakerLabel, SPEAKER_QUESTION, SPEAKER_HELP, transcriptNote,
   TRANSCRIPT_HEADING, acceptWarning, NOT_STORED, canDraft, draftRefusalNote,
-  START_HEADING, START_VOICE, START_VOICE_NOTE, START_TYPE, START_TYPE_NOTE,
   SOAP_SECTIONS, elapsedLabel, RECORDING_NOW, RECORDING_NOTE, STOP_AND_WRITE,
   WRITING_UP, sectionRefusalNote, anyDrafted, NOTHING_DRAFTED, ACCEPT_NOTE,
   REVIEW_NOTE, DISCARD_LABEL,
-  TYPING_NOTE, BACK_TO_VOICE,
+  NOTE_PLACEHOLDER, RECORD_LABEL, RECORD_NOTE,
   levelBars, LEVEL_BARS, levelNote, NO_SPEECH, MIN_RECORDING_SECONDS,
   TOO_SHORT, deviceNote,
 } from './scribeFormat.js';
@@ -102,7 +101,7 @@ const AUDIO_CONSTRAINTS = {
 
 export default function ConsultationScribe({
   customerId, consultationId, note, available, existing, onAccept, whenLabel,
-  onTyping,
+  onTyping, subjective, onSubjective,
 }) {
   // 'choose' | 'typing' | 'ready' | 'recording' | 'working' | 'turns' | 'review'
   const [mode, setMode] = useState('choose');
@@ -371,81 +370,49 @@ export default function ConsultationScribe({
   const canRecord = micAvailable();
 
   /* ---- 1. how do you want to work? -------------------------------------- */
-  /* ---- the pharmacist chose to type ----------------------------------- */
-  //
-  // THIS BRANCH USED TO BE FOLDED INTO THE CHOOSER, which is why pressing
-  // "Type it" appeared to do nothing: `mode` became 'typing' and the same
-  // two cards re-rendered. A control that changes state nothing can see is
-  // a control that is broken.
-  //
-  // It collapses to one line rather than disappearing, so the choice is
-  // visibly remembered and the way back to voice is still there. The
-  // sections below are what the pharmacist is now looking at, and the
-  // parent opens all of them.
-  if (mode === 'typing') {
-    return (
-      <div className="ui-scribe ui-scribe-typing" data-step="typing">
-        <span className="ui-cprog-quiet">{TYPING_NOTE}</span>
-        {canRecord && (
-          <button
-            type="button"
-            className="ui-psection-link"
-            onClick={() => setMode(consentAt ? 'ready' : 'consent')}
-          >
-            {BACK_TO_VOICE}
-          </button>
-        )}
-      </div>
-    );
-  }
-
+  /* ---- the note itself, with a microphone on it ----------------------
+   *
+   * THE CHOOSER IS GONE (SHELL_PLAN.md phase 3). It was two cards asking
+   * "how do you want to write this up?", which made a pharmacist answer a
+   * question before they could do anything — and the owner reported the
+   * typing half as doing nothing at all, which it did.
+   *
+   * This box IS the Subjective field, promoted to the top of the note.
+   * There is no second Subjective box below it: two boxes for one field is
+   * how a pharmacist loses a sentence. Typing writes the note; Record
+   * writes all four sections.
+   */
   if (mode === 'choose') {
     return (
-      <div className="ui-scribe" data-step={mode}>
-        <p className="ui-scribe-ask">{START_HEADING}</p>
-        <div className="ui-scribe-choices">
-          {canRecord && (
+      <div className="ui-scribe ui-scribe-note" data-step="note">
+        <textarea
+          className="ui-scribe-box"
+          rows={4}
+          value={subjective || ''}
+          placeholder={NOTE_PLACEHOLDER}
+          aria-label={NOTE_PLACEHOLDER}
+          onChange={(e) => onSubjective?.(e.target.value)}
+          onFocus={() => onTyping?.()}
+        />
+        {canRecord && (
+          <div className="ui-scribe-boxbar">
             <button
               type="button"
-              className="ui-scribe-choice ui-scribe-choice-primary"
+              className="ui-scribe-go"
               disabled={busy}
               onClick={() => setMode(consentAt ? 'ready' : 'consent')}
             >
-              <span className="ui-scribe-choice-icon" aria-hidden="true">
-                <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+              <span aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                   <rect x="5.6" y="1.6" width="4.8" height="8" rx="2.4" />
                   <path d="M3.2 7.6a4.8 4.8 0 0 0 9.6 0M8 12.4v2" />
                 </svg>
               </span>
-              <span className="ui-scribe-choice-text">
-                <strong>{START_VOICE}</strong>
-                <small>{START_VOICE_NOTE}</small>
-              </span>
+              {RECORD_LABEL}
             </button>
-          )}
-          <button
-            type="button"
-            className="ui-scribe-choice"
-            onClick={() => {
-              setMode('typing');
-              // Open every section. A pharmacist who has said they are
-              // typing should SEE what there is to type, not a
-              // seven-of-fourteen budget they have to go looking behind.
-              onTyping?.();
-            }}
-          >
-            <span className="ui-scribe-choice-icon" aria-hidden="true">
-              <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                <rect x="1.4" y="3.6" width="13.2" height="8.8" rx="1.6" />
-                <path d="M4.4 6.6h.01M7 6.6h.01M9.6 6.6h.01M12 6.6h.01M5 9.6h6" />
-              </svg>
-            </span>
-            <span className="ui-scribe-choice-text">
-              <strong>{START_TYPE}</strong>
-              <small>{START_TYPE_NOTE}</small>
-            </span>
-          </button>
-        </div>
+            <span className="ui-cprog-quiet">{RECORD_NOTE}</span>
+          </div>
+        )}
         {!canRecord && (
           <p className="ui-allergy-help">This browser cannot record. You can still type the note.</p>
         )}
@@ -453,7 +420,6 @@ export default function ConsultationScribe({
       </div>
     );
   }
-
   /* ---- 2. consent ------------------------------------------------------- */
   if (mode === 'consent' && !consentAt) {
     return (

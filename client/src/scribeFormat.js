@@ -372,3 +372,36 @@ const TYPING_NOTE = 'Typing this one.';
 const BACK_TO_VOICE = 'Use voice instead';
 
 export { TYPING_NOTE, BACK_TO_VOICE };
+
+/* ==========================================================================
+ * One box instead of a choice (SHELL_PLAN.md phase 3, 2026-10-11)
+ *
+ * The entry was two cards — "With voice" and "Type it" — which made a
+ * pharmacist answer a question before they could do anything. The owner
+ * shared Rhazes.ai and said the layout was more intuitive; the reason it is
+ * more intuitive is that it asks nothing. It puts the thing you would use
+ * right there, with the microphone on it.
+ *
+ * So the chooser is gone. The box IS the Subjective field, promoted to the
+ * top of the note, with Record beside it. Typing in it writes the note;
+ * pressing Record writes all four sections. There is no second Subjective
+ * box below, because two boxes for one field is how a pharmacist loses a
+ * sentence.
+ * ======================================================================== */
+
+/** The box, which is Subjective and says so by what it asks for. */
+const NOTE_PLACEHOLDER = 'What the patient told you — or press record and talk to them.';
+
+/** The control beside it. Named for what it does, not for the device. */
+const RECORD_LABEL = 'Record';
+
+/**
+ * Said under the box, once, where a microphone exists.
+ *
+ * It is the one thing a pharmacist needs to know before pressing a button
+ * that listens to a patient, and it is the same promise the consent script
+ * makes out loud.
+ */
+const RECORD_NOTE = 'Recording writes up the whole note. Nothing is kept but what you accept.';
+
+export { NOTE_PLACEHOLDER, RECORD_LABEL, RECORD_NOTE };

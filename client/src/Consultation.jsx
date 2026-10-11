@@ -1183,6 +1183,11 @@ export default function Consultation({
           // is to type, and hiding half of it behind "More sections" is
           // answering a different question.
           onTyping={() => setShowAll(true)}
+          // The box IS the Subjective field, so the note hands it the
+          // value and takes the writes. There is no second Subjective box
+          // below it — two boxes for one field is how a sentence is lost.
+          subjective={note.subjective}
+          onSubjective={(v) => set('subjective', v)}
           onAccept={({ sections, consented }) => {
             // Consent is a SERVER fact and comes back as the whole note, so
             // it replaces rather than dirties — nothing becomes unsaved
@@ -1222,12 +1227,23 @@ export default function Consultation({
           placeholder="Whether the dizziness is the new medicine" onChange={(v) => set('patientGoal', v)} />
       </Section>
 
-      {shows('subjective') && (
-      <Section id="subjective" title="Subjective" emphasised={emphasis.has('subjective')} filled={Boolean(note.subjective)}>
-        <Field label="What the patient reported" rows={5} value={note.subjective} disabled={!open || busy}
-          placeholder="Onset, duration, what makes it better or worse, what they have already tried"
-          onChange={(v) => set('subjective', v)} />
-      </Section>
+      {/* SUBJECTIVE HAS NO SECTION OF ITS OWN (SHELL_PLAN.md phase 3).
+
+          It is the box at the top of this screen — the one with the
+          microphone on it — because it is what a pharmacist writes first
+          and most, and because the entry to the note and the note’s first
+          field are the same thing.
+
+          Rendering a second Subjective field here would be two boxes for
+          one value: they would agree, because both read `note.subjective`,
+          and a pharmacist would still have to work out which one to type
+          in. On a FINALISED note the box is absent (the scribe only
+          renders while `open`), which is why the summary below is what a
+          closed note is read from. */}
+      {!open && note.subjective && (
+        <Section id="subjective" title="Subjective" emphasised filled>
+          <p className="ui-consult-readback">{note.subjective}</p>
+        </Section>
       )}
 
       {shows('objective') && (
