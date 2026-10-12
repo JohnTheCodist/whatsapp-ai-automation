@@ -1776,7 +1776,7 @@ unused `written` binding in `consultations.js`'s `amendConsultation` and it
 
 **The scribe writes the whole note, routed by who spoke, 2026-10-10 →
 2185/1443/735/7 (no database); 2185/2180/0/5 with one.** SCRIBE_PLAN.md §15,
-on the owner's decision. Client 396.
+on the owner's decision. Client 409.
 
 **The collapsed rail, same day** — the owner: *"the collapsed strip look
 sparse and the icons too thin"*. Both measured rather than guessed at.
@@ -1956,6 +1956,59 @@ false`, and the screen says the patient was already there before opening
 them — somebody typing a number that turns out to belong to a known patient
 has **found** them, and a 409 is nothing a pharmacist at a counter can act on.
 
+**Workflows — the clinical engine made visible, 2026-10-12 → 2199/1457/735/7
+(no database); 2199/2194/0/5 with one.** AGENTIC_PLAN.md phase 1. All 7 added
+tests are database-free, so the skipped ceiling did not move.
+
+**A governed clinical engine has been running headless for months.**
+Versioned protocols, a red-flag evaluator, a safety gate, and a router whose
+own header says routing is *"only ever a NARROWING"* — with **three**
+protocols routing real patients’ WhatsApp messages. There was no protocols
+endpoint and no protocol screen, so a pharmacy could not see which protocols
+run in its name, what they ask, which version, or whether one is switched on.
+
+**The drift that proves why that matters.** `client/src/modules.js`
+advertised **"Malaria assessment"** with `status: 'active'`, while
+`nigeriaMalariaAssessmentV1.js` says in capitals on its second line **"DRAFT.
+NOT ACTIVE. NOT PATIENT-FACING."** The same file’s own comment states the
+principle it was breaking — unbuilt services are *"deliberately ABSENT…
+listing them would promise a service a pharmacy cannot offer"*. Nobody lied:
+there was no screen, no endpoint, and no test that could notice.
+
+**Three facts, never collapsed into one.** A file existing, the router
+knowing about it (`wiredUp`), and this pharmacy having it active (`live`,
+per tenant). Only the last means a patient will be asked these questions
+tonight. A **fourth** state exists because `isProtocolLive` fails CLOSED —
+*"an unreadable configuration is not permission to start a clinical
+workflow"* — which is right for routing and wrong for a screen: reporting a
+failed read as "switched off" states something nobody checked.
+
+**Read-only, and the reference’s create button is deliberately absent.**
+`clinicalProtocolService.js` says interpreting a protocol is *"a later
+stage’s job, under clinical governance this module has no part in"*, and a
+web form writing clinical question sets is that change wearing a UI. The
+reference’s Discover and Pinned tabs are dropped too — no community library,
+no pinning, and empty tabs would be the screen promising what the product
+does not have.
+
+`clinicalRouter` gained ONE read-only export, `listRoutableProtocols()`,
+returning the same memoised list `route` already builds. **No routing
+behaviour changed.**
+
+**Two of my own mistakes, both caught before the commit.** A test asserting
+the screen has no create button FAILED because that phrase appeared in a
+comment I had just written explaining why there is none — the comment was
+reworded and the test left alone, which is GOLDEN-006’s precedent applied to
+its author. And one mutation was MISSED because the test matched a filename
+anywhere in the route file, including the header comment naming the malaria
+protocol; it now parses the `SHIPPED` list itself, and the mutation then
+failed. 12 mutations, 12 caught after that correction.
+
+`modules.test.js` was **amended with the product**, as it was when
+Consultations joined Clinics: the sidebar literal gains `workflows`. The rule
+it pins — no clinical service without a screen reaches the sidebar — is
+unchanged and still passes. Client 396 → 409.
+
 ### Why 735 tests skip
 
 `TEST_DATABASE_URL` is **not yet configured**. Every database-backed suite
@@ -2103,10 +2156,10 @@ After `npm test`, compare:
 
 | Observation | Meaning |
 |---|---|
-| **No test database:** 1450 pass / 735 skip / 7 fail, categories A+B | No regression. Proceed. |
-| **Test database configured:** 2187 pass / 0 skip / 4-5 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. Measured, not derived: 2192/2187/0/5 on 2026-10-11 against a local PostgreSQL 17.10, plus a possible SIXTH between 23:00 and 00:00 UTC only — the websiteAnalytics timezone-window test described above, which is a test yardstick and not in this baseline (2185/2180/0/5 before counter patient creation; 2182/2177/0/5 before SOAP routing; 2142/2137/0/4-5 before the AI scribe; 2139/2135/0/4 before the Consultation redesign; 2128/2123/0/5 before Messages phase 4; 2114/2109/0/5 before Consultation phase 3; 2087/2081/0/5 before Consultation phase 2; 2056/2051/0/5 before Consultation phase 1; 2039/2034/0/5 before Messages phase 3; 2022/2017/0/5 before Messages phase 2; 1999/1994/0/5 before Messages; 1997/1992/0/5 before follow-up phase 3; 1992/1987/0/5 before follow-up phase 2; 1964/1959/0/5 before follow-ups; 1961/1956/0/5 before care-programme phase 3; 1950/1946/0/4 before phase 2; 1909/1905/0/4 before care programmes; 1878/1874/0/4 before tests; 1842/1838/0/4 before conditions; 1812/1807/0/5 before allergies; 1791/1786/0/5 on 2026-09-21 before the review; 1686/1681/0/5 on 2026-09-19 before the patients module). The fifth failure is "writing pre-keys costs a constant number of round trips", the known-flaky one (see below) — it appears in some runs and not others, and is not a regression either way. |
+| **No test database:** 1457 pass / 735 skip / 7 fail, categories A+B | No regression. Proceed. |
+| **Test database configured:** 2194 pass / 0 skip / 4-5 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. Measured, not derived: 2192/2187/0/5 on 2026-10-11 against a local PostgreSQL 17.10, plus a possible SIXTH between 23:00 and 00:00 UTC only — the websiteAnalytics timezone-window test described above, which is a test yardstick and not in this baseline (2185/2180/0/5 before counter patient creation; 2182/2177/0/5 before SOAP routing; 2142/2137/0/4-5 before the AI scribe; 2139/2135/0/4 before the Consultation redesign; 2128/2123/0/5 before Messages phase 4; 2114/2109/0/5 before Consultation phase 3; 2087/2081/0/5 before Consultation phase 2; 2056/2051/0/5 before Consultation phase 1; 2039/2034/0/5 before Messages phase 3; 2022/2017/0/5 before Messages phase 2; 1999/1994/0/5 before Messages; 1997/1992/0/5 before follow-up phase 3; 1992/1987/0/5 before follow-up phase 2; 1964/1959/0/5 before follow-ups; 1961/1956/0/5 before care-programme phase 3; 1950/1946/0/4 before phase 2; 1909/1905/0/4 before care programmes; 1878/1874/0/4 before tests; 1842/1838/0/4 before conditions; 1812/1807/0/5 before allergies; 1791/1786/0/5 on 2026-09-21 before the review; 1686/1681/0/5 on 2026-09-19 before the patients module). The fifth failure is "writing pre-keys costs a constant number of round trips", the known-flaky one (see below) — it appears in some runs and not others, and is not a regression either way. |
 | Any failure NOT among the 9 | **You broke something.** Fix the code, not the test. |
-| Fewer than 1450 passing | Something stopped running. Find out what. |
+| Fewer than 1457 passing | Something stopped running. Find out what. |
 | More than 735 skipped | A suite started skipping. That is a silent loss of coverage, not a pass — unless you added tests that skip, in which case say so and move the ceiling in the same commit. |
 | "writing pre-keys costs a constant number of round trips" fails | Known flaky against a local database, ~1 run in 4. Not in the baseline on purpose. Do not re-run until green — read the entry above and fix the yardstick. |
 

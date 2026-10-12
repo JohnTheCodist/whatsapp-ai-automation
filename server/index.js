@@ -243,6 +243,11 @@ app.use('/api/customers', require('./routes/medications'));  // medication journ
 app.use('/api/refills', require('./routes/refills'));        // refill call list
 app.use('/api/orders', require('./routes/orders'));               // Phase 5 — order queue
 app.use('/api/billing', require('./routes/billing'));        // plan, trial clock, payments
+// What the assistant does on a pharmacy’s behalf: the clinical protocols it
+// runs, their versions, and whether each is wired up in code and live for
+// THIS tenant. Read-only — protocol CONTENT is clinical governance, and a
+// web form that edits question sets is that change wearing a UI.
+app.use('/api/protocols', require('./routes/protocols'));
 
 // ---------- the website builder ----------
 //

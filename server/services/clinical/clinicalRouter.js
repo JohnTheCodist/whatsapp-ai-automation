@@ -241,4 +241,27 @@ async function route({ pharmacyId, screening, text, context = {} }) {
   };
 }
 
-module.exports = { route, matchProtocol, isProtocolLive, ROUTABLE_CATEGORY };
+/**
+ * The protocols this router would consider, for a screen that shows a
+ * pharmacy what the assistant does on its behalf.
+ *
+ * READ-ONLY, AND IT CHANGES NO ROUTING. It returns the same candidate list
+ * `route` already builds, through the same memoised path, so a screen
+ * cannot show a protocol this router would not consider — and cannot miss
+ * one it would. A second list maintained beside this one is exactly the
+ * drift the screen exists to catch: `client/src/modules.js` advertised
+ * "Malaria assessment" as active while nigeriaMalariaAssessmentV1.js says
+ * "DRAFT. NOT ACTIVE. NOT PATIENT-FACING." on its second line.
+ *
+ * Being in this list is NOT the same as running for a given pharmacy:
+ * `isProtocolLive` is still what decides that, per tenant, from the
+ * database. This answers only "is it wired up in code at all".
+ */
+function listRoutableProtocols() {
+  if (!CANDIDATES) CANDIDATES = loadCandidates();
+  return CANDIDATES.map((c) => ({ slug: c.slug, version: c.version }));
+}
+
+module.exports = {
+  route, matchProtocol, isProtocolLive, listRoutableProtocols, ROUTABLE_CATEGORY,
+};

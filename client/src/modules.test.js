@@ -113,8 +113,21 @@ test('a clinical service with no screen adds no sidebar item', () => {
   // Clinical module (0067, CONSULTATION_PLAN.md phase 1) — the pharmacist
   // note, beside the triage desk rather than instead of it. It HAS a screen,
   // so the rule this pins is unchanged.
+  //
+  // AMENDED AGAIN 2026-10-12, same way and for the same reason:
+  // Workflows joined Clinics (AGENTIC_PLAN.md phase 1), showing which
+  // clinical protocols the assistant runs, their versions, and whether each
+  // is switched on here. It HAS a screen — Workflows.jsx — so the rule this
+  // test pins is again unchanged.
+  //
+  // Worth recording: this screen exists BECAUSE the rule below was being
+  // broken somewhere this test could not see. CLINIC_SERVICES listed
+  // "Malaria assessment" as active while its protocol says "DRAFT. NOT
+  // ACTIVE. NOT PATIENT-FACING." This test guards the SIDEBAR against a
+  // service with no screen; nothing guarded the service list against a
+  // protocol that never runs. server/tests/protocols.test.js now does.
   const clinics = MODULES.find((m) => m.id === 'clinics');
-  expect(clinics.sidebar.map((i) => i.tab)).toEqual(['consultations', 'consultation-notes']);
+  expect(clinics.sidebar.map((i) => i.tab)).toEqual(['consultations', 'consultation-notes', 'workflows']);
 
   // STRENGTHENED at the same time: the list above is a literal, so it would
   // have to be edited for a service to sneak in — but it would then be

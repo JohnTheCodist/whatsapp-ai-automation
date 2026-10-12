@@ -28,6 +28,7 @@ import Consultations from './Consultations.jsx';
 import ConsultationNotes from './ConsultationNotes.jsx';
 import Inbox from './Inbox.jsx';
 import Orders from './Orders.jsx';
+import Workflows from './Workflows.jsx';
 import Requests from './Requests.jsx';
 import Customers, { ChronicRegister } from './Customers.jsx';
 import Settings from './Settings.jsx';
@@ -97,6 +98,7 @@ const SUBTITLE = {
   wholesale: 'The QR code that signs businesses up for wholesale prices',
   consultations: 'People waiting to speak to a pharmacist',
   'consultation-notes': 'Write up a consultation you have had',
+  workflows: 'What the assistant asks your patients, and which version is running',
   customers: "View all your customers' details",
   refills: 'Patients whose medicine is running out',
   conditions: 'Patients grouped by the conditions they buy for',
@@ -1031,6 +1033,7 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
                 summary={summary}
               />
             )}
+            {tab === 'workflows' && <Workflows />}
             {tab === 'overview' && <Overview />}
             {tab === 'ai' && <AiPerformance onNavigate={setTab} />}
             {tab === 'consultations' && (
