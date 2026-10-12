@@ -314,6 +314,39 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
     fetch('/api/health').then((r) => r.json()).then(setHealth).catch(() => setHealth({ status: 'unreachable' }));
   }, []);
 
+  /**
+   * WHETHER WHATSAPP IS ACTUALLY CONNECTED — which /api/health does not say.
+   *
+   * The rail’s pill used to read `health.status === "ok"`, and that endpoint
+   * sets `status` from ONE thing: whether a database ping came back. So the
+   * chip said **Live**, titled "Connected to WhatsApp", whenever Postgres was
+   * reachable — on a pharmacy whose socket had never once connected.
+   *
+   * Measured on this machine: /api/whatsapp/status answered
+   * `{status: "pending", live: false, registered: false,
+   * statusDetail: "Not connected yet."}` while the rail showed Live, and
+   * Billing two inches away said "Connect WhatsApp to start your 7-day free
+   * trial". Billing was right.
+   *
+   * That is the worst shape a status chip can have in this product. A
+   * pharmacist who reads "Live" believes patients’ messages are arriving,
+   * and the expensive failure here has always been the silent one — 16
+   * messages from a live patient dropped over three days.
+   *
+   * /api/whatsapp/status is the endpoint built to answer this, and it
+   * already does the hard part: a STORED "connected" with no live socket is
+   * reported as disconnected rather than believed. Fetched once on mount,
+   * like health — deliberately NOT a poll, because the shell polling for
+   * numbers it could ask for once is what exhausted the session pooler.
+   */
+  const [waStatus, setWaStatus] = useState(null);
+  useEffect(() => {
+    fetch('/api/whatsapp/status')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setWaStatus(j || { live: false, statusDetail: null }))
+      .catch(() => setWaStatus({ live: false, statusDetail: null }));
+  }, []);
+
   // Keeps the chip in step when the pharmacy is renamed in Settings, and
   // covers the bypass path that mounts App with no pharmacy prop at all.
   useEffect(() => {
@@ -410,7 +443,16 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
     return () => clearInterval(t);
   }, [consultationsWaiting, alarmSilenced, soundOn]);
 
-  const connected = health?.status === 'ok';
+  /**
+   * Three states, kept apart on purpose: connected, not connected, and NOT
+   * YET ASKED. The chip said "Down" in red for the moment before the answer
+   * arrived, which is the same error as "Live" and merely louder — a claim
+   * about a socket nobody had looked at.
+   */
+  const waKnown = waStatus !== null;
+  const connected = waStatus?.live === true;
+  // Known to be down. An unanswered read is NOT an alert: it is a question.
+  const waDown = waKnown && !connected;
   // Home is the desk’s command surface: the sidebar is there, search is
   // centred, and the body is one input rather than a page of tiles.
   //
@@ -633,14 +675,24 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
               on the strip's centre line with the state as a dot on its corner;
               the name and the Live/Down pill arrive with the panel. */}
           <div
-            title={connected ? 'Connected to WhatsApp' : `Not connected (${health?.status || 'checking'})`}
+            title={!waKnown
+              ? 'Checking the WhatsApp connection…'
+              : connected
+                ? 'Connected to WhatsApp'
+                // statusDetail is ALREADY a full sentence from the server
+                // ("Not connected yet."), so prefixing it produced "Not
+                // connected — Not connected yet." The server’s wording wins;
+                // the fallback is only for a read that returned nothing.
+                : (waStatus?.statusDetail || 'Not connected')}
             style={{ '--i': 7 }}
             className="relative flex items-center gap-2.5 py-1.5 pl-[6px] pr-2.5"
           >
             <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-lg border border-[var(--ui-line)]" />
             <span
               className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-                connected ? 'bg-[var(--ui-accent-wash)] text-[var(--ui-accent-ink)]' : 'bg-red-50 text-red-600'
+                connected ? 'bg-[var(--ui-accent-wash)] text-[var(--ui-accent-ink)]'
+                  : waDown ? 'bg-red-50 text-red-600'
+                    : 'bg-[var(--ui-sunk)] text-[var(--ui-ink-faint)]'
               }`}
             >
               <IconLink width={15} height={15} />
@@ -648,10 +700,12 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
             <span className="relative min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--ui-ink-soft)]">WhatsApp</span>
             <span
               className={`relative shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                connected ? 'bg-[var(--ui-accent-wash)] text-[var(--ui-accent-ink)]' : 'bg-red-50 text-red-700'
+                connected ? 'bg-[var(--ui-accent-wash)] text-[var(--ui-accent-ink)]'
+                  : waDown ? 'bg-red-50 text-red-700'
+                    : 'bg-[var(--ui-sunk)] text-[var(--ui-ink-faint)]'
               }`}
             >
-              {connected ? 'Live' : 'Down'}
+              {!waKnown ? 'Checking' : connected ? 'Live' : 'Down'}
             </span>
           </div>
 
@@ -815,17 +869,21 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
                 which tab is open, so the badge is live everywhere, not only
                 when Overview happens to be mounted. See NotificationBell.jsx
                 for what deliberately did NOT move here and why. */}
+            {/* `!waDown` rather than `connected`: an unanswered read must not
+                raise "WhatsApp is not connected", which would be the old bug
+                inverted — alarming instead of reassuring, and still about
+                something nobody has looked at. */}
             <NotificationBell
               consultations={badges.consultations}
               orders={badges.orders}
-              connected={connected}
+              connected={!waDown}
               onNavigate={setTab}
             />
 
             {/* The same arithmetic the bell does internally, so the tab icon
                 and the badge can never disagree about whether anything is
                 waiting. Renders nothing — it only paints the favicon. */}
-            <Favicon count={(connected ? 0 : 1) + badges.consultations + badges.orders} />
+            <Favicon count={(waDown ? 1 : 0) + badges.consultations + badges.orders} />
 
             {/* The "All systems go" pill stood here. It read the same
                 `connected` flag the rail's Connection panel already shows —

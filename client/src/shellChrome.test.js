@@ -221,3 +221,62 @@ test('the command box still focuses itself when nothing hands it a ref', () => {
   expect(HOMECMD).toMatch(/const localRef = useRef\(null\);/);
   expect(HOMECMD).toMatch(/boxRef\.current\?\.focus\(\)/);
 });
+
+/**
+ * The WhatsApp chip reports WhatsApp.
+ *
+ * THE DEFECT, found while finally opening Billing (2026-10-12). The rail's
+ * chip read `health.status === 'ok'` — and /api/health sets `status` from
+ * ONE thing, whether a database ping came back. So it showed **Live**,
+ * titled "Connected to WhatsApp", on a pharmacy whose socket had never once
+ * connected. Measured: /api/whatsapp/status answered
+ * `{status: 'pending', live: false, registered: false}` while the rail said
+ * Live, and Billing two inches away said "Connect WhatsApp to start your
+ * 7-day free trial". Billing was right.
+ *
+ * That is the worst shape a status chip can take in this product. A
+ * pharmacist who reads "Live" believes patients' messages are arriving, and
+ * the expensive failure here has always been the silent one — sixteen
+ * messages from a live patient dropped over three days.
+ */
+
+test('the connection chip is read from the WhatsApp endpoint, not the database ping', () => {
+  expect(APP, 'the chip is reading service health again')
+    .not.toMatch(/const connected = health\?\.status === 'ok'/);
+  expect(APP).toMatch(/const connected = waStatus\?\.live === true;/);
+  expect(APP).toMatch(/fetch\('\/api\/whatsapp\/status'\)/);
+});
+
+test('the chip keeps three states, so it never claims one it has not checked', () => {
+  // "Down" before the answer arrives is the same error as "Live", merely
+  // louder: a claim about a socket nobody has looked at. The third state is
+  // neutral — no red, no green.
+  expect(APP).toMatch(/const waKnown = waStatus !== null;/);
+  expect(APP).toMatch(/\{!waKnown \? 'Checking' : connected \? 'Live' : 'Down'\}/);
+  expect(APP).toMatch(/Checking the WhatsApp connection/);
+});
+
+test('only a KNOWN failure raises an alert', () => {
+  // `waDown` is "we asked and it is down", never "we have not asked". The
+  // bell and the favicon both take it, so an unanswered read cannot invent
+  // an alarm — which would be the original bug inverted.
+  expect(APP).toMatch(/const waDown = waKnown && !connected;/);
+  expect(APP).toMatch(/connected=\{!waDown\}/);
+  expect(APP).toMatch(/count=\{\(waDown \? 1 : 0\) \+ badges\.consultations \+ badges\.orders\}/);
+});
+
+test('the chip says why, in the server’s own words and only once', () => {
+  // `statusDetail` is already a full sentence ("Not connected yet."), and
+  // the first version prefixed it — producing "Not connected — Not
+  // connected yet." on a real screen.
+  expect(APP).toMatch(/waStatus\?\.statusDetail \|\| 'Not connected'/);
+  expect(APP, 'the tooltip is prefixing a sentence that already stands alone')
+    .not.toMatch(/`Not connected\$\{waStatus/);
+});
+
+test('service health is still read, and still means what it means', () => {
+  // /api/health is not wrong — it was being asked the wrong question. It
+  // still feeds Settings, where database and channel CONFIG belong.
+  expect(APP).toMatch(/fetch\('\/api\/health'\)/);
+  expect(APP).toMatch(/<Settings health=\{health\}/);
+});
