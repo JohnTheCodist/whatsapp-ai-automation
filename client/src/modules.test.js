@@ -127,7 +127,12 @@ test('a clinical service with no screen adds no sidebar item', () => {
   // service with no screen; nothing guarded the service list against a
   // protocol that never runs. server/tests/protocols.test.js now does.
   const clinics = MODULES.find((m) => m.id === 'clinics');
-  expect(clinics.sidebar.map((i) => i.tab)).toEqual(['consultations', 'consultation-notes', 'workflows']);
+  // AMENDED AGAIN, SAME DAY, AND THE SECOND ONE UNDID THE FIRST: Workflows
+  // left Clinics within hours of joining it, because the owner said it does
+  // not belong there — "the workflow is not a subset of clinic module". It
+  // is a top-level destination now, beside Chats, above the modules. The
+  // rule this test pins never changed; the list did, twice.
+  expect(clinics.sidebar.map((i) => i.tab)).toEqual(['consultations', 'consultation-notes']);
 
   // STRENGTHENED at the same time: the list above is a literal, so it would
   // have to be edited for a service to sneak in — but it would then be

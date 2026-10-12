@@ -23,7 +23,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getWebsite } from './website/api.js';
 import {
-  greeting, headline, standing, PLACEHOLDER,
+  greeting, headline, standing, PLACEHOLDER, RECORD_LABEL, RECORD_NOTE,
   matchScreens, shouldSearchPatients,
   PATIENTS_HEADING, SCREENS_HEADING, NO_MATCH,
 } from './homeCommand.js';
@@ -143,6 +143,27 @@ export default function HomeCommand({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Escape') setQuery(''); }}
         />
+
+        {/* Recording, in the composer where the owner asked for it
+            (2026-10-12). It OPENS THE CONSULTATION rather than opening a
+            microphone — see RECORD_LABEL in homeCommand.js for why that is
+            the decision rather than a shortcut around it. */}
+        <div className="ui-home-tools">
+          <button
+            type="button"
+            onClick={() => onOpen?.('consultation-notes')}
+            className="ui-home-tool"
+          >
+            <span aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <rect x="5.6" y="1.6" width="4.8" height="8" rx="2.4" />
+                <path d="M3.2 7.6a4.8 4.8 0 0 0 9.6 0M8 12.4v2" />
+              </svg>
+            </span>
+            {RECORD_LABEL}
+          </button>
+          <span className="ui-home-toolnote">{RECORD_NOTE}</span>
+        </div>
       </form>
 
       {typed && (

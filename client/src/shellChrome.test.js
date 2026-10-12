@@ -280,3 +280,87 @@ test('service health is still read, and still means what it means', () => {
   expect(APP).toMatch(/fetch\('\/api\/health'\)/);
   expect(APP).toMatch(/<Settings health=\{health\}/);
 });
+
+/**
+ * Chats and Workflows at the top (owner, 2026-10-12: "i want chat and
+ * workflow to be at the top... the workflow is not a subset of clinic
+ * module... automatically chat is the default state").
+ */
+
+const MODULES_SRC = fs.readFileSync(path.join(SRC, 'modules.js'), 'utf8');
+const HOMECMD_SRC = fs.readFileSync(path.join(SRC, 'HomeCommand.jsx'), 'utf8');
+const HOMEMODEL = fs.readFileSync(path.join(SRC, 'homeCommand.js'), 'utf8');
+
+test('Workflows is a top-level destination, not a screen inside Clinics', () => {
+  // It was briefly a Clinics screen and the owner said that was wrong: a
+  // clinical protocol is not a thing you do in the clinic, it is software
+  // running in the pharmacy's name across every conversation it has.
+  expect(MODULES_SRC, 'Workflows is back inside a module')
+    .not.toMatch(/tab: 'workflows'/);
+  expect(APP).toMatch(/const WORKFLOWS = \{ id: 'workflows'/);
+  // A global screen, like Setup and Billing — which is what keeps it out of
+  // MODULE_TABS while staying a valid tab the URL can carry.
+  expect(APP).toMatch(/\[WORKFLOWS\.id\]: WORKFLOWS/);
+});
+
+test('the two live above the modules, as one control rather than two rows', () => {
+  // A segmented control and not two sidebar rows: they are a choice between
+  // two ways of working, where the modules below are places. A place list
+  // opening with these two would read as though Workflows were a screen like
+  // Orders, which is the arrangement this replaced.
+  expect(APP).toMatch(/aria-label="Workspace"/);
+  expect(APP).toMatch(/function TopTab\(/);
+  // Pressed state, not a link role: a reader should hear which one is on.
+  expect(APP).toMatch(/aria-pressed=\{active\}/);
+});
+
+test('Chats is the default state, and it is Home rather than a second surface', () => {
+  // Home was already the landing state and already the greeting plus one
+  // input — which is what the owner's reference shows. Naming it Chats
+  // describes what is there instead of building a rival screen beside it.
+  expect(APP).toMatch(/useState\(\(\) => readTabFromUrl\(\) \|\| HOME\.id\)/);
+  expect(APP).toMatch(/active=\{isHome\}/);
+  expect(APP).toMatch(/label="Chats"/);
+});
+
+test('the recording control sits in the composer, where the owner asked', () => {
+  expect(HOMECMD_SRC).toMatch(/ui-home-tools/);
+  expect(HOMECMD_SRC).toMatch(/RECORD_LABEL/);
+});
+
+test('the recording control opens the consultation and never a microphone', () => {
+  // THE ONE THAT MATTERS. Transcription is bound to
+  // /customers/:id/consultations/:consultationId/scribe, behind `scribeGate`,
+  // re-read from the database per request and failing closed. 0071 added the
+  // consent columns so "we do not record anyone who was not asked" stays
+  // true without anybody maintaining it.
+  //
+  // There is no patient-free transcribe endpoint. A microphone on this box
+  // would be a door marked "dictate your question" that a patient can be
+  // recorded through, so the button leads to where a patient is chosen and
+  // asked.
+  expect(HOMECMD_SRC).toMatch(/onOpen\?\.\('consultation-notes'\)/);
+  expect(HOMECMD_SRC, 'the command box opened a microphone of its own')
+    .not.toMatch(/getUserMedia|MediaRecorder/);
+});
+
+test('the control says what it does, rather than implying it is listening', () => {
+  // A button labelled "Record" that then asks a question is a small lie told
+  // at the exact moment somebody is about to speak to a patient.
+  expect(HOMEMODEL).toMatch(/RECORD_LABEL = 'Record a consultation'/);
+  expect(HOMEMODEL).toMatch(/RECORD_NOTE = '[^']*asked before anything is recorded/);
+});
+
+test('every ui- class the composer tools use has a rule behind it', () => {
+  // The consultation workspace once shipped six `ui-consult-*` names with no
+  // styles at all — it rendered, as unstyled controls.
+  const css = fs.readFileSync(path.join(SRC, 'index.css'), 'utf8');
+  for (const cls of ['ui-home-tools', 'ui-home-tool', 'ui-home-toolnote']) {
+    // Checked as a whole declaration rather than a substring: without the
+    // trailing delimiter, `.ui-home-tool` passes on `.ui-home-tools` and
+    // the narrower class could ship with no rule at all.
+    const declared = [`.${cls} {`, `.${cls}:`, `.${cls},`]
+      .some((needle) => css.includes(needle));
+    expect(declared, `.${cls} has no rule`).toBe(true);
+  }
+});

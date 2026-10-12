@@ -553,6 +553,41 @@ nav[aria-label="Sections"] {
   font-size: 15px;
 }
 
+/* The tools under the command box — today, one: start a consultation
+   recording. Laid out as a row so a second tool can join it without the
+   first one moving.
+
+   SECONDARY, deliberately. design.md’s CTA voice gives the near-black fill
+   to the primary action, and the primary action on this screen is the box
+   above: typing is what a pharmacist does here most. A filled button under
+   it would make recording look like the thing to do, which is how somebody
+   ends up recording a patient who did not want it — the same argument the
+   scribe’s own interface was built on. */
+.ui-home-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.ui-home-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border-radius: 8px;
+  background: var(--ui-sunk);
+  color: var(--ui-ink);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 120ms ease;
+}
+.ui-home-tool:hover { background: var(--ui-line); }
+.ui-home-toolnote {
+  font-size: 12px;
+  color: var(--ui-ink-faint);
+}
+
 .ui-home-results { display: grid; gap: 2px; margin-top: 10px; }
 .ui-home-results > p { margin: 10px 0 2px; }
 .ui-home-result {

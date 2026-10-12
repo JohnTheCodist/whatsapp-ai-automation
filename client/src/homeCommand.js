@@ -121,8 +121,29 @@ const PATIENTS_HEADING = 'Patients';
 const SCREENS_HEADING = 'Screens';
 const NO_MATCH = 'Nothing matches that.';
 
+/**
+ * The recording control that sits under the command box.
+ *
+ * "Record a consultation", never a bare "Record": the button does not
+ * start listening. It opens the screen where a patient is chosen and
+ * asked. A button labelled "Record" that then asks a question is a small
+ * lie told at the exact moment somebody is about to speak to a patient.
+ *
+ * WHY IT CANNOT SIMPLY LISTEN. Transcription lives at
+ * POST /customers/:id/consultations/:consultationId/scribe — bound to a
+ * patient and a note, behind `scribeGate`, which is re-read from the
+ * database on every request and fails closed. 0071 added the consent
+ * columns so that "we do not record anyone who was not asked" stays true
+ * without anybody maintaining it. There is NO patient-free transcribe
+ * endpoint, and adding one to put a microphone on this box would be a
+ * door marked "dictate your question" that a patient can be recorded
+ * through.
+ */
+const RECORD_LABEL = 'Record a consultation';
+const RECORD_NOTE = 'Choose the patient first — they are asked before anything is recorded.';
+
 export {
-  greeting, headline, standing, PLACEHOLDER,
+  greeting, headline, standing, PLACEHOLDER, RECORD_LABEL, RECORD_NOTE,
   allScreens, matchScreens, shouldSearchPatients, MIN_PATIENT_QUERY,
   PATIENTS_HEADING, SCREENS_HEADING, NO_MATCH,
 };

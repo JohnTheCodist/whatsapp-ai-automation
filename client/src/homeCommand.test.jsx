@@ -19,6 +19,16 @@
 import { test, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import HomeCommand from './HomeCommand.jsx';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/* Read for the one rule that cannot be seen in rendered output: whether
+   the component reaches for a microphone. */
+const SOURCE = fs.readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), 'HomeCommand.jsx'),
+  'utf8',
+);
 import {
   greeting, headline, standing, PLACEHOLDER,
   matchScreens, shouldSearchPatients, MIN_PATIENT_QUERY, NO_MATCH,
@@ -144,12 +154,35 @@ test('the input does not pretend to be an assistant', () => {
   expect(NO_MATCH).toMatch(/matches/i);
 });
 
-test('Home has no microphone', () => {
-  // The reference has one. A recording here needs a consultation to belong to
-  // and a consent recorded against it (0071), neither of which exists until a
-  // patient is chosen — so a mic on Home could only ask for a patient first,
-  // which is what the input already does. It would be a second route to the
-  // same place dressed as a shortcut.
+test('Home opens no microphone, and the control it has says where it goes', () => {
+  // AMENDED 2026-10-12 with the product, and TIGHTENED in the same edit.
+  //
+  // This used to assert Home had no recording control at all, reasoning
+  // that "a mic on Home could only ask for a patient first, which is what
+  // the input already does". The owner then asked for the control to sit
+  // in the composer — and the implementation is exactly what that comment
+  // predicted: it asks for a patient first.
+  //
+  // So the product changed and the RULE did not. What is pinned now is the
+  // half that was always the point, stated directly instead of by proxy:
+  // this screen never opens a microphone. The old assertion banned the
+  // WORD "Record", which is a weaker thing to check and would have passed
+  // a box that silently called getUserMedia under another label.
   const html = render({ summary: { handoffs: 0, orders: 0, openConversations: 0 } });
-  expect(html).not.toMatch(/Transcribe|Record|microphone/i);
+
+  // Transcription is bound to
+  // /customers/:id/consultations/:consultationId/scribe, behind scribeGate,
+  // re-read per request and failing closed. 0071 added the consent columns
+  // so "we do not record anyone who was not asked" stays true without
+  // anybody maintaining it. There is no patient-free transcribe endpoint.
+  expect(SOURCE, "the command box opened a microphone of its own")
+    .not.toMatch(/getUserMedia|MediaRecorder/);
+
+  // The control that IS there leads to where a patient is chosen and asked.
+  expect(SOURCE).toMatch(/onOpen\?\.\('consultation-notes'\)/);
+  expect(html).toMatch(/Record a consultation/);
+
+  // And it never implies it is already listening.
+  expect(html, 'the control claims to be recording now')
+    .not.toMatch(/Listening|Recording now|Transcribing/i);
 });

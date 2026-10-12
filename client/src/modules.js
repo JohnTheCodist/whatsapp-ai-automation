@@ -30,7 +30,7 @@
 import {
   IconModuleStock, IconModuleClinics, IconModulePatients, IconModuleMarketing, IconModuleBranding,
   IconOverview, IconInventory, IconUpload, IconLink, IconOrders, IconRequests, IconDeals,
-  IconConsultations, IconPulse, IconForm, IconCustomers, IconReply, IconHeart, IconInbox, IconStar, IconAi, IconWebsite,
+  IconConsultations, IconPulse, IconCustomers, IconReply, IconHeart, IconInbox, IconStar, IconAi, IconWebsite,
 } from './Icons.jsx';
 
 /**
@@ -103,11 +103,6 @@ export const MODULES = Object.freeze([
       // and this answers "what did the pharmacist assess and do". No badge —
       // nobody is waiting on a note.
       { tab: 'consultation-notes', label: 'Consultations', Icon: IconConsultations },
-      // What the assistant does on this pharmacy's behalf. In Clinics
-      // because a clinical protocol is clinical work, and beside
-      // Consultations because the two answer the same question from
-      // opposite ends: what a pharmacist did, and what the software did.
-      { tab: 'workflows', label: 'Workflows', Icon: IconForm },
       // Registered services that have a screen of their own. None do yet.
       ...CLINIC_SERVICES.filter((s) => s.tab).map((s) => ({ tab: s.tab, label: s.label, Icon: IconConsultations })),
     ],

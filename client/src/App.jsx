@@ -38,6 +38,7 @@ import Favicon from './Favicon.jsx';
 import { playOrderChime, playConsultationAlarm, unlockChime, isUnlocked } from './orderChime.js';
 import {
   IconSetup, IconSearch, IconVolumeOn, IconVolumeOff, IconLink, IconBilling, IconAlertTriangle, IconHome,
+  IconForm, IconInbox,
 } from './Icons.jsx';
 import HomeCommand from './HomeCommand.jsx';
 import CatalogueSync from './CatalogueSync.jsx';
@@ -86,7 +87,25 @@ const BILLING = { id: 'billing', label: 'Billing', Icon: IconBilling, title: 'Bi
  */
 const HOME = { id: 'home', label: 'Home', title: 'Home' };
 
-const GLOBAL = { [SETUP.id]: SETUP, [BILLING.id]: BILLING, [HOME.id]: HOME };
+/**
+ * The two things the desk is FOR, above everything else (owner,
+ * 2026-10-12: "i want chat and workflow to be at the top... the workflow
+ * is not a subset of clinic module").
+ *
+ * Chats is Home: the greeting and the one input. It was already the
+ * default landing state, which is what the owner asked for, so this names
+ * what was there rather than building a second surface beside it.
+ *
+ * Workflows was briefly a screen inside Clinics. That was wrong and the
+ * owner said so: a clinical protocol is not a thing you do in the clinic,
+ * it is the software running in your name across every conversation the
+ * pharmacy has. It sits with Chats, above the modules.
+ */
+const WORKFLOWS = { id: 'workflows', label: 'Workflows', title: 'Workflows' };
+
+const GLOBAL = {
+  [SETUP.id]: SETUP, [BILLING.id]: BILLING, [HOME.id]: HOME, [WORKFLOWS.id]: WORKFLOWS,
+};
 
 const SUBTITLE = {
   overview: 'How the pharmacy is doing',
@@ -205,6 +224,31 @@ function RailButton({
       {dot && (
         <span aria-hidden="true" className={`relative ml-auto h-1.5 w-1.5 shrink-0 rounded-full ${dotBg}`} />
       )}
+    </button>
+  );
+}
+
+/**
+ * One half of the Chats | Workflows control.
+ *
+ * `aria-pressed` rather than a link role: this is a toggle between two
+ * states of the same workspace, and a screen reader should hear which one
+ * is on rather than be told it is a list of two pages.
+ */
+function TopTab({ active, onClick, icon, label }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`flex flex-1 items-center justify-center gap-1.5 rounded-[7px] px-2 py-1.5 text-[13px] font-medium transition ${
+        active
+          ? 'bg-[var(--ui-surface)] text-[var(--ui-ink)] shadow-sm'
+          : 'text-[var(--ui-ink-soft)] hover:text-[var(--ui-ink)]'
+      }`}
+    >
+      <span aria-hidden="true" className="shrink-0">{icon}</span>
+      {label}
     </button>
   );
 }
@@ -595,6 +639,30 @@ export default function App({ onSignOut, pharmacy = null, memberships = [], emai
             </span>
             <span className="block text-[12px] text-[var(--ui-ink-faint)]">RxNaija</span>
           </span>
+        </div>
+
+        {/* CHATS | WORKFLOWS — the two things this desk is for, above the
+            modules rather than inside one.
+
+            A segmented control and not two rows, because they are a CHOICE
+            between two ways of working: what you are doing now, and what
+            the software does without you. The modules below are places; a
+            place list that opened with these two would read as though
+            Workflows were a screen like Orders, which is the mistake this
+            replaces. */}
+        <div className="mb-4 flex items-center gap-1 rounded-lg bg-[var(--ui-sunk)] p-1" role="group" aria-label="Workspace">
+          <TopTab
+            active={isHome}
+            onClick={() => setTab(HOME.id)}
+            icon={<IconInbox width={14} height={14} />}
+            label="Chats"
+          />
+          <TopTab
+            active={tab === WORKFLOWS.id}
+            onClick={() => setTab(WORKFLOWS.id)}
+            icon={<IconForm width={14} height={14} />}
+            label="Workflows"
+          />
         </div>
 
                 {/* EVERY MODULE’S SCREENS, not just the one you are in (owner,
