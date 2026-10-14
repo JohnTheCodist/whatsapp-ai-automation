@@ -249,6 +249,13 @@ app.use('/api/billing', require('./routes/billing'));        // plan, trial cloc
 // web form that edits question sets is that change wearing a UI.
 app.use('/api/protocols', require('./routes/protocols'));
 
+// A pharmacist speaking their own words into a search box. NOT the scribe:
+// no patient, no consultation, no consent gate (there is no second party to
+// ask), and nothing stored. A thirty-second cap measured against the
+// provider's own reading of the audio is what stops it becoming the other
+// thing. See services/ai/dictation.js.
+app.use('/api/dictate', require('./routes/dictation'));
+
 // ---------- the website builder ----------
 //
 // MOUNTED CONDITIONALLY, and that is the point of the flag. While it is off

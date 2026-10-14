@@ -27,6 +27,8 @@ import {
   matchScreens, shouldSearchPatients,
   PATIENTS_HEADING, SCREENS_HEADING, NO_MATCH,
 } from './homeCommand.js';
+import DictateButton from './DictateButton.jsx';
+import { mergeDictation } from './dictation.js';
 
 export default function HomeCommand({
   onOpen, onOpenPatient, websiteEnabled, summary = null, inputRef = null,
@@ -149,20 +151,43 @@ export default function HomeCommand({
             microphone — see RECORD_LABEL in homeCommand.js for why that is
             the decision rather than a shortcut around it. */}
         <div className="ui-home-tools">
-          <button
-            type="button"
-            onClick={() => onOpen?.('consultation-notes')}
-            className="ui-home-tool"
-          >
-            <span aria-hidden="true">
-              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <rect x="5.6" y="1.6" width="4.8" height="8" rx="2.4" />
-                <path d="M3.2 7.6a4.8 4.8 0 0 0 9.6 0M8 12.4v2" />
-              </svg>
-            </span>
-            {RECORD_LABEL}
-          </button>
-          <span className="ui-home-toolnote">{RECORD_NOTE}</span>
+          {/* SPEAK instead of typing — the pharmacist’s OWN words, into the
+              box above. Beside the consultation control rather than
+              replacing it, because they are different acts: one records a
+              patient (with consent, on a note), the other fills a search
+              field with what the person holding the phone just said.
+
+              APPENDED, never replacing what is typed. Somebody who typed
+              "ngozi" and then spoke "refills due" meant both. */}
+          <DictateButton
+            onText={(spoken) => {
+              setQuery((q) => mergeDictation(q, spoken));
+              boxRef.current?.focus();
+            }}
+          />
+
+          {/* The button and the sentence that explains it move together.
+              Loose in the row, the note trailed the dictation control too
+              and read as though speaking a search also needed a patient’s
+              consent — which would teach somebody that the consent step is
+              decoration. */}
+          <span className="ui-home-toolpair">
+            <button
+              type="button"
+              onClick={() => onOpen?.('consultation-notes')}
+              className="ui-home-tool"
+            >
+              <span aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <rect x="5.6" y="1.6" width="4.8" height="8" rx="2.4" />
+                  <path d="M3.2 7.6a4.8 4.8 0 0 0 9.6 0M8 12.4v2" />
+                </svg>
+              </span>
+              {RECORD_LABEL}
+            </button>
+            <span className="ui-home-toolnote">{RECORD_NOTE}</span>
+          </span>
+
         </div>
       </form>
 

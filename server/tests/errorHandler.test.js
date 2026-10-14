@@ -128,7 +128,29 @@ test('only a hand-written sentence is ever marked for the user', () => {
 
   // The closed list. A new entry here has to argue that its message is a
   // sentence written for a user and contains nothing internal.
-  assert.deepEqual(found.sort(), ['routes/consultations.js']);
+  //
+  // TWO ADDED 2026-10-14 for dictation, and the argument for each:
+  //
+  //   services/ai/dictation.js  refuses audio past the thirty-second cap
+  //     ("Dictation is for short phrases — that was 94 seconds.") and audio
+  //     whose length could not be measured. Both are written here; the only
+  //     interpolation is a duration the speaker themselves produced.
+  //
+  //   routes/dictation.js       refuses an oversized body and a file that is
+  //     not audio. Written here too — and deliberately NOT multer’s own
+  //     message, which would have let text this project did not author
+  //     through the exemption the moment multer raised something nobody
+  //     anticipated. That hole existed in the first draft and THIS TEST is
+  //     what found it.
+  //
+  // Both are the designed degradation: dictation fails, the pharmacist
+  // types instead, and the sentence says so. A masked 5xx telling them
+  // nothing is the defect the `expose` flag exists to fix.
+  assert.deepEqual(found.sort(), [
+    'routes/consultations.js',
+    'routes/dictation.js',
+    'services/ai/dictation.js',
+  ]);
 });
 test('every error carries the request id, so a report can be traced to a log line', () => {
   assert.equal(run(new Error('boom')).body.requestId, 'req-1');

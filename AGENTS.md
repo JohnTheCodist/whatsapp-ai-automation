@@ -1776,7 +1776,7 @@ unused `written` binding in `consultations.js`'s `amendConsultation` and it
 
 **The scribe writes the whole note, routed by who spoke, 2026-10-10 →
 2185/1443/735/7 (no database); 2185/2180/0/5 with one.** SCRIBE_PLAN.md §15,
-on the owner's decision. Client 416.
+on the owner's decision. Client 427.
 
 **The collapsed rail, same day** — the owner: *"the collapsed strip look
 sparse and the icons too thin"*. Both measured rather than guessed at.
@@ -2156,10 +2156,10 @@ After `npm test`, compare:
 
 | Observation | Meaning |
 |---|---|
-| **No test database:** 1457 pass / 735 skip / 7 fail, categories A+B | No regression. Proceed. |
+| **No test database:** 1465 pass / 735 skip / 7 fail, categories A+B | No regression. Proceed. |
 | **Test database configured:** 2194 pass / 0 skip / 4-5 fail, categories A+C | No regression. Proceed — and this run is worth far more than the one above. Measured, not derived: 2192/2187/0/5 on 2026-10-11 against a local PostgreSQL 17.10, plus a possible SIXTH between 23:00 and 00:00 UTC only — the websiteAnalytics timezone-window test described above, which is a test yardstick and not in this baseline (2185/2180/0/5 before counter patient creation; 2182/2177/0/5 before SOAP routing; 2142/2137/0/4-5 before the AI scribe; 2139/2135/0/4 before the Consultation redesign; 2128/2123/0/5 before Messages phase 4; 2114/2109/0/5 before Consultation phase 3; 2087/2081/0/5 before Consultation phase 2; 2056/2051/0/5 before Consultation phase 1; 2039/2034/0/5 before Messages phase 3; 2022/2017/0/5 before Messages phase 2; 1999/1994/0/5 before Messages; 1997/1992/0/5 before follow-up phase 3; 1992/1987/0/5 before follow-up phase 2; 1964/1959/0/5 before follow-ups; 1961/1956/0/5 before care-programme phase 3; 1950/1946/0/4 before phase 2; 1909/1905/0/4 before care programmes; 1878/1874/0/4 before tests; 1842/1838/0/4 before conditions; 1812/1807/0/5 before allergies; 1791/1786/0/5 on 2026-09-21 before the review; 1686/1681/0/5 on 2026-09-19 before the patients module). The fifth failure is "writing pre-keys costs a constant number of round trips", the known-flaky one (see below) — it appears in some runs and not others, and is not a regression either way. |
 | Any failure NOT among the 9 | **You broke something.** Fix the code, not the test. |
-| Fewer than 1457 passing | Something stopped running. Find out what. |
+| Fewer than 1465 passing | Something stopped running. Find out what. |
 | More than 735 skipped | A suite started skipping. That is a silent loss of coverage, not a pass — unless you added tests that skip, in which case say so and move the ceiling in the same commit. |
 | "writing pre-keys costs a constant number of round trips" fails | Known flaky against a local database, ~1 run in 4. Not in the baseline on purpose. Do not re-run until green — read the entry above and fix the yardstick. |
 

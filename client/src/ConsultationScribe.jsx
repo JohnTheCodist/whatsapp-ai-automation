@@ -30,6 +30,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { bestMimeType, AUDIO_CONSTRAINTS } from './audioCapture.js';
 import {
   CONSENT_SCRIPT, CONSENT_CONFIRM, CONSENT_HEADING, NOT_ASKED, consentedNote,
   speakerLabel, SPEAKER_QUESTION, SPEAKER_HELP, transcriptNote,
@@ -57,47 +58,6 @@ function micAvailable() {
     && typeof window.MediaRecorder === 'function',
   );
 }
-
-/**
- * What to record as, in the order we would rather have it.
- *
- * `new MediaRecorder(stream)` with no type lets the browser choose, which
- * is fine on Chrome and is NOT on Safari — where the only supported
- * container is mp4, and an unsupported type throws rather than falling
- * back. Opus first because it is a fraction of the size for speech, which
- * matters on a Nigerian pharmacy’s connection.
- */
-const PREFERRED_TYPES = [
-  'audio/webm;codecs=opus',
-  'audio/ogg;codecs=opus',
-  'audio/mp4',
-  'audio/webm',
-];
-
-function bestMimeType() {
-  const MR = typeof window !== 'undefined' ? window.MediaRecorder : null;
-  if (!MR || typeof MR.isTypeSupported !== 'function') return '';
-  return PREFERRED_TYPES.find((t) => MR.isTypeSupported(t)) || '';
-}
-
-/**
- * What to ask the microphone for.
- *
- * `{ audio: true }` takes the browser’s defaults, which assume a quiet
- * room. A pharmacy counter is not one: there is a fan, a till, a queue and
- * a radio. These three are the difference between a usable recording and
- * one Deepgram returns nothing from.
- *
- * `autoGainControl` matters most of the three here — a patient leaning away
- * from the phone is the common case, and without it they simply drop out.
- */
-const AUDIO_CONSTRAINTS = {
-  audio: {
-    echoCancellation: true,
-    noiseSuppression: true,
-    autoGainControl: true,
-  },
-};
 
 export default function ConsultationScribe({
   customerId, consultationId, note, available, existing, onAccept, whenLabel,

@@ -24,6 +24,11 @@ const APP = fs.readFileSync(path.join(SRC, 'App.jsx'), 'utf8');
 // from the one test that checks a class name was kept, which is exactly the
 // gap this file was written after.
 const SCRIBE = fs.readFileSync(path.join(SRC, 'ConsultationScribe.jsx'), 'utf8');
+/* The codec order and microphone constraints moved out of the scribe when
+   dictation became a second caller. They are ONE decision for both, which
+   is why these invariants read the shared module and then check the scribe
+   still uses it. */
+const CAPTURE = fs.readFileSync(path.join(SRC, 'audioCapture.js'), 'utf8');
 // EXTENDED 2026-10-11 with the create-patient form, for the same reason the
 // scribe was added: it renders on this screen, and a class name is a promise
 // to the stylesheet that nothing else checks was kept.
@@ -313,11 +318,17 @@ test('the microphone is asked for a pharmacy counter, not a quiet room', () => {
   // room. A pharmacy counter has a fan, a till, a queue and a radio, and
   // these three are the difference between a usable recording and one the
   // provider returns nothing from.
-  expect(SCRIBE).toMatch(/echoCancellation: true/);
-  expect(SCRIBE).toMatch(/noiseSuppression: true/);
-  // autoGainControl matters most: a patient leaning away from the phone is
+  // MOVED, NOT RELAXED: these live in audioCapture.js now, shared with the
+  // dictation microphone, because both record a person talking in a
+  // pharmacy over the same connection into the same provider.
+  expect(CAPTURE).toMatch(/echoCancellation: true/);
+  expect(CAPTURE).toMatch(/noiseSuppression: true/);
+  // autoGainControl matters most: somebody leaning away from the phone is
   // the common case, and without it they simply drop out.
-  expect(SCRIBE).toMatch(/autoGainControl: true/);
+  expect(CAPTURE).toMatch(/autoGainControl: true/);
+
+  // And the scribe still uses the shared decision rather than a private
+  // copy that could drift from it.
   expect(SCRIBE).toMatch(/getUserMedia\(AUDIO_CONSTRAINTS\)/);
   expect(SCRIBE, 'the microphone is still asked for with bare defaults')
     .not.toMatch(/getUserMedia\(\{ audio: true \}\)/);
@@ -327,13 +338,16 @@ test('the container is chosen, not left to the browser', () => {
   // `new MediaRecorder(stream)` with no type is fine on Chrome and is NOT on
   // Safari, where mp4 is the only supported container and an unsupported
   // type throws rather than falling back.
-  expect(SCRIBE).toMatch(/isTypeSupported/);
-  expect(SCRIBE).toMatch(/audio\/mp4/);
+  expect(CAPTURE).toMatch(/isTypeSupported/);
+  expect(CAPTURE).toMatch(/audio\/mp4/);
   // Opus first: a fraction of the size for speech, which matters on a
   // Nigerian pharmacy's connection.
-  const list = SCRIBE.match(/const PREFERRED_TYPES = \[([\s\S]*?)\]/);
+  const list = CAPTURE.match(/const PREFERRED_TYPES = \[([\s\S]*?)\]/);
   expect(list, 'the preferred-type list is gone').toBeTruthy();
   expect(list[1].indexOf('opus')).toBeLessThan(list[1].indexOf('audio/mp4'));
+
+  // The scribe asks the shared chooser rather than naming a container.
+  expect(SCRIBE).toMatch(/bestMimeType\(\)/);
 });
 
 test('audio accrues while recording rather than arriving all at once', () => {

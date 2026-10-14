@@ -583,6 +583,41 @@ nav[aria-label="Sections"] {
   transition: background 120ms ease;
 }
 .ui-home-tool:hover { background: var(--ui-line); }
+
+/* RECORDING IS CARRIED BY MOTION, NOT RED.
+
+   design.md reserves red for a person waiting on a human, and somebody
+   dictating a search is not that — a red control here teaches staff to
+   discount red on the one screen where it means a patient is waiting. The
+   scribe made the same choice for the same reason.
+
+   The dot pulses; the button itself only darkens. Under reduced motion the
+   dot stays solid rather than disappearing, because it is the only thing
+   saying the microphone is open. */
+.ui-home-tool.is-recording {
+  background: var(--ui-ink);
+  color: var(--ui-surface);
+}
+.ui-home-tool.is-recording span[aria-hidden] {
+  animation: ui-dictate-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ui-dictate-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-home-tool.is-recording span[aria-hidden] { animation: none; opacity: 1; }
+}
+/* A control and the sentence explaining it, as one unit. With two controls
+   in the row a loose note trails whichever wrapped last and ends up
+   explaining the wrong button. */
+.ui-home-toolpair {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .ui-home-toolnote {
   font-size: 12px;
   color: var(--ui-ink-faint);
