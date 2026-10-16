@@ -34,9 +34,48 @@ rm pwfile
 Port **55432**, not 5432, so it cannot collide with a real local Postgres.
 `listen_addresses=127.0.0.1` keeps it off the network entirely.
 
-> On Windows/Git Bash, `pg_ctl start` holds the pipe and looks like it has
-> hung. It has not — check `pg.log` for "database system is ready to accept
+> On Windows/Git Bash, `pg_ctl start` holds the pipe and looks like it has
+> hung. It has not — check `pg.log` for "database system is ready to accept
 > connections". The server is already up and detached.
+
+### Two things that cost time on Windows, 2026-10-16
+
+Rebuilding this after the cluster was damaged turned up both.
+
+**`createdb` is NOT in the Windows package.** The native bin ships
+`initdb`, `pg_ctl` and `postgres` and nothing else, so the `createdb` line
+above fails there. Create the database over a connection instead — any
+client will do:
+
+```js
+// against postgres://postgres:scratchpw@127.0.0.1:55432/postgres
+await sql.unsafe("create database rxnaija_test encoding 'UTF8' "
+  + "lc_collate 'C' lc_ctype 'C' template template0");
+```
+
+**The ENCODING matters, and the library will get it wrong.** If you use
+embedded-postgres's own `initialise()` rather than the `initdb` line above,
+it takes the Windows default — **WIN1252** — and migration **0048** then
+fails:
+
+```
+character with byte sequence 0xe2 0x82 0xa6 in encoding "UTF8"
+has no equivalent in encoding "WIN1252"
+```
+
+That is the naira sign. `--encoding=UTF8` on `initdb`, or `ENCODING 'UTF8'`
+with `TEMPLATE template0` on the database, is what prevents it. `template0`
+is what allows an encoding different from the cluster’s; `C` collation is
+used because it is valid under any encoding and sort order is not a product
+decision in a scratch database.
+
+**The library is ESM.** `require()` will not load it — it needs a dynamic
+`import()` from a `.mjs`, or `--input-type=module`.
+
+> **Do not kill Postgres with `Stop-Process -Force`.** That is how the
+> cluster above was damaged: queries started failing with
+> `could not open file "base/5/2693"`, in a SYSTEM database, and the whole
+> data directory had to be thrown away. Use `pg_ctl -D "$DATA" stop`.
 
 ## Point the suites at it
 
